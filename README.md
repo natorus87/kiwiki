@@ -141,6 +141,16 @@ curl https://kiwiki.example.com/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
 
+## Usage as AI Memory
+
+Configure your AI tools to use kiwiki as persistent memory. The following instruction works for ChatGPT (Custom Instructions → Personalization), Claude (Personalization), and coding agents:
+
+> Use kiwiki as my persistent memory. When asked about projects, decisions, recurring topics, personal preferences, or work context, first briefly check kiwiki. Use existing notes as context.
+>
+> Save new important information in kiwiki when it might be useful later: preferences, decisions, project knowledge, workflows, important facts, and open items. Prefer to update existing files rather than creating new ones. Organize according to the existing structure: `/projects`, `/decisions`, `/notes`, `/shared` and `/user`. Write short Markdown notes with frontmatter. Do not delete anything without explicit instruction. Also ask in longer chats whether you should save something.
+
+For coding agents (Claude Code, Codex, OpenCode, Cursor), add this instruction to your project's `AGENTS.md`, `CLAUDE.md`, or equivalent configuration file.
+
 ## MCP Tools
 
 The MCP server exposes tools for common wiki workflows, grouped by required role:
