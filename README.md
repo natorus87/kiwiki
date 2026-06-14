@@ -1,12 +1,15 @@
 # kiwiki
 
+[![Website](https://img.shields.io/badge/web-kiwiki.xyz-blue)](https://kiwiki.xyz)
 ![Docker Hub](https://img.shields.io/docker/v/natorus87/kiwiki?label=Docker%20Hub&logo=docker)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-kiwiki is a self-hosted Markdown knowledge base for humans and AI agents. Notes stay as regular files on disk, the web UI gives you a searchable wiki, and the built-in MCP server lets tools such as ChatGPT, Claude, Cursor, Codex, and other MCP clients read and write the same knowledge base.
+kiwiki is a self-hosted **Agent Harness** and Markdown knowledge base for humans and AI agents. Notes stay as regular files on disk, the web UI gives you a searchable wiki, and the built-in MCP server lets tools such as Claude Code, Codex, OpenCode, Cursor, ChatGPT, OpenClaw, Hermes, and any MCP client read and write the same knowledge base in parallel.
 
 No hosted account is required. Your Markdown files are the source of truth.
+
+Visit **[kiwiki.xyz](https://kiwiki.xyz)** for the project website, FAQ, agent integration guides, and hosting options.
 
 ## Screenshots
 
@@ -22,15 +25,14 @@ No hosted account is required. Your Markdown files are the source of truth.
 
 ## Features
 
-- Markdown files with YAML frontmatter
-- Per-user isolated wiki folders under `/data/<username>/`
-- FastAPI web app with Jinja2, HTMX, and Toast UI Editor
-- SQLite FTS5 full-text search
-- Streamable HTTP MCP endpoint at `/mcp`
-- Legacy HTTP/SSE MCP endpoint at `/mcp/sse`
-- OAuth 2.1 discovery and authorization-code flow for ChatGPT-style MCP connectors
-- Role-based access control: `read`, `write`, `admin`
-- Docker Compose and Helm deployment support
+- **Multi-Agent Harness** — Central knowledge base for Claude Code, Codex, OpenCode, Cursor, ChatGPT, OpenClaw, Hermes, and any MCP-compatible agent. All agents read and write the same wiki in parallel.
+- **Markdown files with YAML frontmatter** — Your file system is the source of truth. No proprietary database, no vendor lock-in, simple to back up.
+- **100 % privacy** — Self-hosted on your infrastructure. No cloud, no telemetry, no vendor lock-in.
+- **Per-user isolated wiki folders** under `/data/<username>/` with role-based access (`read` / `write` / `admin`).
+- **SQLite FTS5 full-text search** — Search thousands of Markdown files in milliseconds, including via MCP from your AI.
+- **Responsive web UI** — FastAPI with Jinja2, HTMX, and Toast UI Editor. Works from 4K desktop to mobile.
+- **Streamable HTTP MCP endpoint** at `/mcp` (legacy HTTP/SSE at `/mcp/sse`) with OAuth 2.1 authorization-code flow for ChatGPT-style connectors.
+- **Docker Compose and Helm** — One command to start. Kubernetes-ready.
 
 ## Quick Start
 
@@ -141,36 +143,19 @@ curl https://kiwiki.example.com/mcp \
 
 ## MCP Tools
 
-The MCP server exposes tools for common wiki workflows:
+The MCP server exposes tools for common wiki workflows, grouped by required role:
 
-- `read_index`
-- `list_files`
-- `read_file`
-- `fetch`
-- `write_file`
-- `append_file`
-- `search`
-- `create_note`
-- `edit`
-- `update_frontmatter`
-- `read_many`
-- `build_index`
-- `list_all_files`
-- `grep`
-- `find`
-- `file_info`
-- `read_lines`
-- `recent_files`
-- `backlinks`
-- `preview_edit`
-- `replace_many`
-- `validate_wiki`
-- `upsert_note`
-- `related_files`
-- `tag_index`
-- `reindex_all`
-- `search_status`
-- `whoami`
+### Read (any role)
+
+`read_file` · `read_many` · `read_lines` · `fetch` · `search` · `grep` · `find` · `list_files` · `list_all_files` · `file_info` · `read_index` · `recent_files` · `backlinks` · `related_files` · `search_status` · `whoami`
+
+### Write (write role or admin)
+
+`write_file` · `edit` · `append_file` · `create_note` · `upsert_note` · `update_frontmatter` · `preview_edit` · `replace_many` · `build_index` · `reindex_all` · `tag_index` · `move_file`
+
+### Admin (admin role only)
+
+`validate_wiki` · `delete_file` · `sort`
 
 ## Local Development
 
