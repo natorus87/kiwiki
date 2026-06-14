@@ -151,6 +151,22 @@ Configure your AI tools to use kiwiki as persistent memory. The following instru
 
 For coding agents (Claude Code, Codex, OpenCode, Cursor), add this instruction to your project's `AGENTS.md`, `CLAUDE.md`, or equivalent configuration file.
 
+### Agent Harness Setup
+
+When using kiwiki as the Agent Harness for your project, instruct coding agents to connect to kiwiki via MCP. Add the following block to your project's `AGENTS.md` or `CLAUDE.md`:
+
+> This project uses **kiwiki** as its Agent Harness and persistent memory.
+>
+> **MCP connection** — Connect to the kiwiki MCP server using the appropriate command for your tool:
+> - Claude Code: `claude mcp add kiwiki http://localhost:8082/mcp --header "Authorization: Bearer <api-key>"`
+> - Codex: `codex mcp add kiwiki http://localhost:8082/mcp --header "Authorization: Bearer <api-key>"`
+> - OpenCode: configure MCP server in opencode.json
+> - Cursor: configure MCP server in `.cursor/mcp.json`
+>
+> Once connected, use kiwiki as persistent memory (see usage instruction above).
+
+This ensures every coding agent working on the project automatically connects to the shared knowledge base.
+
 ## MCP Tools
 
 The MCP server exposes tools for common wiki workflows, grouped by required role:
