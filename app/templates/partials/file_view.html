@@ -1,0 +1,36 @@
+<div class="content-inner file-content-inner">
+  <article class="file-view">
+    <header class="file-header">
+      <div class="file-header-main">
+        <h1 class="file-title">{{ title }}</h1>
+        <div class="file-path">{{ path }}</div>
+        <div class="file-meta">
+          {% if updated %}Aktualisiert: {{ updated }}{% endif %}
+          {% if updated and (owner or tags) %} · {% endif %}
+          {% if owner %}Autor: {{ owner }}{% endif %}
+          {% if owner and tags %} · {% endif %}
+          {% if tags %}
+            Tags:
+            {% for tag in tags %}
+              <span class="tag">{{ tag }}</span>
+            {% endfor %}
+          {% endif %}
+          {% if not updated and not owner and not tags %}Keine Metadaten{% endif %}
+        </div>
+      </div>
+      <div class="file-actions">
+        {% if user and user.role in ['write', 'admin'] %}
+        <button type="button" class="btn btn-ghost" onclick="openEditor({{ path|tojson|forceescape }})">
+          {{ svg_edit|safe }} Bearbeiten
+        </button>
+        {% endif %}
+        {% if can_delete %}
+          <button type="button" class="btn btn-danger" onclick="deleteFile({{ path|tojson|forceescape }})">
+            {{ svg_trash|safe }} Löschen
+          </button>
+        {% endif %}
+      </div>
+    </header>
+    <div class="markdown-content">{{ rendered|safe }}</div>
+  </article>
+</div>

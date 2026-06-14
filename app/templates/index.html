@@ -1,0 +1,290 @@
+{% extends "layout.html" %}
+
+{% block sidebar %}
+<aside class="sidebar" aria-label="Dateien">
+
+  <!-- Mobile-only: Kopfleiste mit Logo + Schließen-Button -->
+  <div class="mobile-sidebar-header">
+    <span class="mobile-sidebar-logo">ki<em>wiki</em></span>
+    <button type="button" class="mobile-close-btn" onclick="closeSidebar()" aria-label="Sidebar schließen">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+
+  <div class="file-tree" id="file-tree"
+       tabindex="0"
+       aria-label="Dateibaum. Rechtsklick oder langes Drücken öffnet Aktionen."
+       hx-get="/ui/files?path=." hx-trigger="load" hx-swap="innerHTML">
+    <div class="tree-loading">Lade…</div>
+  </div>
+
+  {% include "partials/sidebar_account.html" %}
+
+</aside>
+{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .hero {
+    padding: 2.4rem 0 1.4rem;
+    border-bottom: 1px solid var(--md-outline-v);
+    margin-bottom: 1.6rem;
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1.5rem;
+    align-items: end;
+  }
+  .hero-eyebrow {
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.14em;
+    color: var(--md-primary);
+    background: var(--md-primary-dim);
+    border: 1px solid rgba(163, 217, 107, 0.2);
+    padding: 0.3rem 0.7rem;
+    border-radius: var(--radius-xl);
+    margin-bottom: 1.25rem;
+  }
+  .hero-eyebrow .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--md-primary);
+    box-shadow: 0 0 8px var(--md-primary);
+    animation: hero-pulse 2.2s ease-in-out infinite;
+  }
+  @keyframes hero-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  .hero-title {
+    font-family: var(--font-display);
+    font-size: clamp(2.6rem, 6vw, 3.8rem);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.05;
+    color: var(--md-on-surface);
+    margin: 0 0 0.9rem;
+    padding-top: 0.08em;
+    padding-bottom: 0.08em;
+    text-wrap: balance;
+    font-variation-settings: "opsz" 96;
+  }
+  .hero-title em {
+    font-style: normal;
+    color: var(--md-primary);
+  }
+  .hero-sub {
+    font-size: 1.05rem; line-height: 1.55;
+    color: var(--md-on-surface-v);
+    max-width: 56ch;
+    text-wrap: pretty;
+  }
+  .hero-panel {
+    min-width: 210px;
+    border: 1px solid var(--md-outline-v);
+    background: var(--md-surface);
+    border-radius: var(--radius-md);
+    padding: 0.85rem;
+    box-shadow: none;
+  }
+  .hero-panel-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--md-outline-v);
+    font-size: 0.78rem;
+    color: var(--md-outline);
+  }
+  .hero-panel-row:last-child { border-bottom: 0; }
+  .hero-panel-row strong {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--md-on-surface);
+    font-weight: 500;
+  }
+
+  .section-label {
+    font-family: var(--font-mono);
+    font-size: 0.68rem; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.18em;
+    color: var(--md-outline);
+    margin: 0 0 1rem;
+    display: flex; align-items: center; gap: 0.6rem;
+  }
+  .section-label::after {
+    content: ''; flex: 1;
+    height: 1px; background: var(--md-outline-v);
+  }
+
+  .step-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 2.5rem;
+  }
+  .step-card {
+    padding: 1.1rem 1.15rem;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-v);
+    border-radius: var(--radius-md);
+    display: flex; flex-direction: column; gap: 0.4rem;
+    transition: border-color var(--t), background var(--t), transform var(--t);
+  }
+  .quick-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    margin: 1.35rem 0 0;
+  }
+  @media (max-width: 760px) {
+    .hero {
+      grid-template-columns: 1fr;
+      padding-top: 1.6rem;
+    }
+    .hero-panel { min-width: 0; }
+    .hero-title { font-size: clamp(2rem, 11vw, 2.65rem); }
+  }
+  .step-card:hover {
+    border-color: rgba(163, 217, 107, 0.35);
+    background: var(--md-surface-c);
+    transform: translateY(-2px);
+  }
+  .step-card-icon {
+    width: 32px; height: 32px;
+    border-radius: 9px;
+    background: var(--md-primary-dim);
+    color: var(--md-primary);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 0.3rem;
+  }
+  .step-card-title {
+    font-weight: 600;
+    color: var(--md-on-surface);
+    font-size: 0.92rem;
+    letter-spacing: -0.005em;
+  }
+  .step-card-text {
+    font-size: 0.82rem;
+    color: var(--md-on-surface-v);
+    line-height: 1.5;
+  }
+  .step-card-text code {
+    background: var(--md-surface-ch);
+    border: 1px solid var(--md-outline-v);
+    padding: 0.05rem 0.35rem;
+    border-radius: 5px;
+    font-size: 0.78rem;
+    font-family: var(--font-mono);
+    color: var(--md-primary-c-on);
+  }
+
+  .code-block {
+    background: var(--md-surface-c);
+    border: 1px solid var(--md-outline-v);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-bottom: 1rem;
+    position: relative;
+    box-shadow: none;
+  }
+  .code-block::before {
+    display: none;
+  }
+  .code-block-head {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.55rem 0.9rem;
+    border-bottom: 1px solid var(--md-outline-v);
+    background: var(--md-surface);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--md-outline);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .code-block-head .verb {
+    color: var(--md-primary);
+    font-weight: 600;
+    padding: 0.05rem 0.45rem;
+    background: var(--md-primary-dim);
+    border-radius: 4px;
+    font-size: 0.65rem;
+  }
+  .code-block pre {
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+  .code-block pre::before { display: none !important; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="content-inner">
+  <section class="hero">
+    <div>
+      <div class="hero-eyebrow"><span class="dot"></span>Markdown als Wahrheit</div>
+      <h1 class="hero-title">ki<em>wiki</em></h1>
+      <p class="hero-sub">
+        Dein persönlicher Wissensspeicher. Notizen leben als Markdown-Dateien, bleiben lokal strukturiert und sind direkt für Suche und KI-Workflows nutzbar.
+      </p>
+      <div class="quick-actions">
+        <button type="button" class="btn btn-primary needs-write" onclick="window.location.href='/editor?path=notes/neue-notiz.md'">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+          Neue Notiz
+        </button>
+      </div>
+    </div>
+    <div class="hero-panel" aria-label="Arbeitsstatus">
+      <div class="hero-panel-row"><span>Format</span><strong>.md</strong></div>
+      <div class="hero-panel-row"><span>Suche</span><strong>FTS5</strong></div>
+      <div class="hero-panel-row"><span>Zugriff</span><strong>{{ user.role if user else 'none' }}</strong></div>
+    </div>
+  </section>
+
+  <p class="section-label">Erste Schritte</p>
+  <div class="step-grid">
+    <div class="step-card">
+      <div class="step-card-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      </div>
+      <div class="step-card-title">Notiz öffnen</div>
+      <div class="step-card-text">Klick auf eine Datei im Baum links zeigt sie sofort hier an.</div>
+    </div>
+    <div class="step-card">
+      <div class="step-card-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+      </div>
+      <div class="step-card-title">Neue Notiz</div>
+      <div class="step-card-text"><code>+ Datei</code> in der Sidebar startet den Editor mit Live-Vorschau.</div>
+    </div>
+    <div class="step-card">
+      <div class="step-card-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </div>
+      <div class="step-card-title">Volltext-Suche</div>
+      <div class="step-card-text">Das Feld im Header durchsucht den gesamten Speicher per FTS5.</div>
+    </div>
+    <div class="step-card">
+      <div class="step-card-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg>
+      </div>
+      <div class="step-card-title">KI-Anbindung</div>
+      <div class="step-card-text"><code>AGENTS.md</code> enthält Anweisungen für angeschlossene KI-Systeme.</div>
+    </div>
+  </div>
+
+  <p class="section-label">MCP-Verbindung</p>
+  <div class="code-block">
+    <div class="code-block-head"><span class="verb">POST</span> Streamable HTTP</div>
+    <pre><code>{{ request.base_url }}mcp
+Authorization: Bearer &lt;api-key&gt;</code></pre>
+  </div>
+  <div class="code-block">
+    <div class="code-block-head"><span class="verb">GET</span> SSE-Transport (Legacy-Clients)</div>
+    <pre><code>{{ request.base_url }}mcp/sse</code></pre>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,36 @@
+# Git
+.git/
+.gitignore
+
+# Daten (werden via Volume gemountet, nicht ins Image)
+data/
+
+# Python-Cache
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Entwicklungs-Artefakte
+node_modules/
+*.sqlite
+*.sqlite3
+*.db
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
+
+# Docs (nicht nötig im Container)
+README.md
+
+# Claude
+CLAUDE.md
+CLAUDE.local.md
+CLAUDE.local.template.md
+.claude/

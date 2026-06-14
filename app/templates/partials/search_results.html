@@ -1,0 +1,11 @@
+{% if not results %}
+  <p class="no-results">Keine Ergebnisse.</p>
+{% else %}
+  {% for result in results %}
+    <button type="button" class="search-result" onclick="loadFile({{ result.path|tojson|forceescape }})">
+      <span class="result-path">{{ result.path }}</span>
+      <span class="result-title">{{ result.title }}</span>
+      <span class="result-snippet">{{ result.snippet }}</span>
+    </button>
+  {% endfor %}
+{% endif %}

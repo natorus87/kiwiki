@@ -1,0 +1,118 @@
+# Image Konfiguration
+image:
+  repository: natorus87/kiwiki
+  pullPolicy: Always
+  tag: "latest"
+
+# Deployment
+replicaCount: 1
+
+# Deployment-Strategie. "Recreate" stoppt den alten Pod bevor der neue startet —
+# Pflicht bei ReadWriteOnce-PVC und für die Multi-Tenant-Migration auf /data.
+# Auf "RollingUpdate" wechseln nur wenn replicaCount > 1 UND PVC ReadWriteMany.
+deploymentStrategy: Recreate
+
+# Service Konfiguration
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+traefikRoute:
+  v2:
+    enabled: false
+    entrypoint: websecure
+    hosts:
+      - kiwiki.local
+  v3:
+    enabled: false
+    entrypoint: websecure
+    hosts:
+      - kiwiki.local
+  # CORS-Middleware — Pflicht für MCP-Clients (ChatGPT, Claude Desktop, etc.)
+  cors:
+    allowOrigins:
+      - "*"
+  # SSE-Einstellungen für /mcp/sse (MCP-Stream-Transport)
+  sse:
+    # -1 = sofortiges Flushen jedes Chunks (Pflicht für SSE)
+    flushInterval: "-1"
+    # Timeout für Response-Header vom Backend (hoch setzen für lang-lebige SSE-Verbindungen)
+    responseHeaderTimeout: "1h"
+
+# Ingress (optional)
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations: {}
+  # CORS + SSE-Einstellungen — werden als nginx-Annotations gerendert
+  cors:
+    enabled: true
+    allowOrigin: "*"
+    allowMethods: "GET, POST, OPTIONS"
+    allowHeaders: "Authorization, Content-Type, Cache-Control"
+    maxAge: "86400"
+  hosts:
+    - host: kiwiki.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # - secretName: kiwiki-tls
+  #   hosts:
+  #     - kiwiki.local
+
+# Ressourcen
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Persistenter Speicher für Wiki-Daten
+persistence:
+  enabled: true
+  size: 1Gi
+  accessMode: ReadWriteOnce
+  storageClass: ""
+  # existingClaim: ""  # Bestehenden PVC verwenden
+
+# Umgebungsvariablen
+env:
+  KIWIKI_DATA_DIR: "/data"
+  # Builtin-Benutzer aus der ConfigMap. Diese Accounts werden in der Web-UI
+  # angezeigt, gelten als geschützt und können nur durch Helm geändert werden.
+  # Weitere lokale Benutzer können Admins im Einstellungsmenü hinzufügen.
+  KIWIKI_USERS: "admin:<deinen-api-key>:admin"  # Pflicht: mit starkem Key setzen
+  KIWIKI_BASE_URL: "https://kiwiki.example.com"  # Pflicht: auf öffentliche URL setzen
+  KIWIKI_TRUST_PROXY: "true"  # auf "false" fuer lokale Entwicklung ohne Proxy
+  KIWIKI_CORS_ORIGINS: "https://kiwiki.example.com"  # "" = Default Warnung; "*", explizite Origins empfohlen
+  KIWIKI_RATE_LIMIT_ENABLED: "true"  # Rate Limiting aktivieren (empfohlen)
+  KIWIKI_OAUTH_TOKEN_SECRET: "change-me-to-a-random-secret"
+
+# Health Checks
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 30
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# Node Selector / Tolerations
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Restart Policy
+restartPolicy: Always

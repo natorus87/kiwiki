@@ -1,0 +1,53 @@
+# Claude
+CLAUDE.local.md
+.claude/
+.claude/settings.local.json
+
+# Codex
+.codex
+.agents/
+skills-lock.json
+
+# Local planning notes
+PLAN.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+
+# Umgebungsvariablen
+.env
+.env.*
+!.env.example
+
+# Wiki-Daten (lokaler Entwicklungsordner — nicht ins Repo)
+data/
+
+# SQLite-Index (wird automatisch neu erzeugt)
+*.sqlite
+*.sqlite3
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

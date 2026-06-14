@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anmelden – kiwiki</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.0/dist/fonts/geist-sans/style.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --md-bg:          #1f1e1b;
+      --md-surface:     #2a2823;
+      --md-surface-c:   #312e28;
+      --md-surface-ch:  #38342d;
+      --md-outline-v:   #4b453b;
+      --md-outline:     #a99d8d;
+      --md-primary:     #b8df78;
+      --md-primary-hover: #c4ea86;
+      --md-primary-c:   #354823;
+      --md-primary-c-on: #223016;
+      --md-primary-dim: rgba(184,223,120,0.16);
+      --md-primary-border: rgba(184,223,120,0.34);
+      --md-on-surface:  #f0e9dc;
+      --md-on-surface-v: #c9beb0;
+      --md-error:       #e4a092;
+      --md-error-dim:   rgba(224,120,104,0.14);
+      --md-error-border: rgba(224,120,104,0.34);
+      --shadow-soft: 0 1px 2px rgba(15, 13, 11, 0.22), 0 18px 42px rgba(15, 13, 11, 0.18);
+    }
+
+    body {
+      font-family: 'Geist Sans', 'Geist', ui-sans-serif, system-ui, sans-serif;
+      background: var(--md-bg);
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--md-on-surface-v);
+      position: relative;
+      overflow: auto;
+      padding: 1rem;
+      font-feature-settings: "ss01", "ss03", "cv11";
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    ::selection { background: var(--md-primary-dim); color: var(--md-primary); }
+
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: var(--md-bg);
+      pointer-events: none;
+    }
+
+    body::after {
+      display: none;
+    }
+
+    .login-card {
+      position: relative; z-index: 1;
+      background: var(--md-surface);
+      border: 1px solid var(--md-outline-v);
+      border-radius: 18px;
+      padding: 2.75rem 2.5rem;
+      width: 100%; max-width: 400px;
+      box-shadow: var(--shadow-soft);
+    }
+    .login-card::before {
+      display: none;
+    }
+
+    .brand {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    .brand-icon-wrap {
+      display: inline-flex;
+      margin-bottom: 1rem;
+    }
+    .brand-icon {
+      width: 56px; height: 56px;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 1px solid var(--md-outline-v);
+      box-shadow: none;
+    }
+    .brand-logo {
+      font-family: 'Bricolage Grotesque', 'Geist Sans', ui-sans-serif, system-ui, sans-serif;
+      font-size: 2.3rem; font-weight: 700;
+      color: var(--md-on-surface);
+      letter-spacing: 0; line-height: 1.1;
+      padding-top: 0.06em;
+      font-variation-settings: "opsz" 72;
+    }
+    .brand-logo em {
+      font-style: normal;
+      color: var(--md-primary);
+    }
+    .brand-logo .caret {
+      display: inline-block;
+      width: 3px; height: 0.78em;
+      background: var(--md-primary);
+      vertical-align: -0.04em;
+      margin-left: 3px;
+      animation: caret-blink 1.2s steps(2, end) infinite;
+      border-radius: 1px;
+    }
+    @keyframes caret-blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
+    }
+    .brand-tagline {
+      font-size: 0.82rem; color: var(--md-outline);
+      margin-top: 0.55rem;
+      letter-spacing: 0.005em;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.75rem; font-weight: 600;
+      color: var(--md-on-surface-v);
+      margin-bottom: 0.45rem;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 0.7rem 1rem;
+      background: var(--md-surface-c);
+      border: 1px solid var(--md-outline-v);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--md-on-surface);
+      letter-spacing: 0;
+      transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+    }
+    .form-input::placeholder { color: var(--md-outline); letter-spacing: 0; }
+    .form-input:focus {
+      outline: none;
+      border-color: var(--md-primary);
+      background: var(--md-surface-ch);
+      box-shadow: 0 0 0 3px var(--md-primary-dim);
+    }
+
+    .error-msg {
+      display: flex; align-items: center; gap: 0.6rem;
+      background: var(--md-error-dim);
+      border: 1px solid var(--md-error-border);
+      color: var(--md-error);
+      padding: 0.7rem 1rem; border-radius: 12px;
+      font-size: 0.84rem; margin-bottom: 1.1rem;
+    }
+
+    .submit-btn {
+      width: 100%; margin-top: 1.5rem;
+      padding: 0.85rem;
+      background: var(--md-primary);
+      color: var(--md-primary-c-on);
+      border: none; border-radius: 999px;
+      font-size: 0.95rem; font-weight: 600;
+      font-family: 'Geist Sans', 'Geist', ui-sans-serif, system-ui, sans-serif;
+      cursor: pointer; letter-spacing: 0.01em;
+      transition: background 0.15s, transform 0.1s;
+      box-shadow: none;
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    }
+    .submit-btn:hover {
+      background: var(--md-primary-hover);
+    }
+    .submit-btn:active { transform: scale(0.99); }
+    .submit-btn .arrow { transition: transform 0.2s ease; }
+    .submit-btn:hover .arrow { transform: translateX(3px); }
+    .submit-btn:focus-visible {
+      outline: 2px solid var(--md-primary);
+      outline-offset: 3px;
+    }
+
+    .hint {
+      margin-top: 1.75rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--md-outline-v);
+      font-size: 0.73rem; color: var(--md-outline);
+      text-align: center; line-height: 1.75;
+    }
+    .hint code {
+      background: var(--md-surface-ch);
+      border: 1px solid var(--md-outline-v);
+      padding: 0.05rem 0.4rem; border-radius: 6px;
+      font-size: 0.7rem; font-family: 'JetBrains Mono', monospace;
+      color: var(--md-on-surface-v);
+    }
+  </style>
+  <script src="/static/kiwiki-motion.bundle.js?v=20260608" defer></script>
+</head>
+<body>
+  <div class="login-card">
+    <div class="brand">
+      <div class="brand-icon-wrap">
+        <img src="/static/kiwiki-icon.png" alt="kiwiki" class="brand-icon">
+      </div>
+      <div class="brand-logo">ki<em>wiki</em><span class="caret" aria-hidden="true"></span></div>
+      <div class="brand-tagline">Dein persönlicher Wissensspeicher</div>
+    </div>
+
+    {% if error %}
+    <div class="error-msg" id="login-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="POST" action="/login">
+      <label class="form-label" for="api_key">API-Key</label>
+      <input type="password" id="api_key" name="api_key" class="form-input"
+             placeholder="••••••••••••••••"
+             autocomplete="current-password" autofocus required
+             {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %}>
+      <button type="submit" class="submit-btn">
+        Anmelden
+        <svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </button>
+    </form>
+
+    <p class="hint">
+      Builtin-Key via <code>KIWIKI_USERS</code>, lokale Keys via Einstellungen<br>
+      Format: <code>user:key:role</code>
+    </p>
+  </div>
+</body>
+</html>

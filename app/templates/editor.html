@@ -1,0 +1,214 @@
+{% extends "layout.html" %}
+
+{% block title %}Editor – kiwiki{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .content-area {
+    padding: 0; display: flex; flex-direction: column;
+    overflow: hidden; background: var(--md-bg);
+  }
+  .editor-bar {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--md-surface);
+    border-bottom: 1px solid var(--md-outline-v);
+    flex-shrink: 0; flex-wrap: wrap;
+  }
+  .editor-path {
+    flex: 1; min-width: 200px;
+    padding: 0.4rem 0.85rem;
+    background: var(--md-surface-c);
+    border: 1px solid var(--md-outline-v);
+    border-radius: 28px;
+    font-size: 0.8rem; font-family: var(--font-mono);
+    color: var(--md-on-surface);
+    transition: border-color 0.15s;
+  }
+  .editor-path:focus { outline: none; border-color: var(--md-primary); }
+
+  .editor-hint {
+    font-family: var(--font-mono); font-size: 0.68rem;
+    color: var(--md-outline); margin-left: auto;
+    white-space: nowrap;
+  }
+  @media (max-width: 768px) {
+    .editor-bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+      padding: 0.65rem;
+    }
+    .editor-path {
+      grid-column: 1 / -1;
+      width: 100%;
+      border-radius: var(--radius-sm);
+    }
+    .editor-bar .btn {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+
+  .save-toast {
+    position: fixed; bottom: 1.5rem; right: 1.5rem;
+    display: none; align-items: center; gap: 0.5rem;
+    background: var(--md-surface-ch);
+    border: 1px solid var(--md-outline-v);
+    color: var(--md-on-surface);
+    padding: 0.6rem 1rem; border-radius: 28px;
+    font-size: 0.82rem; font-family: var(--font-body);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 200;
+  }
+  .save-toast.show { display: flex; animation: toast-in 0.2s ease; }
+  .save-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #34d399;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6);
+    animation: save-pulse 1.4s ease-out infinite;
+  }
+  @keyframes save-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
+    70%  { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+  }
+
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  #tui-editor-wrap { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  #tui-editor-wrap .toastui-editor-defaultUI { height: 100% !important; }
+  #tui-editor-wrap .toastui-editor-main      { height: calc(100% - 50px) !important; }
+</style>
+{% endblock %}
+
+{% block sidebar %}
+<aside class="sidebar" aria-label="Dateien">
+
+  <!-- Mobile-only: Kopfleiste mit Logo + Schließen-Button -->
+  <div class="mobile-sidebar-header">
+    <span class="mobile-sidebar-logo">ki<em>wiki</em></span>
+    <button type="button" class="mobile-close-btn" onclick="closeSidebar()" aria-label="Sidebar schließen">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+
+  <div class="sidebar-toolbar">
+    <button type="button" class="sidebar-btn" onclick="window.location.href='/'">
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      Zurück
+    </button>
+  </div>
+  <div class="file-tree" id="file-tree"
+       tabindex="0"
+       aria-label="Dateibaum. Rechtsklick oder langes Drücken öffnet Aktionen."
+       hx-get="/ui/files?path=." hx-trigger="load" hx-swap="innerHTML">
+    <div class="tree-loading">Lade…</div>
+  </div>
+  {% include "partials/sidebar_account.html" %}
+</aside>
+{% endblock %}
+
+{% block content %}
+<div class="editor-bar">
+  <label for="file-path" class="sr-only">Dateipfad</label>
+  <input type="text" id="file-path" class="editor-path"
+         placeholder="Dateipfad, z. B. notes/meine-notiz.md"
+         value="{{ file_path }}">
+
+  <button type="button" class="btn btn-primary" onclick="saveFile()">
+    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+    Speichern
+  </button>
+
+  {% if user and user.role == 'admin' %}
+  <button type="button" class="btn btn-danger" onclick="deleteCurrentFile()">
+    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+    Löschen
+  </button>
+  {% endif %}
+
+  <a href="/" class="btn btn-ghost">
+    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    Zurück
+  </a>
+
+  <span class="editor-hint">Ctrl+S</span>
+</div>
+
+<div id="tui-editor-wrap"></div>
+{% if load_error %}
+<div class="error editor-load-error">Datei konnte nicht geladen werden: {{ load_error }}</div>
+{% endif %}
+<div class="save-toast" id="save-toast"><div class="save-dot"></div>Gespeichert</div>
+
+<script>
+  const pathInput = document.getElementById('file-path');
+  const toastEl   = document.getElementById('save-toast');
+  const initialMarkdown = {{ initial_content|tojson }};
+
+  const editor = new toastui.Editor({
+    el: document.getElementById('tui-editor-wrap'),
+    height: '100%',
+    initialValue: initialMarkdown,
+    initialEditType: 'markdown',
+    previewStyle: window.matchMedia('(max-width: 768px)').matches ? 'tab' : 'vertical',
+    theme: 'dark',
+    usageStatistics: false,
+    placeholder: 'Schreibe Markdown hier…',
+    toolbarItems: [
+      ['heading', 'bold', 'italic', 'strike'],
+      ['hr', 'quote'],
+      ['ul', 'ol', 'task', 'indent', 'outdent'],
+      ['table', 'link'],
+      ['code', 'codeblock'],
+    ],
+  });
+  window.editor = editor;
+
+  const initialPath = pathInput.value.trim();
+  if (initialPath) {
+    // Datei + alle Eltern-Ordner zum Tree-State hinzufügen, damit sie nach
+    // Wechsel auf "/" sichtbar aufgeklappt sind.
+    kwSetActiveFile(initialPath);
+    var parts = initialPath.split('/');
+    for (var i = 1; i < parts.length; i++) {
+      kwAddOpenFolder(parts.slice(0, i).join('/'));
+    }
+  }
+
+  function saveFile() {
+    const path = pathInput.value.trim() || 'notes/untitled.md';
+	    fetch('/api/file', {
+	      method: 'PUT',
+	      headers: apiHeaders({ 'Content-Type': 'application/json' }),
+	      body: JSON.stringify({ path, content: editor.getMarkdown() }),
+    })
+    .then(r => {
+      if (r.ok) {
+        pathInput.value = path;
+        toastEl.classList.add('show');
+        setTimeout(() => toastEl.classList.remove('show'), 2200);
+        htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
+      } else r.json().then(d => kwToast('Fehler: ' + (d.detail || r.status), { type: 'error' }));
+    })
+    .catch(e => kwToast('Netzwerkfehler: ' + e, { type: 'error' }));
+  }
+
+  function deleteCurrentFile() {
+    const path = pathInput.value.trim();
+    if (!path) { kwToast('Kein Dateipfad gesetzt.', { type: 'error' }); return; }
+    if (typeof deleteFile === 'function') deleteFile(path);
+  }
+
+  if (!window.__kiwikiEditorShortcutBound) {
+    window.__kiwikiEditorShortcutBound = true;
+    document.addEventListener('keydown', function(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveFile(); }
+    });
+  }
+</script>
+{% endblock %}

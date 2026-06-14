@@ -1,0 +1,16 @@
+apiVersion: v2
+name: kiwiki
+description: Minimaler, Docker-basierter Wissensspeicher für Menschen und KI-Systeme
+type: application
+version: 0.2.0
+appVersion: "multi-tenant-20260521"
+keywords:
+  - wiki
+  - mcp
+  - markdown
+  - knowledge-base
+maintainers:
+  - name: kiwiki
+home: https://github.com/kiwiki
+sources:
+  - https://github.com/kiwiki

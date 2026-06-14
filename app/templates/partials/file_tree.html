@@ -1,0 +1,23 @@
+{% for item in items %}
+  {% if item.is_dir %}
+    <div class="tree-row" data-path="{{ item.path }}" data-kind="dir" draggable="true">
+      <button type="button" class="file-item folder" data-path="{{ item.path }}" aria-expanded="false"
+              onclick="toggleFolder(this,{{ item.path|tojson|forceescape }},{{ item.tree_id|tojson|forceescape }})">
+        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+             stroke-linejoin="round" class="chevron{% if item.has_children %} has-ch{% endif %}">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+        {{ svg_folder|safe }}<span class="item-name">{{ item.name }}</span>
+      </button>
+    </div>
+    <div id="{{ item.tree_id }}" class="subtree" data-parent="{{ item.path }}"></div>
+  {% else %}
+    <div class="tree-row" data-path="{{ item.path }}" data-kind="file" draggable="true">
+      <button type="button" class="file-item" data-path="{{ item.path }}"
+              onclick="loadFile({{ item.path|tojson|forceescape }}, this)">
+        {{ svg_file|safe }}<span class="item-name">{{ item.name }}</span>
+      </button>
+    </div>
+  {% endif %}
+{% endfor %}

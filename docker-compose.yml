@@ -1,0 +1,17 @@
+services:
+  kiwiki:
+    build: .
+    container_name: kiwiki
+    ports:
+      - "8082:8080"
+    environment:
+      KIWIKI_DATA_DIR: "/data"
+      KIWIKI_USERS: "admin:<your-secure-api-key>:admin"
+      KIWIKI_BASE_URL: "http://localhost:8082"
+      KIWIKI_TRUST_PROXY: "false"  # auf "true" setzen hinter Reverse-Proxy/TLS-Terminierung
+      KIWIKI_CORS_ORIGINS: ""      # leer oder Komma-getrennte Origins; "*" mit WARNS-LOG (Default)
+      KIWIKI_RATE_LIMIT_ENABLED: "true"  # Rate Limiting aktivieren (empfohlen)
+      KIWIKI_OAUTH_TOKEN_SECRET: "change-me-to-a-random-secret"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

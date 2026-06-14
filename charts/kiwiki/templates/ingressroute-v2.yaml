@@ -1,0 +1,24 @@
+{{- if .Values.traefikRoute.v2.enabled }}
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "kiwiki.fullname" . }}-v2
+  labels:
+    {{- include "kiwiki.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ .Values.traefikRoute.v2.entrypoint }}
+  routes:
+    {{- range .Values.traefikRoute.v2.hosts }}
+    - match: Host(`{{ . }}`)
+      kind: Rule
+      middlewares:
+        - name: {{ include "kiwiki.fullname" $ }}-cors-v2
+      services:
+        - name: {{ include "kiwiki.fullname" $ }}
+          port: {{ $.Values.service.port }}
+          serversTransport: {{ include "kiwiki.fullname" $ }}-sse-v2
+          responseForwarding:
+            flushInterval: {{ $.Values.traefikRoute.sse.flushInterval | quote }}
+    {{- end }}
+{{- end }}

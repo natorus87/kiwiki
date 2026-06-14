@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>{% block title %}kiwiki{% endblock %}</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/static/kiwiki-icon.png">
+  <link rel="apple-touch-icon" href="/static/kiwiki-icon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.0/dist/fonts/geist-sans/style.css">
+  <link rel="stylesheet" href="https://uicdn.toast.com/editor/3.2.2/toastui-editor.min.css">
+  <link rel="stylesheet" href="https://uicdn.toast.com/editor/3.2.2/theme/toastui-editor-dark.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
+  <script src="https://uicdn.toast.com/editor/3.2.2/toastui-editor-all.min.js"></script>
+
+  <script>
+    window.KIWIKI = {
+      role: "{{ user.role if user else 'none' }}",
+      roleLevel: {{ {'none':0,'read':1,'write':2,'admin':3}[user.role if user else 'none'] }},
+    };
+    var KIWIKI_ROLE = window.KIWIKI.role;
+    var KIWIKI_ROLE_LEVEL = window.KIWIKI.roleLevel;
+  </script>
+
+  <link rel="stylesheet" href="/static/kiwiki.css?v=20260609-context-menu">
+  {% block extra_styles %}{% endblock %}
+</head>
+<body class="role-{{ user.role if user else 'none' }}">
+<script src="/static/kiwiki.js?v=20260609-context-menu"></script>
+
+<header>
+  <button type="button" class="hamburger" onclick="toggleSidebar()" aria-label="Menü" aria-controls="file-tree" aria-expanded="false">
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="/" class="logo-wrap">
+    <img src="/static/kiwiki-icon.png" alt="kiwiki" class="logo-icon">
+    <span class="logo-text">ki<em>wiki</em></span>
+  </a>
+
+  <form class="search-wrap"
+        role="search"
+        hx-post="/ui/search" hx-target="#search-results" hx-swap="innerHTML"
+        hx-trigger="input changed delay:400ms, submit">
+    <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="search" name="query" class="search-input" placeholder="Suchen…" autocomplete="off" aria-label="Wiki durchsuchen" aria-controls="search-results">
+    <div id="search-results" role="region" aria-label="Suchergebnisse" aria-live="polite"></div>
+  </form>
+
+  <div class="header-right" aria-hidden="true"></div>
+</header>
+
+<button type="button" class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()" aria-label="Sidebar schließen"></button>
+
+<div class="app-layout" id="app-layout">
+  {% block sidebar %}{% endblock %}
+  <div class="sidebar-resizer" id="sidebar-resizer"></div>
+  <div class="content-area" id="main-content">
+    {% block content %}{% endblock %}
+  </div>
+</div>
+
+<script src="/static/kiwiki-motion.bundle.js?v=20260608" defer></script>
+
+</body>
+</html>

@@ -1,0 +1,33 @@
+{% if user %}
+<div class="sidebar-account">
+  <div class="sidebar-account-menu" id="sidebar-account-menu" aria-hidden="true" inert>
+    <button type="button" class="sidebar-menu-item" onclick="kwOpenDoc('AGENTS.md')">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+      Anleitung
+    </button>
+    <button type="button" class="sidebar-menu-item" onclick="kwOpenDoc('index.md')">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/></svg>
+      Index
+    </button>
+    {% if user.role == 'admin' %}
+    <button type="button" class="sidebar-menu-item" onclick="window.location.href='/settings'">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2.18l.08.86a2 2 0 0 1-1.06 1.9l-.76.42a2 2 0 0 1-2.17-.22l-.66-.56a2 2 0 0 0-2.83.12l-.31.31a2 2 0 0 0-.12 2.83l.56.66a2 2 0 0 1 .22 2.17l-.42.76a2 2 0 0 1-1.9 1.06l-.86-.08a2 2 0 0 0-2.18 2v.44a2 2 0 0 0 2.18 2l.86-.08a2 2 0 0 1 1.9 1.06l.42.76a2 2 0 0 1-.22 2.17l-.56.66a2 2 0 0 0 .12 2.83l.31.31a2 2 0 0 0 2.83.12l.66-.56a2 2 0 0 1 2.17-.22l.76.42a2 2 0 0 1 1.06 1.9l-.08.86a2 2 0 0 0 2 2.18h.44a2 2 0 0 0 2-2.18l-.08-.86a2 2 0 0 1 1.06-1.9l.76-.42a2 2 0 0 1 2.17.22l.66.56a2 2 0 0 0 2.83-.12l.31-.31a2 2 0 0 0 .12-2.83l-.56-.66a2 2 0 0 1-.22-2.17l.42-.76a2 2 0 0 1 1.9-1.06l.86.08a2 2 0 0 0 2.18-2v-.44a2 2 0 0 0-2.18-2l-.86.08a2 2 0 0 1-1.9-1.06l-.42-.76a2 2 0 0 1 .22-2.17l.56-.66a2 2 0 0 0-.12-2.83l-.31-.31a2 2 0 0 0-2.83-.12l-.66.56a2 2 0 0 1-2.17.22l-.76-.42a2 2 0 0 1-1.06-1.9l.08-.86a2 2 0 0 0-2-2.18z"/><circle cx="12" cy="12" r="3"/></svg>
+      Einstellungen
+    </button>
+    {% endif %}
+    <a class="sidebar-menu-item danger" href="/logout">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+      Abmelden
+    </a>
+  </div>
+
+  <button type="button" class="sidebar-account-button" onclick="kwToggleAccountMenu()" aria-expanded="false" aria-controls="sidebar-account-menu">
+    <div class="user-avatar sidebar-account-avatar">{{ user.username[0].upper() }}</div>
+    <div class="sidebar-account-meta">
+      <span class="sidebar-account-name">{{ user.username }}</span>
+      <span class="sidebar-account-role">{{ user.role }}</span>
+    </div>
+    <svg class="sidebar-account-chevron" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+  </button>
+</div>
+{% endif %}

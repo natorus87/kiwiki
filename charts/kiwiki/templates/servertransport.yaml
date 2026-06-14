@@ -1,0 +1,21 @@
+{{- if .Values.traefikRoute.v2.enabled }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: ServersTransport
+metadata:
+  name: {{ include "kiwiki.fullname" . }}-sse-v2
+  labels:
+    {{- include "kiwiki.labels" . | nindent 4 }}
+spec: {}
+{{- end }}
+{{- if .Values.traefikRoute.v3.enabled }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: {{ include "kiwiki.fullname" . }}-sse-v3
+  labels:
+    {{- include "kiwiki.labels" . | nindent 4 }}
+spec:
+  responseHeaderTimeout: {{ .Values.traefikRoute.sse.responseHeaderTimeout | quote }}
+{{- end }}

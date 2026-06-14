@@ -1,0 +1,58 @@
+{{- if or .Values.traefikRoute.v2.enabled .Values.traefikRoute.v3.enabled }}
+{{- if .Values.traefikRoute.v2.enabled }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "kiwiki.fullname" . }}-cors-v2
+  labels:
+    {{- include "kiwiki.labels" . | nindent 4 }}
+spec:
+  headers:
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - OPTIONS
+    accessControlAllowHeaders:
+      - Authorization
+      - Content-Type
+      - Cache-Control
+    accessControlAllowOriginList:
+      {{- range .Values.traefikRoute.cors.allowOrigins }}
+      - {{ . | quote }}
+      {{- end }}
+    accessControlMaxAge: 86400
+    addVaryHeader: true
+    customResponseHeaders:
+      X-Accel-Buffering: "no"
+      Cache-Control: "no-cache"
+{{- end }}
+{{- if .Values.traefikRoute.v3.enabled }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "kiwiki.fullname" . }}-cors-v3
+  labels:
+    {{- include "kiwiki.labels" . | nindent 4 }}
+spec:
+  headers:
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - OPTIONS
+    accessControlAllowHeaders:
+      - Authorization
+      - Content-Type
+      - Cache-Control
+    accessControlAllowOriginList:
+      {{- range .Values.traefikRoute.cors.allowOrigins }}
+      - {{ . | quote }}
+      {{- end }}
+    accessControlMaxAge: 86400
+    addVaryHeader: true
+    customResponseHeaders:
+      X-Accel-Buffering: "no"
+      Cache-Control: "no-cache"
+{{- end }}
+{{- end }}

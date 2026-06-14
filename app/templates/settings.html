@@ -1,0 +1,400 @@
+{% extends "layout.html" %}
+
+{% block title %}Einstellungen - kiwiki{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .settings-wrap {
+    padding: 1.6rem 2rem 2.5rem;
+    max-width: 980px;
+    width: 100%;
+  }
+  .settings-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-end;
+    border-bottom: 1px solid var(--md-outline-v);
+    padding-bottom: 1rem;
+    margin-bottom: 1.25rem;
+  }
+  .settings-title {
+    font-family: var(--font-display);
+    font-size: 1.9rem;
+    line-height: 1.1;
+    letter-spacing: 0;
+    margin: 0 0 0.35rem;
+  }
+  .settings-sub {
+    color: var(--md-on-surface-v);
+    font-size: 0.92rem;
+    max-width: 62ch;
+  }
+  .settings-section {
+    margin-top: 1.35rem;
+  }
+  .settings-section h2 {
+    font-size: 0.92rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--md-outline);
+    margin-bottom: 0.7rem;
+  }
+  .user-table-wrap {
+    border: 1px solid var(--md-outline-v);
+    border-radius: var(--radius-md);
+    overflow: auto;
+    background: var(--md-surface);
+  }
+  .user-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 620px;
+  }
+  .user-table th,
+  .user-table td {
+    text-align: left;
+    padding: 0.72rem 0.85rem;
+    border-bottom: 1px solid var(--md-outline-v);
+    vertical-align: middle;
+  }
+  .user-table th {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--md-outline);
+    background: var(--md-surface-c);
+    font-weight: 700;
+  }
+  .user-table tr:last-child td { border-bottom: 0; }
+  .user-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 600;
+  }
+  .source-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: var(--radius-xl);
+    padding: 0.14rem 0.5rem;
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border: 1px solid var(--md-outline-v);
+    color: var(--md-on-surface-v);
+    background: var(--md-surface-c);
+  }
+  .source-builtin {
+    color: var(--md-primary);
+    border-color: rgba(163, 217, 107, 0.28);
+    background: var(--md-primary-dim);
+  }
+  .settings-form {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) minmax(240px, 1.6fr) minmax(110px, 0.75fr) auto;
+    gap: 0.65rem;
+    align-items: end;
+    border: 1px solid var(--md-outline-v);
+    border-radius: var(--radius-md);
+    padding: 0.9rem;
+    background: var(--md-surface);
+  }
+  .settings-field label {
+    display: block;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--md-outline);
+    margin: 0 0 0.35rem;
+    font-weight: 700;
+  }
+  .settings-input,
+  .settings-select {
+    width: 100%;
+    padding: 0.55rem 0.7rem;
+    min-height: 38px;
+    border: 1px solid var(--md-outline-v);
+    border-radius: var(--radius-sm);
+    background: var(--md-surface-c);
+    color: var(--md-on-surface);
+    font-family: var(--font-body);
+    font-size: 0.86rem;
+  }
+  .settings-input:focus,
+  .settings-select:focus {
+    outline: none;
+    border-color: var(--md-primary);
+    box-shadow: 0 0 0 3px rgba(163, 217, 107, 0.16);
+  }
+  .key-field-row {
+    display: flex;
+    gap: 0.45rem;
+  }
+  .key-field-row .settings-input {
+    min-width: 0;
+    flex: 1;
+  }
+  .key-field-row .btn {
+    flex-shrink: 0;
+    min-height: 38px;
+    padding-left: 0.7rem;
+    padding-right: 0.8rem;
+  }
+  .settings-note {
+    margin-top: 0.65rem;
+    color: var(--md-outline);
+    font-size: 0.82rem;
+  }
+  .settings-actions {
+    display: flex;
+    gap: 0.4rem;
+    justify-content: flex-end;
+  }
+  @media (max-width: 760px) {
+    .settings-wrap { padding: 1rem; }
+    .settings-head { align-items: flex-start; flex-direction: column; }
+    .settings-head .btn { width: 100%; justify-content: center; }
+    .settings-form { grid-template-columns: 1fr; }
+    .key-field-row { flex-direction: column; }
+    .settings-form .btn { justify-content: center; }
+    .user-table {
+      min-width: 0;
+    }
+    .user-table thead {
+      display: none;
+    }
+    .user-table,
+    .user-table tbody,
+    .user-table tr,
+    .user-table td {
+      display: block;
+      width: 100%;
+    }
+    .user-table tr {
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--md-outline-v);
+    }
+    .user-table tr:last-child {
+      border-bottom: 0;
+    }
+    .user-table td {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.45rem 0;
+      border-bottom: 0;
+    }
+    .user-table td::before {
+      content: attr(data-label);
+      color: var(--md-outline);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .settings-actions {
+      justify-content: flex-start;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block sidebar %}
+<aside class="sidebar" aria-label="Navigation">
+  <div class="mobile-sidebar-header">
+    <span class="mobile-sidebar-logo">ki<em>wiki</em></span>
+    <button type="button" class="mobile-close-btn" onclick="closeSidebar()" aria-label="Sidebar schließen">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="sidebar-toolbar">
+    <button type="button" class="sidebar-btn" onclick="window.location.href='/'">
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      Zurück
+    </button>
+  </div>
+  <div class="file-tree" aria-hidden="true"></div>
+  {% include "partials/sidebar_account.html" %}
+</aside>
+{% endblock %}
+
+{% block content %}
+<div class="settings-wrap">
+  <div class="settings-head">
+    <div>
+      <h1 class="settings-title">Einstellungen</h1>
+      <p class="settings-sub">Builtin-Benutzer kommen aus der Helm-ConfigMap über <code>KIWIKI_USERS</code>. Lokale Benutzer werden im Datenvolume gespeichert und können hier verwaltet werden.</p>
+    </div>
+    <a href="/" class="btn btn-ghost">
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      Zurück
+    </a>
+  </div>
+
+  <section class="settings-section" aria-labelledby="users-heading">
+    <h2 id="users-heading">Benutzer</h2>
+    <div class="user-table-wrap">
+      <table class="user-table">
+        <thead>
+          <tr>
+            <th>Benutzer</th>
+            <th>Rolle</th>
+            <th>Quelle</th>
+            <th>Aktion</th>
+          </tr>
+        </thead>
+        <tbody id="settings-users">
+          {% for account in users %}
+          <tr data-user-row="{{ account.username }}">
+            <td data-label="Benutzer">
+              <div class="user-name-cell">
+                <div class="user-avatar">{{ account.username[0].upper() }}</div>
+                {{ account.username }}
+              </div>
+            </td>
+            <td data-label="Rolle"><span class="role-pill role-{{ account.role }}">{{ account.role }}</span></td>
+            <td data-label="Quelle">
+              <span class="source-pill source-{{ account.source }}">{{ account.source }}</span>
+            </td>
+            <td data-label="Aktion">
+              <div class="settings-actions">
+                {% if account.source == 'local' and account.username != user.username %}
+                <button type="button" class="btn btn-danger" data-delete-user="{{ account.username }}">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  Löschen
+                </button>
+                {% else %}
+                <span class="settings-note">geschützt</span>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="settings-section" aria-labelledby="add-user-heading">
+    <h2 id="add-user-heading">Lokalen Benutzer hinzufügen</h2>
+    <form class="settings-form" id="add-user-form">
+      <div class="settings-field">
+        <label for="new-username">Benutzername</label>
+        <input class="settings-input" id="new-username" name="username" autocomplete="off" required pattern="[A-Za-z0-9_-]{1,64}">
+      </div>
+      <div class="settings-field">
+        <label for="new-key">API-Key</label>
+        <div class="key-field-row">
+          <input class="settings-input" id="new-key" name="key" autocomplete="new-password" required>
+          <button type="button" class="btn btn-ghost" onclick="generateSettingsKey()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7h.01"/><path d="M10 14l6-6"/><circle cx="12" cy="12" r="10"/></svg>
+            Generieren
+          </button>
+        </div>
+      </div>
+      <div class="settings-field">
+        <label for="new-role">Rolle</label>
+        <select class="settings-select" id="new-role" name="role">
+          <option value="read">read</option>
+          <option value="write">write</option>
+          <option value="admin">admin</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Hinzufügen
+      </button>
+    </form>
+    <p class="settings-note">API-Keys funktionieren für Login, REST und MCP Bearer Tokens. Builtin-Accounts änderst du weiterhin über Helm.</p>
+  </section>
+</div>
+
+<script>
+  var CURRENT_SETTINGS_USER = {{ user.username|tojson }};
+
+  function renderUserRow(account) {
+    var safeName = escapeHtml(account.username);
+    var action = account.source === 'local' && account.username !== CURRENT_SETTINGS_USER
+      ? '<button type="button" class="btn btn-danger" data-delete-user="' + safeName + '">'
+        + '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
+        + 'Löschen</button>'
+      : '<span class="settings-note">geschützt</span>';
+    return '<tr data-user-row="' + safeName + '">'
+      + '<td data-label="Benutzer"><div class="user-name-cell"><div class="user-avatar">' + safeName.charAt(0).toUpperCase() + '</div>' + safeName + '</div></td>'
+      + '<td data-label="Rolle"><span class="role-pill role-' + escapeHtml(account.role) + '">' + escapeHtml(account.role) + '</span></td>'
+      + '<td data-label="Quelle"><span class="source-pill source-' + escapeHtml(account.source) + '">' + escapeHtml(account.source) + '</span></td>'
+      + '<td data-label="Aktion"><div class="settings-actions">' + action + '</div></td>'
+      + '</tr>';
+  }
+
+  function reloadSettingsUsers() {
+    fetch('/api/users', { headers: apiHeaders() })
+      .then(function(r) { return r.ok ? r.json() : r.json().then(function(d) { throw new Error(d.detail || r.status); }); })
+      .then(function(accounts) {
+        document.getElementById('settings-users').innerHTML = accounts.map(renderUserRow).join('');
+      })
+      .catch(function(err) { kwToast('Benutzerliste konnte nicht geladen werden: ' + err.message, { type: 'error' }); });
+  }
+
+  function generateSettingsKey() {
+    var keyInput = document.getElementById('new-key');
+    fetch('/api/users/generate-key', { method: 'POST', headers: apiHeaders() })
+      .then(function(r) { return r.ok ? r.json() : r.json().then(function(d) { throw new Error(d.detail || r.status); }); })
+      .then(function(data) {
+        keyInput.value = data.key || '';
+        keyInput.focus();
+        keyInput.select();
+        kwToast('API-Key generiert');
+      })
+      .catch(function(err) { kwToast('Key konnte nicht generiert werden: ' + err.message, { type: 'error' }); });
+  }
+
+  document.getElementById('add-user-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var form = e.currentTarget;
+    var payload = {
+      username: form.username.value.trim(),
+      key: form.key.value.trim(),
+      role: form.role.value,
+    };
+    fetch('/api/users', {
+      method: 'POST',
+      headers: apiHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    })
+      .then(function(r) { return r.ok ? r.json() : r.json().then(function(d) { throw new Error(d.detail || r.status); }); })
+      .then(function() {
+        form.reset();
+        kwToast('Benutzer angelegt: ' + payload.username);
+        reloadSettingsUsers();
+      })
+      .catch(function(err) { kwToast('Fehler: ' + err.message, { type: 'error' }); });
+  });
+
+  document.getElementById('settings-users').addEventListener('click', function(e) {
+    var button = e.target.closest && e.target.closest('[data-delete-user]');
+    if (!button) return;
+    deleteSettingsUser(button.getAttribute('data-delete-user'));
+  });
+
+  async function deleteSettingsUser(username) {
+    var ok = await kwConfirm({
+      title: 'Benutzer löschen?',
+      message: 'Der lokale Benutzer <code>' + escapeHtml(username) + '</code> verliert den Zugriff. Sein Wiki-Verzeichnis bleibt erhalten.',
+      confirmLabel: 'Löschen',
+      danger: true,
+    });
+    if (!ok) return;
+    fetch('/api/users/' + encodeURIComponent(username), { method: 'DELETE', headers: apiHeaders() })
+      .then(function(r) { return r.ok ? r.json() : r.json().then(function(d) { throw new Error(d.detail || r.status); }); })
+      .then(function() {
+        kwToast('Benutzer gelöscht: ' + username);
+        reloadSettingsUsers();
+      })
+      .catch(function(err) { kwToast('Fehler: ' + err.message, { type: 'error' }); });
+  }
+</script>
+{% endblock %}
