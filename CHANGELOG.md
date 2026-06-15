@@ -7,6 +7,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-06-14
+
+### Added
+- README: "Usage as AI Memory" section with ChatGPT/Claude personalization setup instructions
+- README: "Agent Harness Setup" subsection with MCP connection commands for Claude Code, Codex, OpenCode, Cursor
+- Helm chart: secret template for OAuth token secret
+- Dockerfile: non-root user, healthcheck
+
+### Changed
+- Dockerfile: optimized layer caching, switched to non-root user
+- docker-compose.yml: environment alignment, secret support
+- app/mcp_server.py: OAuth redirect_uri validation improvements
+- app/storage.py: improved error handling
+- UI (CSS, settings): polish and responsive fixes
+- Charts: deployment and values alignment
+
 ## [2.0.1] - 2026-06-14
 
 ### Removed
@@ -92,7 +108,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **Container:** Docker + docker-compose
 - **Orchestration:** Helm charts for Kubernetes
 
-[Unreleased]: https://github.com/natorus87/kiwiki/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/natorus87/kiwiki/compare/v2.0.2...HEAD
+[2.0.2]: https://github.com/natorus87/kiwiki/releases/tag/v2.0.2
 [2.0.1]: https://github.com/natorus87/kiwiki/releases/tag/v2.0.1
 [2.0.0]: https://github.com/natorus87/kiwiki/releases/tag/v2.0.0
 [0.1.0]: https://github.com/natorus87/kiwiki/releases/tag/v0.1.0
