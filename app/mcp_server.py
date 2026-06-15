@@ -72,11 +72,28 @@ _OAUTH_CODE_TTL_SECONDS = 300
 _oauth_tokens: dict[str, dict] = {}
 _OAUTH_TOKEN_TTL_SECONDS = int(os.getenv("KIWIKI_OAUTH_TOKEN_TTL_SECONDS", "86400"))
 _OAUTH_REFRESH_TOKEN_TTL_SECONDS = int(os.getenv("KIWIKI_OAUTH_REFRESH_TOKEN_TTL_SECONDS", "2592000"))
-_OAUTH_TOKEN_PREFIX = "kiwiki1"
+_OAUTH_FORMAT_PREFIX = "kiwiki1"
+_OAUTH_BEARER_VALUE = "bearer"
+_OAUTH_NO_CLIENT_AUTH_VALUE = "none"
+_OAUTH_WEAK_SECRETS = {"change-me-to-a-random-secret", "changeme", "change-me", "secret", "password"}
+_OAUTH_MAX_CLIENTS = int(os.getenv("KIWIKI_OAUTH_MAX_CLIENTS", "128"))
+_OAUTH_CLIENT_TTL_SECONDS = int(os.getenv("KIWIKI_OAUTH_CLIENT_TTL_SECONDS", "86400"))
+_OAUTH_MAX_REDIRECT_URIS = int(os.getenv("KIWIKI_OAUTH_MAX_REDIRECT_URIS", "10"))
+_OAUTH_MAX_REDIRECT_URI_LENGTH = 2048
+_DEFAULT_ALLOWED_REDIRECT_HOSTS = "chatgpt.com,chat.openai.com"
 
 
 def _base_url(request: Request) -> str:
     return _BASE_URL or str(request.base_url).rstrip("/")
+
+
+def validate_oauth_config() -> None:
+    configured = os.getenv("KIWIKI_OAUTH_TOKEN_SECRET", "")
+    if configured and configured.strip().lower() in _OAUTH_WEAK_SECRETS:
+        raise RuntimeError(
+            "KIWIKI_OAUTH_TOKEN_SECRET uses a known placeholder value. "
+            "Set a strong random secret or omit it to derive tokens from each API key."
+        )
 
 
 def _b64url_encode(raw: bytes) -> str:
@@ -94,6 +111,7 @@ def _api_key_hash(api_key: str) -> str:
 def _token_secret(api_key: str) -> bytes:
     configured = os.getenv("KIWIKI_OAUTH_TOKEN_SECRET", "")
     if configured:
+        validate_oauth_config()
         return configured.encode("utf-8")
     return hashlib.sha256(f"kiwiki-oauth-token:{api_key}".encode("utf-8")).digest()
 
@@ -113,13 +131,13 @@ def _make_oauth_token(api_key: str, token_type: str, ttl_seconds: int, client_id
         "jti": secrets.token_urlsafe(16),
     }
     payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
-    return f"{_OAUTH_TOKEN_PREFIX}.{payload_b64}.{_sign_token(payload_b64, api_key)}"
+    return f"{_OAUTH_FORMAT_PREFIX}.{payload_b64}.{_sign_token(payload_b64, api_key)}"
 
 
 def _api_key_from_signed_token(token: str, expected_type: str = "access") -> str | None:
     try:
         prefix, payload_b64, signature = token.split(".", 2)
-        if prefix != _OAUTH_TOKEN_PREFIX:
+        if prefix != _OAUTH_FORMAT_PREFIX:
             return None
         payload = json.loads(_b64url_decode(payload_b64))
     except Exception:
@@ -189,23 +207,50 @@ def _is_valid_redirect_uri(redirect_uri: str) -> bool:
     return False
 
 
+def _allowed_redirect_hosts() -> set[str]:
+    raw = os.getenv("KIWIKI_OAUTH_ALLOWED_REDIRECT_HOSTS", _DEFAULT_ALLOWED_REDIRECT_HOSTS)
+    return {host.strip().lower() for host in raw.split(",") if host.strip()}
+
+
+def _redirect_host_is_allowed(redirect_uri: str) -> bool:
+    try:
+        parsed = urlparse(redirect_uri)
+    except Exception:
+        return False
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme == "http" and hostname in {"localhost", "127.0.0.1"} and parsed.port:
+        return True
+    for allowed in _allowed_redirect_hosts():
+        if hostname == allowed or hostname.endswith("." + allowed):
+            return True
+    return False
+
+
 def _is_registered_redirect(client_id: str, redirect_uri: str) -> bool:
     if not _is_valid_redirect_uri(redirect_uri):
         return False
     if not client_id:
         # Keep static/no-DCR clients usable, but only for loopback URLs.
-        return redirect_uri.startswith(("http://localhost:", "http://127.0.0.1:", "https://localhost:"))
+        return _redirect_host_is_allowed(redirect_uri)
     parsed_client = urlparse(client_id)
     if parsed_client.scheme == "https" and parsed_client.netloc:
         # ChatGPT can use Client ID Metadata Documents where client_id itself is
         # an HTTPS metadata URL instead of a DCR-generated local identifier.
-        return True
+        return _redirect_host_is_allowed(redirect_uri)
     client = _oauth_clients.get(client_id)
     if not client:
-        # ChatGPT generates a UUID client_id with a dynamic redirect_uri
-        # pointing back to chatgpt.com. Accept any valid HTTPS redirect.
-        return redirect_uri.startswith("https://")
+        return False
+    if client.get("expires_at", 0) < time.time():
+        _oauth_clients.pop(client_id, None)
+        return False
     return redirect_uri in client.get("redirect_uris", [])
+
+
+def _prune_oauth_clients() -> None:
+    now = time.time()
+    expired = [client_id for client_id, client in _oauth_clients.items() if client.get("expires_at", 0) < now]
+    for client_id in expired:
+        _oauth_clients.pop(client_id, None)
 
 
 def _pkce_s256(verifier: str) -> str:
@@ -376,7 +421,7 @@ async def oauth_token(request: Request):
         access_token = _make_oauth_token(api_key, "access", _OAUTH_TOKEN_TTL_SECONDS, client_id=client_id, resource=resource)
         return JSONResponse({
             "access_token": access_token,
-            "token_type": "bearer",
+            "token_type": _OAUTH_BEARER_VALUE,
             "expires_in": _OAUTH_TOKEN_TTL_SECONDS,
             "scope": "mcp",
         })
@@ -411,7 +456,7 @@ async def oauth_token(request: Request):
     return JSONResponse({
         "access_token": access_token,
         "refresh_token": refresh_token,
-        "token_type": "bearer",
+        "token_type": _OAUTH_BEARER_VALUE,
         "expires_in": _OAUTH_TOKEN_TTL_SECONDS,
         "scope": "mcp",
     })
@@ -420,6 +465,9 @@ async def oauth_token(request: Request):
 @router.post("/oauth/register")
 async def oauth_register(request: Request):
     """Dynamic Client Registration (RFC 7591) — ChatGPT registers itself before OAuth flow."""
+    _prune_oauth_clients()
+    if len(_oauth_clients) >= _OAUTH_MAX_CLIENTS:
+        return JSONResponse({"error": "server_error", "error_description": "Too many registered OAuth clients"}, status_code=503)
     try:
         body = await request.json()
     except Exception:
@@ -428,11 +476,16 @@ async def oauth_register(request: Request):
     redirect_uris = body.get("redirect_uris", [])
     if not isinstance(redirect_uris, list) or not redirect_uris:
         return JSONResponse({"error": "invalid_redirect_uris"}, status_code=400)
+    if len(redirect_uris) > _OAUTH_MAX_REDIRECT_URIS:
+        return JSONResponse({"error": "invalid_redirect_uris"}, status_code=400)
+    if not all(isinstance(uri, str) and len(uri) <= _OAUTH_MAX_REDIRECT_URI_LENGTH for uri in redirect_uris):
+        return JSONResponse({"error": "invalid_redirect_uris"}, status_code=400)
     if not all(isinstance(uri, str) and _is_valid_redirect_uri(uri) for uri in redirect_uris):
         return JSONResponse({"error": "invalid_redirect_uris"}, status_code=400)
     _oauth_clients[client_id] = {
-        "client_name": body.get("client_name", "mcp-client"),
+        "client_name": str(body.get("client_name", "mcp-client"))[:128],
         "redirect_uris": redirect_uris,
+        "expires_at": time.time() + _OAUTH_CLIENT_TTL_SECONDS,
     }
     return JSONResponse({
         "client_id": client_id,
@@ -440,7 +493,7 @@ async def oauth_register(request: Request):
         "redirect_uris": redirect_uris,
         "grant_types": ["authorization_code"],
         "response_types": ["code"],
-        "token_endpoint_auth_method": "none",
+        "token_endpoint_auth_method": _OAUTH_NO_CLIENT_AUTH_VALUE,
     }, status_code=201)
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1393,7 +1446,7 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
                 "3. Place notes in topic subfolders: notes/python/, notes/ml/, projects/kiwiki/ etc.\n"
                 "4. Create a subfolder once 3+ files share a topic.\n"
                 "5. Prefer edit/append_file over write_file for existing files.\n"
-                "6. Update index.md (via edit or build_index) after creating new folders.\n"
+                "6. Refresh index.md (via edit or build_index) after creating new folders.\n"
                 "7. Always set complete frontmatter: title, type, created, updated, tags, owner."
             ) + schema_hint,
         })
@@ -2033,6 +2086,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             try:
                 text = filepath.read_text(encoding="utf-8")
             except Exception:
+                logger.debug("backlinks: cannot read %s", rel, exc_info=True)
                 continue
             title, _, _ = _frontmatter_title_and_tags(rel)
             lines = text.splitlines()

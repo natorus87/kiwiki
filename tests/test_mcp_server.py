@@ -14,6 +14,7 @@ from app.mcp_server import (
     _user_from_request,
     _api_key_from_signed_token,
     _make_oauth_token,
+    validate_oauth_config,
     _rpc_ok,
     _rpc_err,
     _is_notification,
@@ -105,6 +106,11 @@ class TestUserFromRequest:
         assert _api_key_from_signed_token(token, expected_type="access") is None
         assert _api_key_from_signed_token(token, expected_type="refresh") == "tok1"
 
+    def test_known_placeholder_oauth_secret_rejected(self, monkeypatch):
+        monkeypatch.setenv("KIWIKI_OAUTH_TOKEN_SECRET", "change-me-to-a-random-secret")
+        with pytest.raises(RuntimeError, match="placeholder"):
+            validate_oauth_config()
+
 
 class TestOAuthFlow:
     """OAuth compatibility for ChatGPT-style MCP connectors."""
@@ -168,6 +174,71 @@ class TestOAuthFlow:
         )
         assert refreshed.status_code == 200
         assert refreshed.json()["access_token"].startswith("kiwiki1.")
+
+    def test_authorize_rejects_unregistered_arbitrary_https_redirect(self, users_map):
+        users_map(("alice", "tok1", "admin"))
+        from app.main import app
+
+        verifier = "a" * 64
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+        client = TestClient(app)
+
+        authorize = client.post(
+            "/oauth/authorize",
+            data={
+                "apikey": "tok1",
+                "redirect_uri": "https://evil.example/callback",
+                "client_id": "not-registered",
+                "state": "state-1",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": "http://testserver/mcp",
+            },
+            follow_redirects=False,
+        )
+
+        assert authorize.status_code == 400
+        assert authorize.json()["error"] == "invalid_redirect_uri"
+
+    def test_registered_redirect_is_required_for_dcr_client(self, users_map):
+        users_map(("alice", "tok1", "admin"))
+        from app.main import app
+
+        verifier = "a" * 64
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+        client = TestClient(app)
+
+        registration = client.post("/oauth/register", json={"redirect_uris": ["https://client.example/callback"]})
+        assert registration.status_code == 201
+        client_id = registration.json()["client_id"]
+
+        rejected = client.post(
+            "/oauth/authorize",
+            data={
+                "apikey": "tok1",
+                "redirect_uri": "https://other.example/callback",
+                "client_id": client_id,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": "http://testserver/mcp",
+            },
+            follow_redirects=False,
+        )
+        assert rejected.status_code == 400
+
+        accepted = client.post(
+            "/oauth/authorize",
+            data={
+                "apikey": "tok1",
+                "redirect_uri": "https://client.example/callback",
+                "client_id": client_id,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": "http://testserver/mcp",
+            },
+            follow_redirects=False,
+        )
+        assert accepted.status_code == 302
 
 
 class TestToolDefinitions:

@@ -21,6 +21,8 @@ spec:
         {{- include "kiwiki.selectorLabels" . | nindent 8 }}
     spec:
       restartPolicy: {{ .Values.restartPolicy }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -37,9 +39,13 @@ spec:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           envFrom:
             - configMapRef:
                 name: {{ include "kiwiki.fullname" . }}-config
+            - secretRef:
+                name: {{ include "kiwiki.fullname" . }}-secret
           ports:
             - name: http
               containerPort: {{ .Values.service.targetPort }}

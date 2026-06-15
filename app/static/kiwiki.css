@@ -1218,8 +1218,8 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
 .kw-modal {
   background: var(--md-surface);
   border: 1px solid var(--md-outline-v);
-  border-radius: var(--radius-xl);
-  width: 100%; max-width: 440px;
+  border-radius: var(--radius-lg);
+  width: min(100%, 440px);
   padding: 1.75rem 1.75rem 1.4rem;
   box-shadow:
     0 0 0 1px rgba(184, 223, 120, 0.04),
@@ -1284,11 +1284,11 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
 }
 
 .kw-modal-actions {
-  display: flex; gap: 0.55rem; justify-content: flex-end;
+  display: flex; gap: 0.55rem; justify-content: flex-end; flex-wrap: wrap;
 }
 .kw-btn {
   padding: 0.55rem 1.1rem;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   border: 1px solid transparent;
   font-family: var(--font-body);
   font-size: 0.88rem; font-weight: 600;
@@ -1353,6 +1353,20 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
 @media (max-width: 540px) {
   .kw-toast-stack { left: 1rem; right: 1rem; bottom: 1rem; }
   .kw-toast { min-width: 0; max-width: 100%; }
+  .kw-modal-backdrop {
+    padding: 0.75rem;
+  }
+  .kw-modal {
+    max-width: none;
+    padding: 1.25rem 1.15rem 1.1rem;
+  }
+  .kw-modal-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .kw-btn {
+    width: 100%;
+  }
 }
 
 /* ── Professional UI refresh ───────────────────────────────────────── */

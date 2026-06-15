@@ -11,7 +11,7 @@ services:
       KIWIKI_TRUST_PROXY: "false"  # auf "true" setzen hinter Reverse-Proxy/TLS-Terminierung
       KIWIKI_CORS_ORIGINS: ""      # leer oder Komma-getrennte Origins; "*" mit WARNS-LOG (Default)
       KIWIKI_RATE_LIMIT_ENABLED: "true"  # Rate Limiting aktivieren (empfohlen)
-      KIWIKI_OAUTH_TOKEN_SECRET: "change-me-to-a-random-secret"
+      KIWIKI_OAUTH_TOKEN_SECRET: ""
     volumes:
       - ./data:/data
     restart: unless-stopped

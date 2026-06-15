@@ -71,6 +71,19 @@ resources:
     cpu: 100m
     memory: 128Mi
 
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
 # Persistenter Speicher für Wiki-Daten
 persistence:
   enabled: true
@@ -82,15 +95,17 @@ persistence:
 # Umgebungsvariablen
 env:
   KIWIKI_DATA_DIR: "/data"
-  # Builtin-Benutzer aus der ConfigMap. Diese Accounts werden in der Web-UI
-  # angezeigt, gelten als geschützt und können nur durch Helm geändert werden.
-  # Weitere lokale Benutzer können Admins im Einstellungsmenü hinzufügen.
-  KIWIKI_USERS: "admin:<deinen-api-key>:admin"  # Pflicht: mit starkem Key setzen
   KIWIKI_BASE_URL: "https://kiwiki.example.com"  # Pflicht: auf öffentliche URL setzen
   KIWIKI_TRUST_PROXY: "true"  # auf "false" fuer lokale Entwicklung ohne Proxy
   KIWIKI_CORS_ORIGINS: "https://kiwiki.example.com"  # "" = Default Warnung; "*", explizite Origins empfohlen
   KIWIKI_RATE_LIMIT_ENABLED: "true"  # Rate Limiting aktivieren (empfohlen)
-  KIWIKI_OAUTH_TOKEN_SECRET: "change-me-to-a-random-secret"
+
+secretEnv:
+  # Builtin-Benutzer. Diese Accounts werden in der Web-UI angezeigt, gelten als
+  # geschützt und können nur durch Helm geändert werden.
+  KIWIKI_USERS: "admin:<deinen-api-key>:admin"  # Pflicht: mit starkem Key setzen
+  # In Produktion durch einen starken Zufallswert ersetzen.
+  KIWIKI_OAUTH_TOKEN_SECRET: ""
 
 # Health Checks
 livenessProbe:

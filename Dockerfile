@@ -13,15 +13,23 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+RUN groupadd --system --gid 1000 kiwiki \
+    && useradd --system --uid 1000 --gid kiwiki --home-dir /app --shell /usr/sbin/nologin kiwiki \
+    && mkdir -p /data \
+    && chown -R kiwiki:kiwiki /app /data
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
 COPY --from=frontend-build /build/app/static/kiwiki-motion.bundle.js ./app/static/kiwiki-motion.bundle.js
+RUN chown -R kiwiki:kiwiki /app
 
 ENV KIWIKI_DATA_DIR=/data
 ENV KIWIKI_BASE_URL="http://localhost:8080"
 
 EXPOSE 8080
+
+USER kiwiki
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

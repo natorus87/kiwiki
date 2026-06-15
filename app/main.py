@@ -39,6 +39,8 @@ from .storage import (
     move_file,
     move_folder,
     read_file,
+    validate_content_folder_path,
+    validate_markdown_content_path,
     write_file,
 )
 from .tenancy import (
@@ -218,6 +220,9 @@ def _session_user(request: Request) -> User | None:
 
 @app.on_event("startup")
 async def startup() -> None:
+    from .mcp_server import validate_oauth_config
+
+    validate_oauth_config()
     users_map = parse_users()  # Validierungs-Log gleich beim Boot ausgeben
     migrate_legacy_data_dir()
     # Für jeden konfigurierten User: Workspace anlegen, DB initialisieren, Reindex
@@ -536,6 +541,7 @@ async def api_read_file(path: str, user: User = Depends(get_current_user)):
 @app.put("/api/file")
 async def api_write_file(req: WriteFileRequest, user: User = Depends(require_role("write"))):
     try:
+        validate_markdown_content_path(req.path)
         result = write_file(req.path, req.content)
         index_file(req.path)
         return result
@@ -546,6 +552,7 @@ async def api_write_file(req: WriteFileRequest, user: User = Depends(require_rol
 @app.post("/api/file/append")
 async def api_append_file(req: AppendFileRequest, user: User = Depends(require_role("write"))):
     try:
+        validate_markdown_content_path(req.path)
         result = append_file(req.path, req.content)
         index_file(req.path)
         return result
@@ -558,6 +565,7 @@ async def api_append_file(req: AppendFileRequest, user: User = Depends(require_r
 @app.post("/api/folder")
 async def api_create_folder(req: CreateFolderRequest, user: User = Depends(require_role("write"))):
     try:
+        validate_content_folder_path(req.path)
         create_folder(req.path)
         return {"path": req.path, "status": "created"}
     except Exception as exc:
@@ -568,6 +576,8 @@ async def api_create_folder(req: CreateFolderRequest, user: User = Depends(requi
 async def api_move(req: MoveRequest, user: User = Depends(require_role("write"))):
     try:
         from .storage import safe_path
+        validate_content_folder_path(req.src)
+        validate_content_folder_path(req.dst)
         src_path = safe_path(req.src)
         if src_path.is_dir():
             old_paths = [
@@ -679,7 +689,7 @@ async def api_create_user(req: CreateUserRequest, user: User = Depends(require_r
             try:
                 user_store.remove_workspace_for_user(username)
             except Exception:
-                pass
+                logging.exception("Failed to remove workspace after initialization failure for user %r", username)
             raise HTTPException(status_code=400, detail=f"Workspace-Init fehlgeschlagen: {exc}")
         finally:
             if prev_ns is not None:
@@ -693,7 +703,7 @@ async def api_create_user(req: CreateUserRequest, user: User = Depends(require_r
             try:
                 user_store.remove_workspace_for_user(username)
             except Exception:
-                pass
+                logging.exception("Failed to remove workspace after local user persistence failure for user %r", username)
             raise HTTPException(status_code=400, detail=str(exc))
 
         return {
@@ -709,7 +719,7 @@ async def api_create_user(req: CreateUserRequest, user: User = Depends(require_r
         try:
             user_store.remove_workspace_for_user(username)
         except Exception:
-            pass
+            logging.exception("Failed to remove workspace after unexpected user creation failure for user %r", username)
         raise HTTPException(status_code=400, detail=str(exc))
 
 
@@ -729,6 +739,7 @@ async def api_delete_user(username: str, user: User = Depends(require_role("admi
 @app.delete("/api/folder")
 async def api_delete_folder(path: str, user: User = Depends(require_role("admin"))):
     try:
+        validate_content_folder_path(path)
         delete_folder(path)
         return {"path": path, "status": "deleted"}
     except FileNotFoundError:
@@ -740,6 +751,7 @@ async def api_delete_folder(path: str, user: User = Depends(require_role("admin"
 @app.delete("/api/file")
 async def api_delete_file(path: str, user: User = Depends(require_role("admin"))):
     try:
+        validate_markdown_content_path(path)
         delete_file(path)
         deindex_file(path)
         return {"path": path, "status": "deleted"}

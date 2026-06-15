@@ -80,16 +80,38 @@ def test_admin_api_manages_local_users(monkeypatch):
         assert "bob-key" not in user_store.users_by_key()
 
 
+def test_rest_write_api_rejects_non_markdown_and_system_paths(monkeypatch):
+    monkeypatch.setenv("KIWIKI_USERS", "admin:admin-key:admin")
+    from app.main import app
+
+    with TestClient(app) as client:
+        _login_as_admin(client)
+
+        text_file = client.put(
+            "/api/file",
+            json={"path": "notes/readme.txt", "content": "plain text"},
+        )
+        assert text_file.status_code == 400
+        assert "Only .md files" in text_file.json()["detail"]
+
+        system_file = client.put(
+            "/api/file",
+            json={"path": ".kiwiki/users.md", "content": "system"},
+        )
+        assert system_file.status_code == 400
+        assert ".kiwiki" in system_file.json()["detail"]
+
+        system_folder = client.post("/api/folder", json={"path": ".kiwiki/tmp"})
+        assert system_folder.status_code == 400
+        assert ".kiwiki" in system_folder.json()["detail"]
+
+
 def _login_as_admin(client) -> None:
-    """Login als 'admin' und Cookie explizit registrieren, damit
-    Folge-Requests das Session-Token mitsenden."""
-    r = client.post("/login", data={"api_key": "admin-key"}, follow_redirects=False)
-    assert r.status_code == 303, f"Login failed: {r.text}"
-    token = client.cookies.get("kiwiki_session")
-    assert token is not None
-    # TestClient schickt client.cookies erst, nachdem das Cookie explizit
-    # gesetzt wurde. Ohne diesen Re-Set gehen Folge-Requests ohne Cookie raus.
-    client.cookies.set("kiwiki_session", token)
+    """Register an admin session without consuming the shared login rate limit."""
+    from app import session_store
+
+    record = session_store.create_session("admin", "admin", "admin-key")
+    client.cookies.set("kiwiki_session", record.token)
 
 
 def test_create_user_workspace_persisted_on_success(monkeypatch, tmp_path):

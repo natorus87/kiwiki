@@ -11,6 +11,29 @@ from .tenancy import BASE_DATA_DIR, user_root
 DATA_DIR = BASE_DATA_DIR
 
 
+def _path_parts(path: str) -> tuple[str, ...]:
+    return tuple(part for part in path.replace("\\", "/").strip("/").split("/") if part)
+
+
+def validate_markdown_content_path(path: str) -> None:
+    """Validate paths accepted from public write APIs."""
+    parts = _path_parts(path)
+    if not parts:
+        raise ValueError("Empty path")
+    if ".kiwiki" in parts:
+        raise ValueError("System paths under .kiwiki are not writable")
+    if not path.endswith(".md"):
+        raise ValueError("Only .md files may be written")
+
+
+def validate_content_folder_path(path: str) -> None:
+    parts = _path_parts(path)
+    if not parts:
+        raise ValueError("Empty path")
+    if ".kiwiki" in parts:
+        raise ValueError("System paths under .kiwiki are not writable")
+
+
 def safe_path(path: str) -> Path:
     """
     Validate and resolve path safely within the *current user's* data root.
