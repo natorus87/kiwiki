@@ -10,6 +10,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Changed
 - Security hardening: OAuth redirects now require registered or explicitly allowed hosts, weak OAuth token-secret placeholders are rejected, REST writes are limited to Markdown content paths, and Helm stores `KIWIKI_USERS` / `KIWIKI_OAUTH_TOKEN_SECRET` in a Kubernetes Secret.
 - Deployment hardening: the container now runs as UID/GID `1000` (`kiwiki`) with Helm pod/container security contexts. Existing PVCs or bind-mounted data directories created by earlier root-running containers may need a one-time `chown -R 1000:1000 /data` before startup so SQLite indexes remain writable.
+- Agent autonomy: MCP now exposes `write_many` for multi-file updates and `chunked_write` for large or unreliable writes, and the default agent instructions tell clients to proceed with ordinary create/update/append/index operations without asking for confirmation.
 
 ## [2.0.2] - 2026-06-14
 

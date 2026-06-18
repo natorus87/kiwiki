@@ -177,7 +177,9 @@ The MCP server exposes tools for common wiki workflows, grouped by required role
 
 ### Write (write role or admin)
 
-`write_file` · `edit` · `append_file` · `create_note` · `upsert_note` · `update_frontmatter` · `preview_edit` · `replace_many` · `build_index` · `reindex_all` · `tag_index` · `move_file`
+`write_file` · `write_many` · `chunked_write` · `edit` · `append_file` · `create_note` · `upsert_note` · `update_frontmatter` · `preview_edit` · `replace_many` · `build_index` · `reindex_all` · `tag_index` · `move_file`
+
+For autonomous agents, prefer `write_many` when updating several files and `chunked_write` when a large file or flaky client payload limit makes a single `write_file` / `append_file` call unreliable. Ordinary create, update, append, and index-refresh operations do not require confirmation; clients should ask before deleting files or running destructive reorganizations. `chunked_write` keeps temporary chunks in process memory for `KIWIKI_MCP_UPLOAD_TTL_SECONDS` (default `3600`) and limits staged uploads with `KIWIKI_MCP_MAX_UPLOAD_BYTES` (default `10485760`) and `KIWIKI_MCP_MAX_UPLOAD_CHUNKS` (default `1000`).
 
 ### Admin (admin role only)
 

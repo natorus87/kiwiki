@@ -45,6 +45,7 @@ from .storage import (
     read_file,
     safe_path,
     update_frontmatter,
+    validate_markdown_content_path,
     write_file,
 )
 from .tenancy import ensure_user_workspace, is_valid_username, set_user_ns, user_root
@@ -81,6 +82,11 @@ _OAUTH_CLIENT_TTL_SECONDS = int(os.getenv("KIWIKI_OAUTH_CLIENT_TTL_SECONDS", "86
 _OAUTH_MAX_REDIRECT_URIS = int(os.getenv("KIWIKI_OAUTH_MAX_REDIRECT_URIS", "10"))
 _OAUTH_MAX_REDIRECT_URI_LENGTH = 2048
 _DEFAULT_ALLOWED_REDIRECT_HOSTS = "chatgpt.com,chat.openai.com"
+
+_MCP_UPLOAD_TTL_SECONDS = int(os.getenv("KIWIKI_MCP_UPLOAD_TTL_SECONDS", "3600"))
+_MCP_MAX_UPLOAD_BYTES = int(os.getenv("KIWIKI_MCP_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+_MCP_MAX_UPLOAD_CHUNKS = int(os.getenv("KIWIKI_MCP_MAX_UPLOAD_CHUNKS", "1000"))
+_chunked_writes: dict[str, dict] = {}
 
 
 def _base_url(request: Request) -> str:
@@ -568,6 +574,55 @@ TOOLS = [
         },
     },
     {
+        "name": "write_many",
+        "description": (
+            "Writes or appends multiple markdown files in one call. "
+            "Use this for autonomous batch updates; each file returns its own status so one failure does not abort the whole batch."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "content": {"type": "string"},
+                            "mode": {"type": "string", "enum": ["replace", "append"], "description": "default: replace"},
+                            "create_if_missing": {"type": "boolean", "description": "For append mode, create the file if missing (default: true)."},
+                        },
+                        "required": ["path", "content"],
+                    },
+                }
+            },
+            "required": ["files"],
+        },
+    },
+    {
+        "name": "chunked_write",
+        "description": (
+            "Stages and finalizes a large markdown write over multiple calls. "
+            "Send chunks with the same upload_id, increasing chunk_index from 0, and set finalize=true on the last call. "
+            "Use this when write_file or append_file would exceed client payload limits."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "upload_id": {"type": "string", "description": "Stable id for this upload; defaults to path:mode."},
+                "chunk": {"type": "string", "description": "Next content chunk. May be empty on a finalize-only call."},
+                "chunk_index": {"type": "integer", "description": "Zero-based chunk index."},
+                "total_chunks": {"type": "integer", "description": "Expected number of chunks. Required for deterministic finalization."},
+                "mode": {"type": "string", "enum": ["replace", "append"], "description": "default: replace"},
+                "finalize": {"type": "boolean", "description": "When true, validates all chunks and writes/appends the assembled content."},
+                "expected_sha256": {"type": "string", "description": "Optional sha256 of assembled content for verification."},
+                "create_if_missing": {"type": "boolean", "description": "For append mode, create the file if missing (default: true)."},
+            },
+            "required": ["path", "chunk", "chunk_index"],
+        },
+    },
+    {
         "name": "search",
         "description": "Full-text search over all markdown files using SQLite FTS5.",
         "inputSchema": {
@@ -1005,6 +1060,49 @@ _STATUS_SCHEMA = {
     "additionalProperties": False,
 }
 
+_BATCH_WRITE_RESULT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string"},
+        "status": {"type": "string"},
+        "mode": {"type": "string"},
+        "bytes": {"type": "integer"},
+        "sha256": {"type": "string"},
+        "error": {"type": "string"},
+    },
+    "required": ["path", "status", "mode"],
+    "additionalProperties": False,
+}
+
+_BATCH_WRITE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "results": {"type": "array", "items": _BATCH_WRITE_RESULT_SCHEMA},
+        "written": {"type": "integer"},
+        "failed": {"type": "integer"},
+    },
+    "required": ["results", "written", "failed"],
+    "additionalProperties": False,
+}
+
+_CHUNKED_WRITE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string"},
+        "upload_id": {"type": "string"},
+        "status": {"type": "string"},
+        "mode": {"type": "string"},
+        "received_chunks": {"type": "integer"},
+        "total_chunks": {"type": ["integer", "null"]},
+        "received_bytes": {"type": "integer"},
+        "missing_chunks": {"type": "array", "items": {"type": "integer"}},
+        "bytes": {"type": "integer"},
+        "sha256": {"type": "string"},
+    },
+    "required": ["path", "upload_id", "status", "mode", "received_chunks", "received_bytes"],
+    "additionalProperties": False,
+}
+
 _SEARCH_RESULT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -1120,6 +1218,8 @@ _OUTPUT_SCHEMAS = {
     "fetch": _FILE_CONTENT_SCHEMA,
     "write_file": _STATUS_SCHEMA,
     "append_file": _STATUS_SCHEMA,
+    "write_many": _BATCH_WRITE_SCHEMA,
+    "chunked_write": _CHUNKED_WRITE_SCHEMA,
     "search": {"type": "array", "items": _SEARCH_RESULT_SCHEMA},
     "create_note": _STATUS_SCHEMA,
     "delete_file": _STATUS_SCHEMA,
@@ -1446,8 +1546,11 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
                 "3. Place notes in topic subfolders: notes/python/, notes/ml/, projects/kiwiki/ etc.\n"
                 "4. Create a subfolder once 3+ files share a topic.\n"
                 "5. Prefer edit/append_file over write_file for existing files.\n"
-                "6. Refresh index.md (via edit or build_index) after creating new folders.\n"
-                "7. Always set complete frontmatter: title, type, created, updated, tags, owner."
+                "6. Use write_many for multi-file updates and chunked_write for large files or unreliable clients.\n"
+                "7. Do not ask for confirmation for ordinary create, update, append, or index refresh operations.\n"
+                "8. Ask before deleting files or running destructive reorganizations.\n"
+                "9. Refresh index.md (via edit or build_index) after creating new folders.\n"
+                "10. Always set complete frontmatter: title, type, created, updated, tags, owner."
             ) + schema_hint,
         })
 
@@ -1710,6 +1813,171 @@ def _deindex_markdown(path: str) -> None:
     deindex_file(path)
 
 
+def _content_sha256(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _write_markdown_content(path: str, content: str, mode: str = "replace", create_if_missing: bool = True) -> dict:
+    mode = mode or "replace"
+    if mode not in {"replace", "append"}:
+        raise ValueError("mode must be 'replace' or 'append'")
+    validate_markdown_content_path(path)
+
+    if mode == "replace":
+        fc = write_file(path, content)
+        status = "written"
+    else:
+        filepath = safe_path(path)
+        if filepath.exists():
+            fc = append_file(path, content)
+            status = "appended"
+        elif create_if_missing:
+            fc = write_file(path, content)
+            status = "created"
+        else:
+            raise FileNotFoundError(f"File not found: {path!r}")
+    _index_markdown(path)
+    dumped = frontmatter_dump_payload(fc.content, fc.frontmatter)
+    return {
+        "path": fc.path,
+        "status": status,
+        "mode": mode,
+        "bytes": len(dumped.encode("utf-8")),
+        "sha256": _content_sha256(content),
+    }
+
+
+def frontmatter_dump_payload(content: str, metadata: dict) -> str:
+    import frontmatter
+
+    return frontmatter.dumps(frontmatter.Post(content, **metadata))
+
+
+def _chunk_key(user: User | None, upload_id: str) -> str:
+    username = user.username if user is not None else "anonymous"
+    return f"{username}:{upload_id}"
+
+
+def _prune_chunked_writes(now: float | None = None) -> None:
+    now = now if now is not None else time.time()
+    expired = [
+        key
+        for key, state in _chunked_writes.items()
+        if now - float(state.get("updated_at", 0)) > _MCP_UPLOAD_TTL_SECONDS
+    ]
+    for key in expired:
+        _chunked_writes.pop(key, None)
+
+
+def _stage_chunked_write(args: dict, user: User | None) -> dict:
+    path = args["path"]
+    validate_markdown_content_path(path)
+    mode = args.get("mode", "replace") or "replace"
+    if mode not in {"replace", "append"}:
+        raise ValueError("mode must be 'replace' or 'append'")
+
+    upload_id = args.get("upload_id") or f"{path}:{mode}"
+    chunk = args.get("chunk", "")
+    chunk_index = int(args["chunk_index"])
+    if chunk_index < 0:
+        raise ValueError("chunk_index must be >= 0")
+    total_chunks = args.get("total_chunks")
+    if total_chunks is not None:
+        total_chunks = int(total_chunks)
+        if total_chunks <= 0:
+            raise ValueError("total_chunks must be > 0")
+        if chunk_index >= total_chunks:
+            raise ValueError("chunk_index must be less than total_chunks")
+
+    _prune_chunked_writes()
+    key = _chunk_key(user, str(upload_id))
+    now = time.time()
+    state = _chunked_writes.setdefault(
+        key,
+        {
+            "path": path,
+            "mode": mode,
+            "chunks": {},
+            "created_at": now,
+            "updated_at": now,
+            "total_chunks": total_chunks,
+        },
+    )
+    if state["path"] != path or state["mode"] != mode:
+        raise ValueError("upload_id is already used for a different path or mode")
+
+    chunks: dict[int, str] = state["chunks"]
+    if len(chunks) >= _MCP_MAX_UPLOAD_CHUNKS and chunk_index not in chunks:
+        raise ValueError(f"Too many chunks (max {_MCP_MAX_UPLOAD_CHUNKS})")
+    if chunk_index in chunks and chunks[chunk_index] != chunk:
+        raise ValueError(f"chunk_index {chunk_index} already contains different content")
+    chunks[chunk_index] = chunk
+    if total_chunks is not None:
+        previous_total = state.get("total_chunks")
+        if previous_total is not None and previous_total != total_chunks:
+            raise ValueError("total_chunks changed for this upload_id")
+        state["total_chunks"] = total_chunks
+    state["updated_at"] = now
+
+    received_bytes = sum(len(part.encode("utf-8")) for part in chunks.values())
+    if received_bytes > _MCP_MAX_UPLOAD_BYTES:
+        _chunked_writes.pop(key, None)
+        raise ValueError(f"Staged upload exceeds max size {_MCP_MAX_UPLOAD_BYTES} bytes")
+
+    expected_total = state.get("total_chunks")
+    if bool(args.get("finalize")):
+        if expected_total is None:
+            expected_total = max(chunks) + 1 if chunks else 0
+        missing = [idx for idx in range(expected_total) if idx not in chunks]
+        if missing:
+            return {
+                "path": path,
+                "upload_id": upload_id,
+                "status": "missing_chunks",
+                "mode": mode,
+                "received_chunks": len(chunks),
+                "total_chunks": expected_total,
+                "received_bytes": received_bytes,
+                "missing_chunks": missing,
+            }
+
+        content = "".join(chunks[idx] for idx in range(expected_total))
+        expected_sha = args.get("expected_sha256")
+        actual_sha = _content_sha256(content)
+        if expected_sha and not hmac.compare_digest(str(expected_sha).lower(), actual_sha):
+            raise ValueError(f"sha256 mismatch: expected {expected_sha}, got {actual_sha}")
+
+        result = _write_markdown_content(
+            path,
+            content,
+            mode=mode,
+            create_if_missing=bool(args.get("create_if_missing", True)),
+        )
+        _chunked_writes.pop(key, None)
+        return {
+            "path": path,
+            "upload_id": upload_id,
+            "status": result["status"],
+            "mode": mode,
+            "received_chunks": len(chunks),
+            "total_chunks": expected_total,
+            "received_bytes": received_bytes,
+            "bytes": result["bytes"],
+            "sha256": actual_sha,
+        }
+
+    return {
+        "path": path,
+        "upload_id": upload_id,
+        "status": "staged",
+        "mode": mode,
+        "received_chunks": len(chunks),
+        "total_chunks": expected_total,
+        "received_bytes": received_bytes,
+        "missing_chunks": [],
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Tool dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1766,18 +2034,43 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
     if name == "write_file":
         _need_write()
         path = args["path"]
-        if not path.endswith(".md"):
-            raise ValueError("Only .md files may be written")
-        fc = write_file(path, args["content"])
-        _index_markdown(path)
-        return json.dumps({"path": fc.path, "status": "written"}, ensure_ascii=False)
+        result = _write_markdown_content(path, args["content"], mode="replace")
+        return json.dumps({"path": result["path"], "status": result["status"]}, ensure_ascii=False)
 
     if name == "append_file":
         _need_write()
         path = args["path"]
-        fc = append_file(path, args["content"])
-        _index_markdown(path)
-        return json.dumps({"path": fc.path, "status": "appended"}, ensure_ascii=False)
+        filepath = safe_path(path)
+        if not filepath.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+        result = _write_markdown_content(path, args["content"], mode="append", create_if_missing=False)
+        return json.dumps({"path": result["path"], "status": result["status"]}, ensure_ascii=False)
+
+    if name == "write_many":
+        _need_write()
+        files = args.get("files", [])
+        if not isinstance(files, list) or not files:
+            raise ValueError("Missing required argument: files")
+        results = []
+        for item in files:
+            path = str(item.get("path", ""))
+            mode = item.get("mode", "replace")
+            try:
+                result = _write_markdown_content(
+                    path,
+                    str(item.get("content", "")),
+                    mode=mode,
+                    create_if_missing=bool(item.get("create_if_missing", True)),
+                )
+                results.append(result)
+            except Exception as exc:
+                results.append({"path": path, "status": "error", "mode": mode, "error": str(exc)})
+        written = sum(1 for item in results if item["status"] != "error")
+        return json.dumps({"results": results, "written": written, "failed": len(results) - written}, ensure_ascii=False, indent=2)
+
+    if name == "chunked_write":
+        _need_write()
+        return json.dumps(_stage_chunked_write(args, user), ensure_ascii=False, indent=2)
 
     if name == "search":
         _need_read()

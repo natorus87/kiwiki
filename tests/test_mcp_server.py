@@ -24,13 +24,15 @@ from app.mcp_server import (
 )
 from app.models import User
 
-TOOL_COUNT = 32
+TOOL_COUNT = 34
 ADDED_TOOLS = {
     "recent_files",
     "backlinks",
     "move_folder",
     "preview_edit",
     "replace_many",
+    "write_many",
+    "chunked_write",
     "validate_wiki",
     "upsert_note",
     "related_files",
@@ -375,6 +377,116 @@ class TestToolDispatch:
             resp = json.loads(result["result"]["content"][0]["text"])
             assert resp["status"] == "written"
             assert (tmp_path / "notes/neu.md").exists()
+        finally:
+            mcp_server.parse_users = original_parse
+
+    async def test_write_many_continues_after_per_file_error(self, active_user, _setup_users):
+        from app import mcp_server
+
+        original_parse = mcp_server.parse_users
+        mcp_server.parse_users = lambda: {"tok1": ("alice", "admin")}
+        try:
+            body = {
+                "jsonrpc": "2.0",
+                "id": 41,
+                "method": "tools/call",
+                "params": {
+                    "name": "write_many",
+                    "arguments": {
+                        "files": [
+                            {"path": "notes/batch-a.md", "content": "---\ntitle: A\n---\n\nA"},
+                            {"path": ".kiwiki/system.md", "content": "blocked"},
+                            {"path": "notes/batch-b.md", "content": "B", "mode": "append"},
+                        ]
+                    },
+                },
+            }
+            result = await _handle_message(body, User(username="alice", role="admin"))
+            payload = result["result"]["structuredContent"]
+            assert payload["written"] == 2
+            assert payload["failed"] == 1
+            assert (active_user / "notes/batch-a.md").exists()
+            assert (active_user / "notes/batch-b.md").exists()
+            assert payload["results"][1]["status"] == "error"
+            assert ".kiwiki" in payload["results"][1]["error"]
+        finally:
+            mcp_server.parse_users = original_parse
+
+    async def test_chunked_write_finalize_with_sha256(self, active_user, _setup_users):
+        from app import mcp_server
+
+        original_parse = mcp_server.parse_users
+        mcp_server.parse_users = lambda: {"tok1": ("alice", "admin")}
+        try:
+            content = "---\ntitle: Chunked\n---\n\n" + ("large-body\n" * 50)
+            digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            first = await _handle_message({
+                "jsonrpc": "2.0",
+                "id": 42,
+                "method": "tools/call",
+                "params": {
+                    "name": "chunked_write",
+                    "arguments": {
+                        "path": "notes/chunked.md",
+                        "upload_id": "chunked-ok",
+                        "chunk": content[:100],
+                        "chunk_index": 0,
+                        "total_chunks": 2,
+                    },
+                },
+            }, User(username="alice", role="admin"))
+            assert first["result"]["structuredContent"]["status"] == "staged"
+
+            second = await _handle_message({
+                "jsonrpc": "2.0",
+                "id": 43,
+                "method": "tools/call",
+                "params": {
+                    "name": "chunked_write",
+                    "arguments": {
+                        "path": "notes/chunked.md",
+                        "upload_id": "chunked-ok",
+                        "chunk": content[100:],
+                        "chunk_index": 1,
+                        "total_chunks": 2,
+                        "finalize": True,
+                        "expected_sha256": digest,
+                    },
+                },
+            }, User(username="alice", role="admin"))
+            payload = second["result"]["structuredContent"]
+            assert payload["status"] == "written"
+            assert payload["sha256"] == digest
+            assert "large-body" in (active_user / "notes/chunked.md").read_text(encoding="utf-8")
+        finally:
+            mcp_server.parse_users = original_parse
+
+    async def test_chunked_write_reports_missing_chunks(self, active_user, _setup_users):
+        from app import mcp_server
+
+        original_parse = mcp_server.parse_users
+        mcp_server.parse_users = lambda: {"tok1": ("alice", "admin")}
+        try:
+            result = await _handle_message({
+                "jsonrpc": "2.0",
+                "id": 44,
+                "method": "tools/call",
+                "params": {
+                    "name": "chunked_write",
+                    "arguments": {
+                        "path": "notes/missing.md",
+                        "upload_id": "chunked-missing",
+                        "chunk": "tail",
+                        "chunk_index": 1,
+                        "total_chunks": 2,
+                        "finalize": True,
+                    },
+                },
+            }, User(username="alice", role="admin"))
+            payload = result["result"]["structuredContent"]
+            assert payload["status"] == "missing_chunks"
+            assert payload["missing_chunks"] == [0]
+            assert not (active_user / "notes/missing.md").exists()
         finally:
             mcp_server.parse_users = original_parse
 

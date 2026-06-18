@@ -135,10 +135,12 @@ Dies ist dein persönlicher Wissensspeicher.
 4. Schreibe kurze, klare Markdown-Dateien.
 5. Verwende Frontmatter.
 6. Lösche keine Inhalte.
-7. Ergänze bestehende Dateien, wenn möglich.
-8. Neue Entscheidungen kommen nach `/decisions`.
-9. Projektwissen kommt nach `/projects`.
-10. Allgemeine Notizen kommen nach `/notes`.
+7. Nutze `write_many` für mehrere Dateien und `chunked_write` für große Inhalte.
+8. Frage nicht für normale Create/Update/Append-Operationen nach; frage vor Löschungen oder destruktiven Umorganisationen.
+9. Ergänze bestehende Dateien, wenn möglich.
+10. Neue Entscheidungen kommen nach `/decisions`.
+11. Projektwissen kommt nach `/projects`.
+12. Allgemeine Notizen kommen nach `/notes`.
 
 ## Frontmatter-Format
 
