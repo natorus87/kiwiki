@@ -628,6 +628,7 @@ body.role-read  .needs-write { display: none !important; }
   font-size: 15px;
   line-height: 1.8;
   color: var(--md-on-surface-v);
+  letter-spacing: 0.005em;
 }
 .markdown-content h1 {
   font-family: var(--font-display);
@@ -641,38 +642,40 @@ body.role-read  .needs-write { display: none !important; }
   text-wrap: balance;
 }
 .markdown-content h2 {
-  font-family: var(--font-body);
-  font-size: 1.3rem; font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 1.4rem; font-weight: 600;
   color: var(--md-on-surface);
   letter-spacing: -0.015em;
-  margin: 2.25rem 0 0.7rem;
-  padding-bottom: 0.55rem;
+  margin: 2.5rem 0 0.8rem;
+  padding-bottom: 0.6rem;
   border-bottom: 1px solid var(--md-outline-v);
   text-wrap: balance;
 }
 .markdown-content h3 {
-  font-size: 1.05rem; font-weight: 600;
+  font-size: 1.1rem; font-weight: 600;
   color: var(--md-on-surface);
-  margin: 1.5rem 0 0.4rem;
+  margin: 1.8rem 0 0.5rem;
   letter-spacing: -0.01em;
   text-wrap: balance;
 }
 .markdown-content h4 { font-size: 0.95rem; font-weight: 600; color: var(--md-on-surface-v); margin: 1rem 0 0.3rem; }
-.markdown-content p  { margin: 0.65rem 0; text-wrap: pretty; }
-.markdown-content ul, .markdown-content ol { padding-left: 1.5rem; margin: 0.65rem 0; }
-.markdown-content li { margin: 0.3rem 0; }
-.markdown-content a  { color: var(--md-primary); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--md-primary-border); }
+.markdown-content p  { margin: 0.75rem 0; text-wrap: pretty; }
+.markdown-content ul, .markdown-content ol { padding-left: 1.5rem; margin: 0.75rem 0; }
+.markdown-content li { margin: 0.35rem 0; }
+.markdown-content a  { color: var(--md-primary); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--md-primary-border); transition: text-decoration-color var(--t); }
 .markdown-content a:hover { text-decoration-color: var(--md-primary); }
 .markdown-content strong { color: var(--md-on-surface); font-weight: 600; }
+.markdown-content em { color: var(--md-on-surface-v); font-style: italic; }
 
 .markdown-content code {
   background: var(--md-surface-ch);
   border: 1px solid var(--md-outline-v);
-  padding: 0.1rem 0.4rem;
+  padding: 0.12rem 0.45rem;
   border-radius: var(--radius-xs);
   font-size: 0.82em;
   font-family: var(--font-mono);
   color: var(--md-primary-c-on);
+  letter-spacing: -0.01em;
 }
 .markdown-content pre {
   background: var(--md-surface-c);
@@ -680,9 +683,9 @@ body.role-read  .needs-write { display: none !important; }
   padding: 1.25rem 1.5rem;
   border-radius: var(--radius-md);
   overflow-x: auto;
-  margin: 1.2rem 0;
+  margin: 1.4rem 0;
   position: relative;
-  box-shadow: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 .markdown-content pre::before {
   display: none;
@@ -692,24 +695,35 @@ body.role-read  .needs-write { display: none !important; }
   color: var(--md-on-surface-v); font-size: 0.875em;
 }
 .markdown-content blockquote {
-  border-left: 3px solid var(--md-primary-c);
-  padding: 0.6rem 0 0.6rem 1.1rem;
-  margin: 1rem 0;
+  border-left: 3px solid var(--md-primary);
+  padding: 0.75rem 0 0.75rem 1.2rem;
+  margin: 1.2rem 0;
   background: var(--md-primary-dim2);
-  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   color: var(--md-on-surface-v);
 }
+.markdown-content blockquote p { margin: 0.3rem 0; }
 .markdown-content table {
   border-collapse: collapse;
   width: 100%;
-  margin: 1rem 0;
+  margin: 1.2rem 0;
   font-size: 0.875rem;
   display: block;
   overflow-x: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--md-outline-v);
 }
-.markdown-content th, .markdown-content td { border: 1px solid var(--md-outline-v); padding: 0.45rem 0.85rem; }
-.markdown-content th { background: var(--md-surface-c); font-weight: 600; color: var(--md-on-surface); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
-.markdown-content hr { border: none; border-top: 1px solid var(--md-outline-v); margin: 1.5rem 0; }
+.markdown-content th, .markdown-content td { border: 1px solid var(--md-outline-v); padding: 0.5rem 0.9rem; }
+.markdown-content th { background: var(--md-surface-c); font-weight: 600; color: var(--md-on-surface); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.markdown-content tr:hover td { background: var(--md-surface-c); }
+.markdown-content hr { border: none; border-top: 1px solid var(--md-outline-v); margin: 2rem 0; }
+.markdown-content img { max-width: 100%; border-radius: var(--radius-sm); }
+
+/* Task lists */
+.markdown-content input[type="checkbox"] {
+  margin-right: 0.4rem;
+  accent-color: var(--md-primary);
+}
 
 /* Datei-Header */
 .file-header {
@@ -772,6 +786,7 @@ body.role-read  .needs-write { display: none !important; }
   font-family: var(--font-body); cursor: pointer;
   border: 1px solid transparent; text-decoration: none;
   transition: all var(--t); line-height: 1.4;
+  white-space: nowrap;
 }
 .btn-tonal  {
   background: var(--md-secondary-c);
@@ -787,27 +802,35 @@ body.role-read  .needs-write { display: none !important; }
   background: var(--md-primary);
   color: var(--md-primary-ink);
   border-color: var(--md-primary-border);
-  box-shadow: none;
+  box-shadow: 0 1px 3px rgba(184, 223, 120, 0.15);
 }
 .btn-primary:hover {
   background: var(--md-primary-hover);
   color: var(--md-primary-ink);
+  box-shadow: 0 4px 12px rgba(184, 223, 120, 0.25);
+  transform: translateY(-1px);
 }
-.btn-primary:active { transform: translateY(1px); }
+.btn-primary:active { transform: translateY(0); box-shadow: none; }
 
 .btn-danger {
   background: transparent;
   color: var(--md-error);
   border-color: var(--md-error-border);
 }
-.btn-danger:hover { background: var(--md-error-dim); }
+.btn-danger:hover { background: var(--md-error-dim); border-color: var(--md-error); }
 
 .btn-ghost {
   background: transparent;
   color: var(--md-on-surface-v);
   border-color: var(--md-outline-v);
 }
-.btn-ghost:hover { background: var(--md-surface-ch); color: var(--md-on-surface); }
+.btn-ghost:hover { background: var(--md-surface-ch); color: var(--md-on-surface); border-color: var(--md-outline-strong); }
+
+.btn-lg {
+  padding: 0.55rem 1.3rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
 
 /* Legacy button reset */
 button {

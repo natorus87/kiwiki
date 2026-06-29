@@ -55,16 +55,27 @@
 
 {% block extra_styles %}
 <style>
+  /* ── Hero with gradient glow ─────────────────────────────────────── */
   .hero {
-    padding: 2.4rem 0 1.4rem;
+    padding: 2.8rem 0 1.8rem;
     border-bottom: 1px solid var(--md-outline-v);
     margin-bottom: 1.6rem;
     position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 1.5rem;
+    gap: 2rem;
     align-items: end;
   }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -40px; left: -60px;
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(184, 223, 120, 0.08) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .hero > * { position: relative; z-index: 1; }
   .hero-eyebrow {
     display: inline-flex; align-items: center; gap: 0.45rem;
     font-family: var(--font-mono);
@@ -72,7 +83,7 @@
     text-transform: uppercase; letter-spacing: 0.14em;
     color: var(--md-primary);
     background: var(--md-primary-dim);
-    border: 1px solid rgba(163, 217, 107, 0.2);
+    border: 1px solid rgba(184, 223, 120, 0.2);
     padding: 0.3rem 0.7rem;
     border-radius: var(--radius-xl);
     margin-bottom: 1.25rem;
@@ -103,6 +114,7 @@
   .hero-title em {
     font-style: normal;
     color: var(--md-primary);
+    text-shadow: 0 0 30px rgba(184, 223, 120, 0.25);
   }
   .hero-sub {
     font-size: 1.05rem; line-height: 1.55;
@@ -111,12 +123,12 @@
     text-wrap: pretty;
   }
   .hero-panel {
-    min-width: 210px;
+    min-width: 220px;
     border: 1px solid var(--md-outline-v);
-    background: var(--md-surface);
+    background: linear-gradient(135deg, var(--md-surface) 0%, var(--md-surface-c) 100%);
     border-radius: var(--radius-md);
     padding: 0.85rem;
-    box-shadow: none;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
   }
   .hero-panel-row {
     display: flex; align-items: center; justify-content: space-between;
@@ -159,7 +171,7 @@
     border: 1px solid var(--md-outline-v);
     border-radius: var(--radius-md);
     display: flex; flex-direction: column; gap: 0.4rem;
-    transition: border-color var(--t), background var(--t), transform var(--t);
+    transition: border-color var(--t), background var(--t), transform var(--t), box-shadow var(--t);
   }
   .quick-actions {
     display: flex;
@@ -176,9 +188,10 @@
     .hero-title { font-size: clamp(2rem, 11vw, 2.65rem); }
   }
   .step-card:hover {
-    border-color: rgba(163, 217, 107, 0.35);
+    border-color: rgba(184, 223, 120, 0.35);
     background: var(--md-surface-c);
     transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   }
   .step-card-icon {
     width: 32px; height: 32px;
@@ -209,6 +222,7 @@
     color: var(--md-primary-c-on);
   }
 
+  /* ── Terminal-style code blocks ──────────────────────────────────── */
   .code-block {
     background: var(--md-surface-c);
     border: 1px solid var(--md-outline-v);
@@ -216,11 +230,9 @@
     overflow: hidden;
     margin-bottom: 1rem;
     position: relative;
-    box-shadow: none;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   }
-  .code-block::before {
-    display: none;
-  }
+  .code-block::before { display: none; }
   .code-block-head {
     display: flex; align-items: center; gap: 0.5rem;
     padding: 0.55rem 0.9rem;
@@ -232,6 +244,15 @@
     text-transform: uppercase;
     letter-spacing: 0.1em;
   }
+  .code-block-dots {
+    display: flex; gap: 5px; margin-right: 0.5rem;
+  }
+  .code-block-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+  .code-block-dot--red { background: #e4a092; }
+  .code-block-dot--yellow { background: #d4c3a5; }
+  .code-block-dot--green { background: #b8df78; }
   .code-block-head .verb {
     color: var(--md-primary);
     font-weight: 600;
@@ -248,6 +269,24 @@
     background: transparent !important;
   }
   .code-block pre::before { display: none !important; }
+
+  /* ── Recent files ────────────────────────────────────────────────── */
+  .recent-files {
+    margin-bottom: 2rem;
+  }
+
+  /* ── Subtle noise overlay ────────────────────────────────────────── */
+  .content-area::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.015;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px 256px;
+  }
 </style>
 {% endblock %}
 
@@ -313,12 +352,18 @@
 
   <p class="section-label">MCP-Verbindung</p>
   <div class="code-block">
-    <div class="code-block-head"><span class="verb">POST</span> Streamable HTTP</div>
+    <div class="code-block-head">
+      <span class="code-block-dots"><span class="code-block-dot code-block-dot--red"></span><span class="code-block-dot code-block-dot--yellow"></span><span class="code-block-dot code-block-dot--green"></span></span>
+      <span class="verb">POST</span> Streamable HTTP
+    </div>
     <pre><code>{{ request.base_url }}mcp
 Authorization: Bearer &lt;api-key&gt;</code></pre>
   </div>
   <div class="code-block">
-    <div class="code-block-head"><span class="verb">GET</span> SSE-Transport (Legacy-Clients)</div>
+    <div class="code-block-head">
+      <span class="code-block-dots"><span class="code-block-dot code-block-dot--red"></span><span class="code-block-dot code-block-dot--yellow"></span><span class="code-block-dot code-block-dot--green"></span></span>
+      <span class="verb">GET</span> SSE-Transport (Legacy-Clients)
+    </div>
     <pre><code>{{ request.base_url }}mcp/sse</code></pre>
   </div>
 </div>
