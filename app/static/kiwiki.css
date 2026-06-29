@@ -814,10 +814,10 @@ body.role-read  .needs-write { display: none !important; }
 
 .btn-danger {
   background: transparent;
-  color: var(--md-error);
-  border-color: var(--md-error-border);
+  color: var(--md-on-surface-v);
+  border-color: var(--md-outline-v);
 }
-.btn-danger:hover { background: var(--md-error-dim); border-color: var(--md-error); }
+.btn-danger:hover { background: var(--md-error-dim); color: var(--md-error); border-color: var(--md-error-border); }
 
 .btn-ghost {
   background: transparent;
@@ -1273,6 +1273,15 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
   }
   .toastui-editor-tabs {
     overflow-x: auto;
+  }
+  .toastui-editor-toolbar {
+    padding: 0.25rem 0.35rem !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .toastui-editor-toolbar .toastui-editor-toolbar-icons {
+    height: 36px !important;
+    min-height: 36px;
   }
 
   /* FAB: nur auf Home sichtbar */
@@ -2069,7 +2078,6 @@ header::before,
 
 /* ── Selection Bar ────────────────────────────────────────────────── */
 .tree-selection-bar {
-  display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.65rem;
@@ -2079,6 +2087,9 @@ header::before,
   position: sticky;
   bottom: 0;
   z-index: 5;
+}
+.tree-selection-bar:not([hidden]) {
+  display: flex;
 }
 .selection-count {
   color: var(--md-primary);
@@ -2181,11 +2192,12 @@ a.breadcrumb-item:hover { color: var(--md-primary); background: var(--md-primary
     content: 'double-click to rename';
     position: absolute;
     right: 0.5rem;
-    font-size: 0.65rem;
+    font-size: 0.6rem;
     color: var(--md-outline);
     opacity: 0;
-    transition: opacity var(--t);
+    transition: opacity 0.4s ease 0.8s;
     pointer-events: none;
+    letter-spacing: 0.02em;
   }
-  .tree-row .file-item.active:hover::after { opacity: 0.5; }
+  .tree-row .file-item.active:hover::after { opacity: 0.35; }
 }
