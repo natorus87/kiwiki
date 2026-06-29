@@ -463,6 +463,12 @@ header::before {
   cursor: default;
 }
 
+.kw-context-separator {
+  height: 1px;
+  background: var(--md-outline-v);
+  margin: 0.25rem 0.4rem;
+}
+
 .kw-action-sheet-backdrop {
   position: fixed;
   inset: 0;

@@ -333,6 +333,7 @@ function kwContextActions(ctx) {
     if (kwCanWrite()) {
       actions.push({ label: 'Bearbeiten', run: function() { openEditor(ctx.path); } });
       actions.push({ label: 'Verschieben', run: function() { moveItem(ctx.path, false); } });
+      actions.push({ label: 'Umbenennen', run: function() { kwInlineRename(ctx.path); } });
     }
     if (kwCanAdmin()) {
       actions.push({ label: 'Löschen', danger: true, run: function() { deleteFile(ctx.path); } });
@@ -344,6 +345,7 @@ function kwContextActions(ctx) {
       actions.push({ label: 'Neue Datei', run: function() { newFileIn(ctx.path); } });
       actions.push({ label: 'Neuer Ordner', run: function() { newFolderIn(ctx.path); } });
       actions.push({ label: 'Verschieben', run: function() { moveItem(ctx.path, true); } });
+      actions.push({ label: 'Umbenennen', run: function() { kwInlineRename(ctx.path); } });
     }
     if (kwCanAdmin()) {
       actions.push({ label: 'Ordner löschen', danger: true, run: function() { deleteFolder(ctx.path); } });
@@ -353,6 +355,11 @@ function kwContextActions(ctx) {
       actions.push({ label: 'Neue Datei', run: function() { newFileIn(''); } });
       actions.push({ label: 'Neuer Ordner', run: function() { newFolderIn(''); } });
     }
+  }
+
+  if (kwCanWrite()) {
+    actions.push({ separator: true });
+    actions.push({ label: window.__kwSelectMode ? 'Auswahl beenden' : 'Mehrfachauswahl', run: function() { kwToggleSelectMode(); } });
   }
 
   if (!actions.length) {
@@ -390,6 +397,12 @@ function kwRunContextAction(action) {
 }
 
 function kwBuildContextButton(action, useButton) {
+  if (action.separator) {
+    var sep = document.createElement('div');
+    sep.className = 'kw-context-separator';
+    sep.setAttribute('role', 'separator');
+    return sep;
+  }
   var el = document.createElement(useButton ? 'button' : 'div');
   el.className = 'kw-context-item' + (action.danger ? ' danger' : '') + (action.disabled ? ' disabled' : '');
   if (useButton) el.type = 'button';
