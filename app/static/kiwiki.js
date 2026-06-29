@@ -927,3 +927,269 @@ window.addEventListener('unhandledrejection', function(e) {
     kwToast('Unerwarteter Fehler: ' + (e.reason && e.reason.message || e.reason || 'unbekannt'), { type: 'error' });
   }
 });
+
+/* ── Sidebar Tree Filter ──────────────────────────────────────────── */
+function kwFilterTree(query) {
+  var tree = document.getElementById('file-tree');
+  if (!tree) return;
+  var q = query.toLowerCase().trim();
+  var rows = tree.querySelectorAll('.tree-row');
+  rows.forEach(function(row) {
+    if (!q) { row.style.display = ''; return; }
+    var name = row.querySelector('.item-name');
+    var match = name && name.textContent.toLowerCase().indexOf(q) !== -1;
+    row.style.display = match ? '' : 'none';
+    if (match) {
+      var parent = row.parentElement;
+      while (parent && parent !== tree) {
+        if (parent.classList && parent.classList.contains('subtree') && parent.dataset.parent) {
+          var parentRow = document.querySelector('.tree-row[data-kind="dir"][data-path="' + CSS.escape(parent.dataset.parent) + '"]');
+          if (parentRow) { parentRow.style.display = ''; parentRow.classList.add('open'); }
+        }
+        parent = parent.parentElement;
+      }
+    }
+  });
+}
+
+/* ── Copy Path ────────────────────────────────────────────────────── */
+function kwCopyPath(path) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(path).then(function() {
+      kwToast('Pfad kopiert: ' + path);
+    }).catch(function() { kwCopyPathFallback(path); });
+  } else { kwCopyPathFallback(path); }
+}
+function kwCopyPathFallback(path) {
+  var ta = document.createElement('textarea');
+  ta.value = path;
+  ta.style.cssText = 'position:fixed;left:-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); kwToast('Pfad kopiert: ' + path); } catch(e) { kwToast('Kopieren fehlgeschlagen', {type:'error'}); }
+  ta.remove();
+}
+
+/* ── Inline Rename ────────────────────────────────────────────────── */
+function kwInlineRename(path) {
+  var row = document.querySelector('.tree-row[data-path="' + CSS.escape(path) + '"]');
+  if (!row) return;
+  var item = row.querySelector('.file-item');
+  var nameEl = row.querySelector('.item-name');
+  if (!item || !nameEl) return;
+  var oldName = nameEl.textContent;
+  var input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'tree-rename-input';
+  input.value = oldName;
+  input.setAttribute('aria-label', 'Neuer Name');
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+  function finish() {
+    var newName = input.value.trim() || oldName;
+    var span = document.createElement('span');
+    span.className = 'item-name';
+    span.textContent = newName;
+    input.replaceWith(span);
+    if (newName === oldName) return;
+    var parts = path.split('/');
+    parts[parts.length - 1] = newName;
+    var newPath = parts.join('/');
+    fetch('/ui/rename', {
+      method: 'POST',
+      headers: apiHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
+      body: 'old_path=' + encodeURIComponent(path) + '&new_path=' + encodeURIComponent(newPath),
+    }).then(function(r) {
+      if (r.ok) {
+        row.dataset.path = newPath;
+        row.querySelector('.file-item').dataset.path = newPath;
+        var cb = row.querySelector('.tree-checkbox');
+        if (cb) cb.dataset.path = newPath;
+        kwToast('Umbenannt: ' + newName);
+        htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
+      } else { kwToast('Fehler beim Umbenennen', {type:'error'}); htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' }); }
+    }).catch(function() { kwToast('Netzwerkfehler', {type:'error'}); });
+  }
+  input.addEventListener('blur', finish);
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); finish(); }
+    if (e.key === 'Escape') { input.value = oldName; finish(); }
+  });
+}
+document.addEventListener('dblclick', function(e) {
+  var nameEl = e.target.closest && e.target.closest('.item-name');
+  if (!nameEl) return;
+  var row = nameEl.closest && nameEl.closest('.tree-row');
+  if (!row || !row.dataset.path) return;
+  e.preventDefault();
+  e.stopPropagation();
+  kwInlineRename(row.dataset.path);
+}, true);
+
+/* ── Multi-Select ─────────────────────────────────────────────────── */
+window.__kwSelected = new Set();
+function kwToggleSelect(cb) {
+  var path = cb.dataset.path;
+  if (cb.checked) { window.__kwSelected.add(path); cb.closest('.tree-row').classList.add('selected'); }
+  else { window.__kwSelected.delete(path); cb.closest('.tree-row').classList.remove('selected'); }
+  kwUpdateSelectionBar();
+}
+function kwClearSelection() {
+  window.__kwSelected.clear();
+  document.querySelectorAll('.tree-checkbox').forEach(function(cb) { cb.checked = false; });
+  document.querySelectorAll('.tree-row.selected').forEach(function(r) { r.classList.remove('selected'); });
+  kwUpdateSelectionBar();
+}
+function kwUpdateSelectionBar() {
+  var bar = document.getElementById('selection-bar');
+  var count = document.getElementById('selection-count');
+  if (!bar || !count) return;
+  var n = window.__kwSelected.size;
+  if (n === 0) { bar.hidden = true; return; }
+  bar.hidden = false;
+  count.textContent = n + (n === 1 ? ' ausgewählt' : ' ausgewählt');
+}
+function kwGetSelected() { return Array.from(window.__kwSelected); }
+
+/* ── Batch Actions ────────────────────────────────────────────────── */
+async function kwBatchDelete() {
+  var paths = kwGetSelected();
+  if (!paths.length) return;
+  var ok = await kwConfirm({
+    title: paths.length + ' Dateien löschen?',
+    message: 'Alle ausgewählten Dateien werden <strong>unwiderruflich</strong> gelöscht.',
+    confirmLabel: 'Alles löschen',
+    danger: true,
+  });
+  if (!ok) return;
+  var done = 0, failed = 0;
+  for (var i = 0; i < paths.length; i++) {
+    try {
+      var r = await fetch('/api/file?path=' + encodeURIComponent(paths[i]), { method: 'DELETE', headers: apiHeaders() });
+      if (r.ok) done++; else failed++;
+    } catch(e) { failed++; }
+  }
+  kwClearSelection();
+  htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
+  kwToast(done + ' gelöscht' + (failed ? ', ' + failed + ' fehlgeschlagen' : ''));
+}
+async function kwBatchMove() {
+  var paths = kwGetSelected();
+  if (!paths.length) return;
+  var dst = await kwPrompt({
+    title: paths.length + ' Dateien verschieben',
+    message: 'Zielordner:',
+    placeholder: 'notes/projekt',
+    submitLabel: 'Verschieben',
+  });
+  if (!dst) return;
+  var done = 0, failed = 0;
+  for (var i = 0; i < paths.length; i++) {
+    var name = paths[i].split('/').pop();
+    var target = dst + '/' + name;
+    try {
+      var r = await fetch('/api/move', {
+        method: 'POST',
+        headers: apiHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ src: paths[i], dst: target }),
+      });
+      if (r.ok) done++; else failed++;
+    } catch(e) { failed++; }
+  }
+  kwClearSelection();
+  htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
+  kwToast(done + ' verschoben' + (failed ? ', ' + failed + ' fehlgeschlagen' : ''));
+}
+async function kwBatchTag() {
+  var paths = kwGetSelected();
+  if (!paths.length) return;
+  var tags = await kwPrompt({
+    title: 'Tags setzen',
+    message: 'Kommaseparierte Tags (werden zu bestehenden hinzugefügt):',
+    placeholder: 'python, refactor',
+    submitLabel: 'Setzen',
+  });
+  if (!tags) return;
+  var tagList = tags.split(',').map(function(t){return t.trim()}).filter(Boolean);
+  var done = 0;
+  for (var i = 0; i < paths.length; i++) {
+    try {
+      var fc = await fetch('/api/file?path=' + encodeURIComponent(paths[i])).then(function(r){return r.json()});
+      var existing = (fc.frontmatter && fc.frontmatter.tags) || [];
+      var merged = existing.concat(tagList.filter(function(t){return existing.indexOf(t)===-1}));
+      await fetch('/api/file', {
+        method: 'PUT',
+        headers: apiHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ path: paths[i], content: fc.content.replace(/^---[\s\S]*?---\n/, '---\n' + merged.map(function(t){return 'tags: [' + merged.join(', ') + ']'}).join('\n') + '\n---\n') }),
+      });
+      done++;
+    } catch(e) {}
+  }
+  kwToast(done + ' Dateien getaggt');
+}
+function kwExportSelected() {
+  var paths = kwGetSelected();
+  if (!paths.length) return;
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/ui/export';
+  form.style.display = 'none';
+  var input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'paths';
+  input.value = paths.join(',');
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+  form.remove();
+}
+function kwExportFile(path) {
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/ui/export';
+  form.style.display = 'none';
+  var input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'paths';
+  input.value = path;
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+  form.remove();
+}
+
+/* ── Keyboard Shortcuts ───────────────────────────────────────────── */
+(function() {
+  var shortcuts = { dd: 'delete', mm: 'move', ee: 'edit', rr: 'rename' };
+  var buffer = '';
+  var timer = null;
+  document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+    buffer += e.key;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(function() { buffer = ''; }, 600);
+    var active = document.querySelector('.tree-row .file-item.active');
+    if (!active) return;
+    var path = active.dataset.path;
+    var row = active.closest('.tree-row');
+    var kind = row && row.dataset.kind;
+    if (buffer === 'dd' && kind === 'file' && kwCanAdmin()) { deleteFile(path); buffer = ''; }
+    else if (buffer === 'dd' && kind === 'dir' && kwCanAdmin()) { deleteFolder(path); buffer = ''; }
+    else if (buffer === 'mm') { moveItem(path, kind === 'dir'); buffer = ''; }
+    else if (buffer === 'ee' && kind === 'file' && kwCanWrite()) { openEditor(path); buffer = ''; }
+    else if (buffer === 'rr') { kwInlineRename(path); buffer = ''; }
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+    if (e.key === 'Escape') { kwClearSelection(); }
+  });
+})();
+
+/* ── Toggle Folder by Name (for breadcrumb) ───────────────────────── */
+function toggleFolderByName(path) {
+  var row = document.querySelector('.tree-row[data-kind="dir"][data-path="' + CSS.escape(path) + '"]');
+  if (!row) { window.location.href = '/?file=' + encodeURIComponent(path); return; }
+  var item = row.querySelector('.file-item.folder');
+  if (item) item.click();
+}

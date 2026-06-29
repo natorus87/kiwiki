@@ -24,7 +24,7 @@ from app.mcp_server import (
 )
 from app.models import User
 
-TOOL_COUNT = 34
+TOOL_COUNT = 46
 ADDED_TOOLS = {
     "recent_files",
     "backlinks",
@@ -40,6 +40,18 @@ ADDED_TOOLS = {
     "reindex_all",
     "search_status",
     "whoami",
+    "git_commit",
+    "file_history",
+    "diff",
+    "statistics",
+    "template",
+    "validate_links",
+    "link_graph",
+    "rename",
+    "batch_tag",
+    "export",
+    "duplicate_check",
+    "ai_summarize",
 }
 
 

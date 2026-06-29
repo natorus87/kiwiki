@@ -30,6 +30,9 @@ from urllib.parse import urlencode, urlparse
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
+import markdown as md_lib
+import nh3
+
 from .auth import ROLE_HIERARCHY, parse_users
 from .models import User
 from .search import deindex_file, get_db, index_file, init_db, reindex_all, search as fts_search
@@ -49,6 +52,20 @@ from .storage import (
     write_file,
 )
 from .tenancy import ensure_user_workspace, is_valid_username, set_user_ns, user_root
+
+_NH3_TAGS = {
+    "a", "abbr", "b", "blockquote", "br", "code", "div", "em", "h1", "h2", "h3",
+    "h4", "h5", "h6", "hr", "i", "li", "ol", "p", "pre", "span", "strong",
+    "table", "tbody", "td", "th", "thead", "tr", "ul",
+}
+_NH3_ATTRS = {
+    "a": {"href", "title", "rel"},
+    "code": {"class"},
+    "span": {"class"},
+    "div": {"class"},
+    "th": {"align"},
+    "td": {"align"},
+}
 
 router = APIRouter()
 logger = logging.getLogger("kiwiki.mcp")
@@ -1013,6 +1030,149 @@ TOOLS = [
         "description": "Returns the authenticated username, role, and workspace namespace.",
         "inputSchema": {"type": "object", "properties": {}, "required": []},
     },
+    {
+        "name": "git_commit",
+        "description": "Commits all changes in the wiki workspace with a message. Requires write role.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "message": {"type": "string", "description": "Commit message"},
+            },
+            "required": ["message"],
+        },
+    },
+    {
+        "name": "file_history",
+        "description": "Shows git log history for a specific file.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Relative path to the .md file"},
+                "limit": {"type": "integer", "description": "Max commits to return (default: 10)"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "diff",
+        "description": "Shows git diff for a file or between commits.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path (omit for full diff)"},
+                "from_commit": {"type": "string", "description": "Start commit hash (default: HEAD~1)"},
+                "to_commit": {"type": "string", "description": "End commit hash (default: HEAD)"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "statistics",
+        "description": "Returns wiki statistics: file counts, word counts, tags, folder distribution.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Subtree to analyze (default: '.')"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "template",
+        "description": "Creates a note from a predefined template (meeting, decision, adr, review, bug, feature).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "template_type": {"type": "string", "enum": ["meeting", "decision", "adr", "review", "bug", "feature"]},
+                "title": {"type": "string", "description": "Note title"},
+                "folder": {"type": "string", "description": "Target folder (default: auto based on type)"},
+            },
+            "required": ["template_type", "title"],
+        },
+    },
+    {
+        "name": "validate_links",
+        "description": "Checks all internal markdown links for broken references.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Subtree to check (default: '.')"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "link_graph",
+        "description": "Returns the internal link structure as a graph with nodes, edges, and orphaned files.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Subtree to analyze (default: '.')"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "rename",
+        "description": "Renames a file and updates ALL internal links that reference it. Requires write role.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "old_path": {"type": "string", "description": "Current file path"},
+                "new_path": {"type": "string", "description": "New file path"},
+            },
+            "required": ["old_path", "new_path"],
+        },
+    },
+    {
+        "name": "batch_tag",
+        "description": "Sets tags on multiple files at once. Mode 'merge' adds to existing tags, 'replace' overwrites.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "files": {"type": "array", "items": {"type": "string"}, "description": "List of file paths"},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags to set"},
+                "mode": {"type": "string", "enum": ["merge", "replace"], "description": "default: merge"},
+            },
+            "required": ["files", "tags"],
+        },
+    },
+    {
+        "name": "export",
+        "description": "Exports the wiki as HTML or concatenated markdown.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Subtree to export (default: '.')"},
+                "format": {"type": "string", "enum": ["html", "markdown"], "description": "default: html"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "duplicate_check",
+        "description": "Finds potentially duplicate files based on title similarity and shared tags.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Subtree to check (default: '.')"},
+                "threshold": {"type": "number", "description": "Similarity threshold 0-1 (default: 0.7)"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "ai_summarize",
+        "description": "Creates an extractive summary of a file: headings, key sentences, and word count.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Relative path to the .md file"},
+                "max_length": {"type": "integer", "description": "Max summary length in words (default: 500)"},
+            },
+            "required": ["path"],
+        },
+    },
 ]
 
 _STRING_MAP_SCHEMA = {
@@ -1429,6 +1589,131 @@ _OUTPUT_SCHEMAS = {
         "required": ["username", "role", "workspace"],
         "additionalProperties": False,
     },
+    "git_commit": {
+        "type": "object",
+        "properties": {
+            "commit_hash": {"type": "string"},
+            "message": {"type": "string"},
+            "files_changed": {"type": "integer"},
+        },
+        "required": ["commit_hash", "message", "files_changed"],
+        "additionalProperties": False,
+    },
+    "file_history": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "history": {"type": "array", "items": {
+                "type": "object",
+                "properties": {"hash": {"type": "string"}, "date": {"type": "string"}, "author": {"type": "string"}, "message": {"type": "string"}},
+                "required": ["hash", "date", "author", "message"],
+            }},
+        },
+        "required": ["path", "history"],
+        "additionalProperties": False,
+    },
+    "diff": {
+        "type": "object",
+        "properties": {
+            "diff": {"type": "string"},
+            "files_changed": {"type": "integer"},
+        },
+        "required": ["diff", "files_changed"],
+        "additionalProperties": False,
+    },
+    "statistics": {
+        "type": "object",
+        "properties": {
+            "total_files": {"type": "integer"},
+            "total_words": {"type": "integer"},
+            "total_chars": {"type": "integer"},
+            "files_by_folder": {"type": "object", "additionalProperties": {"type": "integer"}},
+            "top_tags": {"type": "array", "items": {"type": "object", "properties": {"tag": {"type": "string"}, "count": {"type": "integer"}}, "required": ["tag", "count"]}},
+            "most_recent_files": {"type": "array", "items": {"type": "object", "properties": {"path": {"type": "string"}, "title": {"type": "string"}, "updated": {"type": "string"}}, "required": ["path", "title", "updated"]}},
+            "oldest_files": {"type": "array", "items": {"type": "object", "properties": {"path": {"type": "string"}, "title": {"type": "string"}, "updated": {"type": "string"}}, "required": ["path", "title", "updated"]}},
+        },
+        "required": ["total_files", "total_words", "total_chars", "files_by_folder", "top_tags", "most_recent_files", "oldest_files"],
+        "additionalProperties": False,
+    },
+    "template": _STATUS_SCHEMA,
+    "validate_links": {
+        "type": "object",
+        "properties": {
+            "checked_files": {"type": "integer"},
+            "broken_links": {"type": "array", "items": {
+                "type": "object",
+                "properties": {"source": {"type": "string"}, "line": {"type": "integer"}, "link": {"type": "string"}, "target_exists": {"type": "boolean"}},
+                "required": ["source", "line", "link", "target_exists"],
+            }},
+            "valid_count": {"type": "integer"},
+            "broken_count": {"type": "integer"},
+        },
+        "required": ["checked_files", "broken_links", "valid_count", "broken_count"],
+        "additionalProperties": False,
+    },
+    "link_graph": {
+        "type": "object",
+        "properties": {
+            "nodes": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["id", "title", "tags"]}},
+            "edges": {"type": "array", "items": {"type": "object", "properties": {"source": {"type": "string"}, "target": {"type": "string"}, "link_text": {"type": "string"}}, "required": ["source", "target", "link_text"]}},
+            "orphaned": {"type": "array", "items": {"type": "string"}},
+            "most_linked": {"type": "array", "items": {"type": "object", "properties": {"path": {"type": "string"}, "count": {"type": "integer"}}, "required": ["path", "count"]}},
+            "most_linking": {"type": "array", "items": {"type": "object", "properties": {"path": {"type": "string"}, "count": {"type": "integer"}}, "required": ["path", "count"]}},
+        },
+        "required": ["nodes", "edges", "orphaned", "most_linked", "most_linking"],
+        "additionalProperties": False,
+    },
+    "rename": {
+        "type": "object",
+        "properties": {
+            "old_path": {"type": "string"},
+            "new_path": {"type": "string"},
+            "links_updated": {"type": "integer"},
+            "status": {"type": "string"},
+        },
+        "required": ["old_path", "new_path", "links_updated", "status"],
+        "additionalProperties": False,
+    },
+    "batch_tag": {
+        "type": "object",
+        "properties": {
+            "updated": {"type": "array", "items": {"type": "object", "properties": {"path": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["path", "tags"]}},
+            "count": {"type": "integer"},
+        },
+        "required": ["updated", "count"],
+        "additionalProperties": False,
+    },
+    "export": {
+        "type": "object",
+        "properties": {
+            "content": {"type": "string"},
+            "file_count": {"type": "integer"},
+            "total_size": {"type": "integer"},
+        },
+        "required": ["content", "file_count", "total_size"],
+        "additionalProperties": False,
+    },
+    "duplicate_check": {
+        "type": "object",
+        "properties": {
+            "pairs": {"type": "array", "items": {"type": "object", "properties": {"file_a": {"type": "string"}, "file_b": {"type": "string"}, "similarity": {"type": "number"}, "reason": {"type": "string"}}, "required": ["file_a", "file_b", "similarity", "reason"]}},
+            "total_checked": {"type": "integer"},
+        },
+        "required": ["pairs", "total_checked"],
+        "additionalProperties": False,
+    },
+    "ai_summarize": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "summary": {"type": "string"},
+            "word_count": {"type": "integer"},
+            "headings": {"type": "array", "items": {"type": "string"}},
+            "key_facts": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["path", "summary", "word_count", "headings", "key_facts"],
+        "additionalProperties": False,
+    },
 }
 
 _READ_ONLY_TOOLS = {
@@ -1451,9 +1736,17 @@ _READ_ONLY_TOOLS = {
     "tag_index",
     "search_status",
     "whoami",
+    "file_history",
+    "diff",
+    "statistics",
+    "validate_links",
+    "link_graph",
+    "export",
+    "duplicate_check",
+    "ai_summarize",
 }
 
-_DESTRUCTIVE_TOOLS = {"delete_file", "move_file", "move_folder", "sort", "replace_many"}
+_DESTRUCTIVE_TOOLS = {"delete_file", "move_file", "move_folder", "sort", "replace_many", "rename"}
 
 
 def _tool_annotations(name: str) -> dict:
@@ -1467,6 +1760,8 @@ def _tool_annotations(name: str) -> dict:
             "list_all_files", "grep", "find", "file_info", "read_lines", "build_index",
             "recent_files", "backlinks", "preview_edit", "validate_wiki", "related_files",
             "tag_index", "reindex_all", "search_status", "whoami",
+            "file_history", "diff", "statistics", "validate_links", "link_graph",
+            "export", "duplicate_check", "ai_summarize",
         },
         "openWorldHint": False,
     }
@@ -1746,6 +2041,10 @@ async def mcp_messages(request: Request, sessionId: str) -> JSONResponse:
         await queue.put(response)
 
     return JSONResponse({}, status_code=202)
+
+
+def _slug(path: str) -> str:
+    return re.sub(r'[^a-zA-Z0-9_-]', '-', path).strip('-').lower()
 
 
 def _markdown_paths(scope: str = ".") -> list:
@@ -2591,5 +2890,305 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
     if name == "whoami":
         _need_read()
         return json.dumps({"username": user.username, "role": user.role, "workspace": str(user_root())}, ensure_ascii=False, indent=2)
+
+    if name == "git_commit":
+        _need_write()
+        import subprocess
+        message = args["message"]
+        root = user_root()
+        subprocess.run(["git", "add", "-A"], cwd=root, capture_output=True, check=True)
+        result = subprocess.run(["git", "commit", "-m", message], cwd=root, capture_output=True, text=True)
+        if result.returncode != 0 and "nothing to commit" in result.stdout:
+            return json.dumps({"commit_hash": "", "message": "No changes to commit", "files_changed": 0}, ensure_ascii=False)
+        hash_result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True)
+        commit_hash = hash_result.stdout.strip()
+        diff_result = subprocess.run(["git", "diff", "--stat", "HEAD~1..HEAD"], cwd=root, capture_output=True, text=True)
+        files_changed = len(diff_result.stdout.strip().splitlines()) if diff_result.stdout.strip() else 0
+        return json.dumps({"commit_hash": commit_hash, "message": message, "files_changed": files_changed}, ensure_ascii=False)
+
+    if name == "file_history":
+        _need_read()
+        import subprocess
+        path = args["path"]
+        limit = int(args.get("limit", 10))
+        root = user_root()
+        result = subprocess.run(
+            ["git", "log", f"-{limit}", "--pretty=format:%H|%aI|%an|%s", "--", path],
+            cwd=root, capture_output=True, text=True,
+        )
+        history = []
+        for line in result.stdout.strip().splitlines():
+            if "|" in line:
+                parts = line.split("|", 3)
+                if len(parts) == 4:
+                    history.append({"hash": parts[0], "date": parts[1], "author": parts[2], "message": parts[3]})
+        return json.dumps({"path": path, "history": history}, ensure_ascii=False, indent=2)
+
+    if name == "diff":
+        _need_read()
+        import subprocess
+        path = args.get("path")
+        from_commit = args.get("from_commit", "HEAD~1")
+        to_commit = args.get("to_commit", "HEAD")
+        root = user_root()
+        cmd = ["git", "diff", f"{from_commit}..{to_commit}"]
+        if path:
+            cmd.append(path)
+        result = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
+        stat_result = subprocess.run(
+            ["git", "diff", "--stat", f"{from_commit}..{to_commit}"] + ([path] if path else []),
+            cwd=root, capture_output=True, text=True,
+        )
+        files_changed = len(stat_result.stdout.strip().splitlines()) if stat_result.stdout.strip() else 0
+        return json.dumps({"diff": result.stdout, "files_changed": files_changed}, ensure_ascii=False, indent=2)
+
+    if name == "statistics":
+        _need_read()
+        scope = args.get("path", ".")
+        all_files = list_all_files(scope)
+        total_files = len(all_files)
+        total_words = 0
+        total_chars = 0
+        files_by_folder: dict[str, int] = {}
+        tag_counts: dict[str, int] = {}
+        for f in all_files:
+            parts = f["path"].split("/")
+            folder = parts[0] if len(parts) > 1 else "_root"
+            files_by_folder[folder] = files_by_folder.get(folder, 0) + 1
+            for tag in f.get("tags", []):
+                tag_counts[str(tag)] = tag_counts.get(str(tag), 0) + 1
+            try:
+                fc = read_file(f["path"])
+                words = len(fc.content.split())
+                total_words += words
+                total_chars += len(fc.content)
+            except Exception:
+                pass
+        top_tags = [{"tag": t, "count": c} for t, c in sorted(tag_counts.items(), key=lambda x: -x[1])[:20]]
+        dated = [f for f in all_files if f.get("updated")]
+        dated.sort(key=lambda x: x.get("updated", ""), reverse=True)
+        most_recent = [{"path": f["path"], "title": f["title"], "updated": f["updated"]} for f in dated[:5]]
+        oldest = [{"path": f["path"], "title": f["title"], "updated": f["updated"]} for f in dated[-5:]] if dated else []
+        return json.dumps({
+            "total_files": total_files, "total_words": total_words, "total_chars": total_chars,
+            "files_by_folder": files_by_folder, "top_tags": top_tags,
+            "most_recent_files": most_recent, "oldest_files": oldest,
+        }, ensure_ascii=False, indent=2)
+
+    if name == "template":
+        _need_write()
+        from datetime import date
+        template_type = args["template_type"]
+        title = args["title"]
+        folder_map = {
+            "meeting": "notes/meetings", "decision": "decisions", "adr": "decisions",
+            "review": "notes/reviews", "bug": "notes/bugs", "feature": "notes/features",
+        }
+        folder = args.get("folder") or folder_map.get(template_type, "notes")
+        today = date.today().isoformat()
+        slug = title.lower().replace(" ", "-").replace("/", "-")
+        slug = "".join(c for c in slug if c.isalnum() or c in "-_")[:60]
+        path = f"{folder}/{slug}.md"
+        i = 2
+        while safe_path(path).exists():
+            path = f"{folder}/{slug}-{i}.md"
+            i += 1
+        templates = {
+            "meeting": f"---\ntitle: \"{title}\"\ntype: meeting\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [meeting]\nowner: \"{user.username}\"\n---\n\n## Agenda\n\n- \n\n## Teilnehmer\n\n- \n\n## Beschlüsse\n\n- \n\n## Action Items\n\n| Wer | Was | Bis |\n|-----|-----|-----|\n|  |  |  |",
+            "decision": f"---\ntitle: \"{title}\"\ntype: decision\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [decision, adr]\nowner: \"{user.username}\"\n---\n\n## Context\n\nWas ist die Situation?\n\n## Decision\n\nWas wurde entschieden?\n\n## Consequences\n\n### Positiv\n\n- \n\n### Negativ\n\n- \n\n## Alternatives considered\n\n- ",
+            "adr": None,
+            "review": f"---\ntitle: \"{title}\"\ntype: review\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [review]\nowner: \"{user.username}\"\n---\n\n## Summary\n\nKurze Zusammenfassung.\n\n## Findings\n\n### Positive\n\n- \n\n### Issues\n\n| Severity | File | Line | Description |\n|----------|------|------|-------------|\n|  |  |  |  |\n\n## Approval\n\n- [ ] Approved\n- [ ] Changes requested",
+            "bug": f"---\ntitle: \"{title}\"\ntype: bug\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [bug]\nowner: \"{user.username}\"\n---\n\n## Steps to reproduce\n\n1. \n\n## Expected behavior\n\n\n\n## Actual behavior\n\n\n\n## Possible fix\n\n\n\n## Environment\n\n- OS: \n- Version: ",
+            "feature": f"---\ntitle: \"{title}\"\ntype: feature\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [feature]\nowner: \"{user.username}\"\n---\n\n## User Story\n\nAls ... möchte ich ... damit ...\n\n## Acceptance Criteria\n\n- [ ] \n\n## Implementation\n\n### Approach\n\n\n\n### Tasks\n\n- [ ] \n\n## Testing\n\n\n",
+        }
+        if template_type == "adr":
+            template_type = "decision"
+        content = templates.get(template_type, templates["note"])
+        write_file(path, content)
+        index_file(path)
+        return json.dumps({"path": path, "status": "created", "template_type": template_type}, ensure_ascii=False)
+
+    if name == "validate_links":
+        _need_read()
+        scope = args.get("path", ".")
+        root = user_root()
+        broken = []
+        valid = 0
+        checked = 0
+        for md_file in _markdown_paths(scope):
+            rel = _rel_path(md_file)
+            checked += 1
+            try:
+                text = md_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            for lineno, link in _local_markdown_links(text):
+                if link.startswith(("http://", "https://", "mailto:", "#")):
+                    valid += 1
+                    continue
+                target = _resolve_local_link(rel, link)
+                exists = target is not None and safe_path(target).exists() if target else False
+                if exists:
+                    valid += 1
+                else:
+                    broken.append({"source": rel, "line": lineno, "link": link, "target_exists": False})
+        return json.dumps({"checked_files": checked, "broken_links": broken, "valid_count": valid, "broken_count": len(broken)}, ensure_ascii=False, indent=2)
+
+    if name == "link_graph":
+        _need_read()
+        scope = args.get("path", ".")
+        all_files_list = list_all_files(scope)
+        nodes = [{"id": f["path"], "title": f["title"], "tags": f.get("tags", [])} for f in all_files_list]
+        path_set = {f["path"] for f in all_files_list}
+        edges = []
+        incoming: dict[str, int] = {}
+        outgoing: dict[str, int] = {}
+        for f in all_files_list:
+            try:
+                md_file = (user_root() / f["path"]).resolve()
+                text = md_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            for _, link in _local_markdown_links(text):
+                target = _resolve_local_link(f["path"], link)
+                if target and target in path_set:
+                    edges.append({"source": f["path"], "target": target, "link_text": link})
+                    outgoing[f["path"]] = outgoing.get(f["path"], 0) + 1
+                    incoming[target] = incoming.get(target, 0) + 1
+        linked = set(incoming.keys()) | set(outgoing.keys())
+        orphaned = [f["path"] for f in all_files_list if f["path"] not in linked and f["path"] not in ("index.md", "AGENTS.md")]
+        most_linked = [{"path": p, "count": c} for p, c in sorted(incoming.items(), key=lambda x: -x[1])[:10]]
+        most_linking = [{"path": p, "count": c} for p, c in sorted(outgoing.items(), key=lambda x: -x[1])[:10]]
+        return json.dumps({"nodes": nodes, "edges": edges, "orphaned": orphaned, "most_linked": most_linked, "most_linking": most_linking}, ensure_ascii=False, indent=2)
+
+    if name == "rename":
+        _need_write()
+        old_path = args["old_path"]
+        new_path = args["new_path"]
+        fc = move_file(old_path, new_path)
+        _deindex_markdown(old_path)
+        _index_markdown(new_path)
+        links_updated = 0
+        for md_file in _markdown_paths("."):
+            rel = _rel_path(md_file)
+            try:
+                text = md_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            new_text = text
+            for _, link in _local_markdown_links(text):
+                target = _resolve_local_link(rel, link)
+                if target == old_path:
+                    new_link = link.replace(old_path.rsplit("/", 1)[-1].replace(".md", ""), new_path.rsplit("/", 1)[-1].replace(".md", ""))
+                    new_text = new_text.replace(link, new_link, 1)
+            if new_text != text:
+                md_file.write_text(new_text, encoding="utf-8")
+                _index_markdown(rel)
+                links_updated += 1
+        return json.dumps({"old_path": old_path, "new_path": new_path, "links_updated": links_updated, "status": "renamed"}, ensure_ascii=False)
+
+    if name == "batch_tag":
+        _need_write()
+        files = args["files"]
+        tags = args["tags"]
+        mode = args.get("mode", "merge")
+        updated = []
+        for path in files:
+            fc = read_file(path)
+            existing_tags = list(fc.frontmatter.get("tags", []))
+            if mode == "replace":
+                new_tags = tags
+            else:
+                new_tags = list(dict.fromkeys(existing_tags + tags))
+            update_frontmatter(path, {"tags": new_tags})
+            _index_markdown(path)
+            updated.append({"path": path, "tags": new_tags})
+        return json.dumps({"updated": updated, "count": len(updated)}, ensure_ascii=False, indent=2)
+
+    if name == "export":
+        _need_read()
+        scope = args.get("path", ".")
+        fmt = args.get("format", "html")
+        all_files_list = list_all_files(scope)
+        if fmt == "markdown":
+            parts = []
+            for f in all_files_list:
+                try:
+                    fc = read_file(f["path"])
+                    parts.append(f"# {f['title']}\n\n{fc.content}\n\n---\n")
+                except Exception:
+                    continue
+            content = "\n".join(parts)
+            return json.dumps({"content": content, "file_count": len(parts), "total_size": len(content)}, ensure_ascii=False, indent=2)
+        else:
+            parts = []
+            nav_items = []
+            for f in all_files_list:
+                nav_items.append(f'<li><a href="#{_slug(f["path"])}">{html.escape(f["title"])}</a></li>')
+            for f in all_files_list:
+                try:
+                    fc = read_file(f["path"])
+                    rendered = nh3.clean(md_lib.markdown(fc.content, extensions=["fenced_code", "tables", "nl2br"]), tags=_NH3_TAGS, attributes=_NH3_ATTRS, url_schemes={"http", "https", "mailto"})
+                    parts.append(f'<section id="{_slug(f["path"])}"><h2>{html.escape(f["title"])}</h2>{rendered}</section>')
+                except Exception:
+                    continue
+            content = f"""<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8"><title>kiwiki Export</title>
+<style>body{{font-family:sans-serif;max-width:800px;margin:0 auto;padding:2rem}}
+nav{{margin-bottom:2rem}}section{{margin-bottom:3rem;border-bottom:1px solid #eee;padding-bottom:1rem}}</style>
+</head><body><h1>kiwiki Export</h1><nav><ul>{"".join(nav_items)}</ul></nav>{"".join(parts)}</body></html>"""
+            return json.dumps({"content": content, "file_count": len(parts), "total_size": len(content)}, ensure_ascii=False, indent=2)
+
+    if name == "duplicate_check":
+        _need_read()
+        scope = args.get("path", ".")
+        threshold = float(args.get("threshold", 0.7))
+        all_files_list = list_all_files(scope)
+        pairs = []
+        for i, a in enumerate(all_files_list):
+            for b in all_files_list[i + 1:]:
+                a_tags = set(str(t) for t in a.get("tags", []))
+                b_tags = set(str(t) for t in b.get("tags", []))
+                tag_sim = len(a_tags & b_tags) / max(len(a_tags | b_tags), 1)
+                title_a = a["title"].lower().split()
+                title_b = b["title"].lower().split()
+                title_sim = len(set(title_a) & set(title_b)) / max(len(set(title_a) | set(title_b)), 1)
+                combined = (tag_sim * 0.4 + title_sim * 0.6)
+                if combined >= threshold:
+                    reason = []
+                    if tag_sim > 0.5:
+                        reason.append(f"shared tags: {', '.join(a_tags & b_tags)}")
+                    if title_sim > 0.5:
+                        reason.append("similar titles")
+                    pairs.append({"file_a": a["path"], "file_b": b["path"], "similarity": round(combined, 2), "reason": "; ".join(reason) or "high overlap"})
+        pairs.sort(key=lambda x: -x["similarity"])
+        return json.dumps({"pairs": pairs, "total_checked": len(all_files_list)}, ensure_ascii=False, indent=2)
+
+    if name == "ai_summarize":
+        _need_read()
+        path = args["path"]
+        max_length = int(args.get("max_length", 500))
+        fc = read_file(path)
+        content = fc.content
+        lines = content.split("\n")
+        headings = [line.lstrip("#").strip() for line in lines if line.startswith("#")]
+        words = content.split()
+        word_count = len(words)
+        sentences = [s.strip() for s in re.split(r'[.!?]+', content) if s.strip() and len(s.strip()) > 10]
+        summary_parts = []
+        if headings:
+            summary_parts.append("Headings: " + ", ".join(headings[:5]))
+        if sentences:
+            summary_parts.append(sentences[0])
+            if len(sentences) > 1:
+                summary_parts.append(sentences[-1])
+        key_facts = []
+        for sentence in sentences[:10]:
+            if any(kw in sentence.lower() for kw in ["todo", "fixme", "wichtig", "achtung", "note", "warnung"]):
+                key_facts.append(sentence[:200])
+        if not key_facts:
+            key_facts = [s[:200] for s in sentences[:3]]
+        summary = " ".join(summary_parts)[:max_length * 5]
+        return json.dumps({"path": path, "summary": summary, "word_count": word_count, "headings": headings, "key_facts": key_facts}, ensure_ascii=False, indent=2)
 
     raise ValueError(f"Unknown tool: {name!r}")

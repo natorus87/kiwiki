@@ -10,6 +10,10 @@
         </svg>
         {{ svg_folder|safe }}<span class="item-name">{{ item.name }}</span>
       </button>
+      {% if user and user.role in ['write', 'admin'] %}
+      <input type="checkbox" class="tree-checkbox" data-path="{{ item.path }}" data-kind="dir"
+             onclick="event.stopPropagation(); kwToggleSelect(this)" aria-label="{{ item.name }} auswählen">
+      {% endif %}
     </div>
     <div id="{{ item.tree_id }}" class="subtree" data-parent="{{ item.path }}"></div>
   {% else %}
@@ -18,6 +22,10 @@
               onclick="loadFile({{ item.path|tojson|forceescape }}, this)">
         {{ svg_file|safe }}<span class="item-name">{{ item.name }}</span>
       </button>
+      {% if user and user.role in ['write', 'admin'] %}
+      <input type="checkbox" class="tree-checkbox" data-path="{{ item.path }}" data-kind="file"
+             onclick="event.stopPropagation(); kwToggleSelect(this)" aria-label="{{ item.name }} auswählen">
+      {% endif %}
     </div>
   {% endif %}
 {% endfor %}

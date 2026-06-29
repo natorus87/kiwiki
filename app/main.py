@@ -82,6 +82,7 @@ def _render_markdown_safe(content: str) -> str:
         tags=_NH3_TAGS,
         attributes=_NH3_ATTRS,
         url_schemes={"http", "https", "mailto"},
+        link_rel=None,
     )
 
 
@@ -436,6 +437,7 @@ async def ui_files(request: Request, path: str = "."):
             name="partials/file_tree.html",
             context={
                 "items": view_items,
+                "user": _session_user(request),
                 "svg_folder": _SVG_FOLDER,
                 "svg_file": _SVG_FILE,
                 "svg_edit": _SVG_EDIT,
@@ -506,6 +508,63 @@ async def ui_search(request: Request):
         )
     except Exception as exc:
         return HTMLResponse(f'<div class="error">{html.escape(str(exc))}</div>')
+
+
+@app.get("/ui/recent", response_class=HTMLResponse)
+async def ui_recent(request: Request):
+    user = _session_user(request)
+    if not user:
+        return HTMLResponse("")
+    try:
+        files = list_files(".")
+        files = [f for f in files if not f.is_dir and f.name not in ("index.md", "AGENTS.md")]
+        files.sort(key=lambda f: f.updated_at or "", reverse=True)
+        recent = files[:5]
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/recent_files.html",
+            context={"files": recent},
+        )
+    except Exception:
+        return HTMLResponse("")
+
+
+@app.post("/ui/rename", response_class=HTMLResponse)
+async def ui_rename(request: Request):
+    form = await request.form()
+    old_path = form.get("old_path", "").strip()
+    new_path = form.get("new_path", "").strip()
+    if not old_path or not new_path:
+        return HTMLResponse('<div class="error">Ungültige Parameter</div>', status_code=400)
+    try:
+        from .storage import move_file as _move_file
+        validate_markdown_content_path(new_path)
+        _move_file(old_path, new_path)
+        deindex_file(old_path)
+        index_file(new_path)
+        return HTMLResponse(f'<span class="item-name">{html.escape(new_path.rsplit("/", 1)[-1])}</span>')
+    except Exception as exc:
+        return HTMLResponse(f'<div class="error">{html.escape(str(exc))}</div>', status_code=400)
+
+
+@app.post("/ui/export")
+async def ui_export(request: Request):
+    form = await request.form()
+    paths_raw = form.get("paths", "")
+    paths = [p.strip() for p in paths_raw.split(",") if p.strip()]
+    if not paths:
+        raise HTTPException(status_code=400, detail="No paths provided")
+    parts = []
+    for p in paths:
+        try:
+            fc = read_file(p)
+            parts.append(fc.content)
+        except Exception:
+            continue
+    combined = "\n\n---\n\n".join(parts)
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(combined, media_type="text/markdown; charset=utf-8",
+                             headers={"Content-Disposition": "attachment; filename=kiwiki-export.md"})
 
 
 # ---------------------------------------------------------------------------

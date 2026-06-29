@@ -1,9 +1,30 @@
 <div class="content-inner file-content-inner">
+  <nav class="breadcrumb" aria-label="Pfadnavigation">
+    <a href="/" class="breadcrumb-item" onclick="event.preventDefault(); htmx.ajax('GET','/ui/files?path=.',{target:'#main-content',swap:'innerHTML'})">Wiki</a>
+    {% set parts = path.split('/') %}
+    {% set ns = namespace(accum='') %}
+    {% for part in parts %}
+      {% set ns.accum = ns.accum + '/' + part if ns.accum else part %}
+      {% if not loop.last %}
+        <span class="breadcrumb-sep">/</span>
+        <a href="#" class="breadcrumb-item" onclick="event.preventDefault(); toggleFolderByName('{{ ns.accum }}')">{{ part }}</a>
+      {% else %}
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-item current">{{ part }}</span>
+      {% endif %}
+    {% endfor %}
+  </nav>
+
   <article class="file-view">
     <header class="file-header">
       <div class="file-header-main">
         <h1 class="file-title">{{ title }}</h1>
-        <div class="file-path">{{ path }}</div>
+        <div class="file-path-row">
+          <span class="file-path">{{ path }}</span>
+          <button type="button" class="btn-copy-path" onclick="kwCopyPath({{ path|tojson|forceescape }})" title="Pfad kopieren">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
         <div class="file-meta">
           {% if updated %}Aktualisiert: {{ updated }}{% endif %}
           {% if updated and (owner or tags) %} · {% endif %}
@@ -24,6 +45,10 @@
           {{ svg_edit|safe }} Bearbeiten
         </button>
         {% endif %}
+        <button type="button" class="btn btn-ghost" onclick="kwExportFile({{ path|tojson|forceescape }})" title="Als Markdown herunterladen">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export
+        </button>
         {% if can_delete %}
           <button type="button" class="btn btn-danger" onclick="deleteFile({{ path|tojson|forceescape }})">
             {{ svg_trash|safe }} Löschen

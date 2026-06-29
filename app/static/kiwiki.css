@@ -1867,3 +1867,185 @@ header::before,
 .hero {
   margin-bottom: 1.15rem;
 }
+
+/* ── Tree Filter ──────────────────────────────────────────────────── */
+.tree-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.65rem;
+  margin: 0 0 0.25rem;
+}
+.tree-filter-icon { color: var(--md-outline); flex-shrink: 0; }
+.tree-filter {
+  width: 100%;
+  background: var(--md-surface-c);
+  border: 1px solid var(--md-outline-v);
+  border-radius: var(--radius-sm);
+  padding: 0.35rem 0.6rem;
+  color: var(--md-on-surface);
+  font-size: 0.78rem;
+  font-family: var(--font-body);
+  outline: none;
+  transition: border-color var(--t);
+}
+.tree-filter:focus { border-color: var(--md-primary-border); }
+.tree-filter::placeholder { color: var(--md-outline); }
+
+/* ── Tree Checkbox ────────────────────────────────────────────────── */
+.tree-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px; height: 15px;
+  border: 1.5px solid var(--md-outline);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--t), background var(--t), border-color var(--t);
+  margin-right: 0.3rem;
+  position: relative;
+}
+.tree-row:hover .tree-checkbox,
+.tree-row.selected .tree-checkbox,
+.tree-checkbox:checked { opacity: 1; }
+.tree-checkbox:checked {
+  background: var(--md-primary);
+  border-color: var(--md-primary);
+}
+.tree-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 3px; top: 0px;
+  width: 5px; height: 8px;
+  border: solid var(--md-primary-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.tree-row.selected { background: var(--md-primary-dim) !important; }
+.tree-row { position: relative; }
+.tree-row .file-item { flex: 1; min-width: 0; }
+
+/* ── Selection Bar ────────────────────────────────────────────────── */
+.tree-selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  background: var(--md-surface-c);
+  border-top: 1px solid var(--md-outline-v);
+  font-size: 0.78rem;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+}
+.selection-count {
+  color: var(--md-primary);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+.selection-actions {
+  display: flex;
+  gap: 0.25rem;
+  flex: 1;
+}
+.btn-sm { padding: 0.25rem 0.5rem !important; min-height: auto !important; font-size: 0.75rem !important; }
+
+/* ── Breadcrumb ───────────────────────────────────────────────────── */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.78rem;
+  font-family: var(--font-mono);
+  color: var(--md-outline);
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.breadcrumb-item {
+  color: var(--md-outline);
+  text-decoration: none;
+  padding: 0.15rem 0.3rem;
+  border-radius: var(--radius-xs);
+  transition: color var(--t), background var(--t);
+}
+a.breadcrumb-item:hover { color: var(--md-primary); background: var(--md-primary-dim2); }
+.breadcrumb-item.current { color: var(--md-on-surface); font-weight: 500; }
+.breadcrumb-sep { color: var(--md-outline-v); margin: 0 0.05rem; }
+
+/* ── Copy Path Button ─────────────────────────────────────────────── */
+.file-path-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.file-path {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--md-outline);
+}
+.btn-copy-path {
+  background: none;
+  border: none;
+  color: var(--md-outline);
+  cursor: pointer;
+  padding: 0.2rem;
+  border-radius: var(--radius-xs);
+  display: flex;
+  align-items: center;
+  transition: color var(--t), background var(--t);
+}
+.btn-copy-path:hover { color: var(--md-primary); background: var(--md-primary-dim2); }
+
+/* ── Inline Rename Input ──────────────────────────────────────────── */
+.tree-rename-input {
+  background: var(--md-surface-c);
+  border: 1.5px solid var(--md-primary-border);
+  border-radius: var(--radius-xs);
+  padding: 0.1rem 0.35rem;
+  color: var(--md-on-surface);
+  font-size: 0.82rem;
+  font-family: var(--font-body);
+  outline: none;
+  width: 100%;
+  min-width: 0;
+}
+
+/* ── Recent Files ─────────────────────────────────────────────────── */
+.recent-list { display: flex; flex-direction: column; gap: 0.15rem; }
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.65rem;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--md-on-surface-v);
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--t), color var(--t);
+}
+.recent-item:hover { background: var(--md-surface-c); color: var(--md-on-surface); }
+.recent-item svg { color: var(--md-outline); flex-shrink: 0; }
+.recent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-date { font-family: var(--font-mono); font-size: 0.68rem; color: var(--md-outline); white-space: nowrap; }
+
+/* ── Keyboard shortcut hints ──────────────────────────────────────── */
+@media (hover: hover) {
+  .tree-row .file-item.active::after {
+    content: 'double-click to rename';
+    position: absolute;
+    right: 0.5rem;
+    font-size: 0.65rem;
+    color: var(--md-outline);
+    opacity: 0;
+    transition: opacity var(--t);
+    pointer-events: none;
+  }
+  .tree-row .file-item.active:hover::after { opacity: 0.5; }
+}

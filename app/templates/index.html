@@ -11,11 +11,41 @@
     </button>
   </div>
 
+  {% if user and user.role in ['write', 'admin'] %}
+  <div class="tree-filter-wrap">
+    <svg class="tree-filter-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="tree-filter" id="tree-filter" placeholder="Filtern…" aria-label="Dateibaum filtern" oninput="kwFilterTree(this.value)">
+  </div>
+  {% endif %}
+
   <div class="file-tree" id="file-tree"
        tabindex="0"
        aria-label="Dateibaum. Rechtsklick oder langes Drücken öffnet Aktionen."
        hx-get="/ui/files?path=." hx-trigger="load" hx-swap="innerHTML">
     <div class="tree-loading">Lade…</div>
+  </div>
+
+  <div class="tree-selection-bar" id="selection-bar" hidden>
+    <span class="selection-count" id="selection-count">0 ausgewählt</span>
+    <div class="selection-actions">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="kwBatchMove()" title="Verschieben">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="kwBatchTag()" title="Tags setzen">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="kwExportSelected()" title="Exportieren">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
+      {% if user and user.role == 'admin' %}
+      <button type="button" class="btn btn-danger btn-sm" onclick="kwBatchDelete()" title="Löschen">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      </button>
+      {% endif %}
+    </div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="kwClearSelection()" title="Auswahl aufheben">
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
   </div>
 
   {% include "partials/sidebar_account.html" %}
@@ -274,6 +304,11 @@
       <div class="step-card-title">KI-Anbindung</div>
       <div class="step-card-text"><code>AGENTS.md</code> enthält Anweisungen für angeschlossene KI-Systeme.</div>
     </div>
+  </div>
+
+  <p class="section-label">Zuletzt geöffnet</p>
+  <div id="recent-files" class="recent-files" hx-get="/ui/recent" hx-trigger="load" hx-swap="innerHTML">
+    <div class="recent-loading" style="color:var(--md-outline);font-size:0.82rem;">Lade…</div>
   </div>
 
   <p class="section-label">MCP-Verbindung</p>
