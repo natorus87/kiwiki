@@ -1207,3 +1207,62 @@ function toggleFolderByName(path) {
   var item = row.querySelector('.file-item.folder');
   if (item) item.click();
 }
+
+/* ── Floating Action Button (Mobile) ──────────────────────────────── */
+function kwToggleFab() {
+  var menu = document.getElementById('fab-menu');
+  var fab = document.getElementById('fab');
+  if (!menu || !fab) return;
+  var isOpen = menu.classList.toggle('open');
+  fab.style.transform = isOpen ? 'rotate(45deg)' : '';
+  if (isOpen) {
+    setTimeout(function() {
+      document.addEventListener('click', kwCloseFabOutside);
+    }, 0);
+  }
+}
+function kwCloseFabOutside(e) {
+  var menu = document.getElementById('fab-menu');
+  var fab = document.getElementById('fab');
+  if (!menu || !fab) return;
+  if (!menu.contains(e.target) && !fab.contains(e.target)) {
+    kwToggleFab();
+    document.removeEventListener('click', kwCloseFabOutside);
+  }
+}
+
+/* ── Touch Gestures: Swipe to open/close sidebar ──────────────────── */
+(function() {
+  var startX = 0, startY = 0, dist = 0, threshold = 60;
+  var sidebar = document.querySelector('.sidebar');
+  var isTracking = false;
+
+  function isMobile() { return window.matchMedia && window.matchMedia('(max-width: 768px)').matches; }
+
+  document.addEventListener('touchstart', function(e) {
+    if (!isMobile()) return;
+    var touch = e.touches[0];
+    startX = touch.clientX;
+    startY = touch.clientY;
+    dist = 0;
+    isTracking = true;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!isTracking || !isMobile()) return;
+    var touch = e.touches[0];
+    var dx = touch.clientX - startX;
+    var dy = touch.clientY - startY;
+    if (Math.abs(dy) > Math.abs(dx)) { isTracking = false; return; }
+    dist = dx;
+  }, { passive: true });
+
+  document.addEventListener('touchend', function() {
+    if (!isTracking || !isMobile()) return;
+    isTracking = false;
+    if (!sidebar) return;
+    var isOpen = sidebar.classList.contains('open');
+    if (dist > threshold && !isOpen) { openSidebar(); }
+    else if (dist < -threshold && isOpen) { closeSidebar(); }
+  }, { passive: true });
+})();

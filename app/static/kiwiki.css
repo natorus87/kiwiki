@@ -1066,6 +1066,56 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
   touch-action: manipulation;
 }
 
+/* ── Floating Action Button (Mobile) ──────────────────────────────── */
+.fab {
+  display: none;
+  position: fixed;
+  bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  right: 1.5rem;
+  width: 52px; height: 52px;
+  border-radius: 16px;
+  background: var(--md-primary);
+  color: var(--md-primary-ink);
+  border: none;
+  box-shadow: 0 4px 16px rgba(184, 223, 120, 0.35);
+  cursor: pointer;
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  touch-action: manipulation;
+}
+.fab:active { transform: scale(0.92); }
+.fab-menu {
+  display: none;
+  position: fixed;
+  bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  right: 1.5rem;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 200;
+}
+.fab-menu.open { display: flex; }
+.fab-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  background: var(--md-surface);
+  border: 1px solid var(--md-outline-v);
+  border-radius: var(--radius-md);
+  color: var(--md-on-surface);
+  font-size: 0.82rem;
+  font-family: var(--font-body);
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: var(--shadow-soft);
+  transition: background var(--t);
+  touch-action: manipulation;
+}
+.fab-menu-item:active { background: var(--md-surface-c); }
+.fab-menu-item svg { color: var(--md-primary); flex-shrink: 0; }
+
 /* ── Mobile ─────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .hamburger { display: flex; }
@@ -1224,6 +1274,36 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
   .toastui-editor-tabs {
     overflow-x: auto;
   }
+
+  /* FAB: nur auf Home sichtbar */
+  .fab { display: flex; }
+
+  /* Editor: bessere Mobile-Leiste */
+  .editor-bar {
+    position: sticky;
+    top: 56px;
+    z-index: 50;
+  }
+
+  /* Touch-Gesten-Hinweis */
+  .swipe-hint {
+    display: block;
+    text-align: center;
+    font-size: 0.7rem;
+    color: var(--md-outline);
+    padding: 0.3rem;
+    opacity: 0.6;
+  }
+
+  /* Breadcrumb: kompakter */
+  .breadcrumb { font-size: 0.7rem; gap: 0.1rem; }
+
+  /* Datei-Aktionen: volle Breite */
+  .file-actions .btn { flex: 1; justify-content: center; }
+
+  /* Sidebar-Filter + Toggle: kompakter */
+  .tree-toolbar { padding: 0.25rem 0.4rem; gap: 0.15rem; }
+  .btn-select-toggle { width: 36px; height: 36px; }
 }
 
 /* ── Modal / Toast / Bestätigung ──────────────────────────────────── */
