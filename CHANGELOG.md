@@ -7,10 +7,42 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- **12 new MCP tools** (46 total): `git_commit`, `file_history`, `diff`, `statistics`, `template`, `validate_links`, `link_graph`, `rename`, `batch_tag`, `export`, `duplicate_check`, `ai_summarize`
+- **Multi-select mode**: Toggle via toolbar button, context menu, or FAB — batch delete, move, tag, export
+- **Inline rename**: Double-click file name in tree to rename; also in context menu
+- **Breadcrumb navigation**: Path hierarchy in content area with click-to-navigate
+- **Copy path button**: Clipboard copy for file paths
+- **Sidebar filter**: Live filtering of file tree
+- **Recently opened files**: Quick access on home page
+- **Markdown export**: Download single files or selections as .md
+- **Keyboard shortcuts**: `dd` delete, `mm` move, `ee` edit, `rr` rename, `Esc` clear selection
+- **Floating Action Button (FAB)**: Quick actions on mobile (new note, file, folder, multi-select)
+- **Touch gestures**: Swipe right to open sidebar, swipe left to close
+- **Editor floating save button**: Mobile-friendly save action
+- **Security Headers Middleware**: X-Content-Type-Options, X-Frame-Options, Referrer-Policy, HSTS
+- **Template system**: Create notes from templates (meeting, decision, adr, review, bug, feature)
+
 ### Changed
-- Security hardening: OAuth redirects now require registered or explicitly allowed hosts, weak OAuth token-secret placeholders are rejected, REST writes are limited to Markdown content paths, and Helm stores `KIWIKI_USERS` / `KIWIKI_OAUTH_TOKEN_SECRET` in a Kubernetes Secret.
-- Deployment hardening: the container now runs as UID/GID `1000` (`kiwiki`) with Helm pod/container security contexts. Existing PVCs or bind-mounted data directories created by earlier root-running containers may need a one-time `chown -R 1000:1000 /data` before startup so SQLite indexes remain writable.
-- Agent autonomy: MCP now exposes `write_many` for multi-file updates and `chunked_write` for large or unreliable writes, and the default agent instructions tell clients to proceed with ordinary create/update/append/index operations without asking for confirmation.
+- **bleach → nh3 migration**: Deprecated bleach replaced with faster Rust-based nh3 sanitizer
+- **MCP tool errors**: Now return `isError: true` in result (MCP spec compliant, fixes ChatGPT error reports)
+- **SQLite connections**: Refactored to context manager pattern (prevents connection leaks)
+- **All datetime calls**: Use `datetime.now(timezone.utc)` — no more naive datetimes
+- **CORS default**: Changed from `*` to `""` (disabled = secure default)
+- **`KIWIKI_TRUST_PROXY`**: Default unified to `false` (was inconsistent between files)
+- **pytest**: Moved from `requirements.txt` to `requirements-dev.txt` (prod image cleanup)
+- **SVG icons**: Consistent Lucide-style set with proper stroke-width=2
+- **Visual polish**: Gradient glow hero, terminal-style code blocks, improved button hover states, noise texture overlay
+- **Step-card icons**: Distinct colors per category (green/teal/warm/purple)
+- **Delete button**: Softer default style (gray, red on hover only)
+- **Context menu**: Added "Umbenennen" and "Mehrfachauswahl" options
+- **pyproject.toml**: Added project metadata and pytest config
+
+### Fixed
+- **Rate-limiter typo**: "spatieren" → "später erneut versuchen"
+- **MCP error format**: ChatGPT now correctly reports tool errors instead of transport errors
+- **Selection bar**: Hidden by default (was overriding `hidden` attribute)
+- **nh3 `link_rel`**: Fixed error when rendering links with `rel` attribute
 
 ## [2.0.2] - 2026-06-14
 
