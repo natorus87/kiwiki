@@ -1029,6 +1029,20 @@ document.addEventListener('dblclick', function(e) {
 
 /* ── Multi-Select ─────────────────────────────────────────────────── */
 window.__kwSelected = new Set();
+window.__kwSelectMode = false;
+
+function kwToggleSelectMode() {
+  window.__kwSelectMode = !window.__kwSelectMode;
+  var tree = document.getElementById('file-tree');
+  var btn = document.getElementById('select-toggle');
+  if (tree) tree.classList.toggle('select-mode', window.__kwSelectMode);
+  if (btn) {
+    btn.classList.toggle('active', window.__kwSelectMode);
+    btn.setAttribute('aria-pressed', window.__kwSelectMode ? 'true' : 'false');
+  }
+  if (!window.__kwSelectMode) kwClearSelection();
+}
+
 function kwToggleSelect(cb) {
   var path = cb.dataset.path;
   if (cb.checked) { window.__kwSelected.add(path); cb.closest('.tree-row').classList.add('selected'); }

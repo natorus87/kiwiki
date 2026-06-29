@@ -1892,12 +1892,19 @@ header::before,
 }
 
 /* ── Tree Filter ──────────────────────────────────────────────────── */
+/* ── Tree Toolbar ──────────────────────────────────────────────────── */
+.tree-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.35rem 0.5rem;
+  margin: 0 0 0.15rem;
+}
 .tree-filter-wrap {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.4rem 0.65rem;
-  margin: 0 0 0.25rem;
+  flex: 1;
 }
 .tree-filter-icon { color: var(--md-outline); flex-shrink: 0; }
 .tree-filter {
@@ -1915,6 +1922,27 @@ header::before,
 .tree-filter:focus { border-color: var(--md-primary-border); }
 .tree-filter::placeholder { color: var(--md-outline); }
 
+.btn-select-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px; height: 30px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--md-outline);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--t);
+  padding: 0;
+}
+.btn-select-toggle:hover { color: var(--md-on-surface); background: var(--md-surface-c); }
+.btn-select-toggle.active {
+  color: var(--md-primary);
+  background: var(--md-primary-dim);
+  border-color: var(--md-primary-border);
+}
+
 /* ── Tree Checkbox ────────────────────────────────────────────────── */
 .tree-checkbox {
   appearance: none;
@@ -1926,13 +1954,22 @@ header::before,
   cursor: pointer;
   flex-shrink: 0;
   opacity: 0;
-  transition: opacity var(--t), background var(--t), border-color var(--t);
-  margin-right: 0.3rem;
+  width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  transition: opacity var(--t), width 0.15s ease, margin 0.15s ease, padding 0.15s ease;
   position: relative;
 }
-.tree-row:hover .tree-checkbox,
-.tree-row.selected .tree-checkbox,
-.tree-checkbox:checked { opacity: 1; }
+.file-tree.select-mode .tree-checkbox {
+  opacity: 1;
+  width: 15px;
+  margin: 0 0.35rem 0 0;
+  padding: 0;
+}
+.file-tree.select-mode .tree-row .file-item {
+  padding-left: 0;
+}
 .tree-checkbox:checked {
   background: var(--md-primary);
   border-color: var(--md-primary);
@@ -1947,7 +1984,7 @@ header::before,
   transform: rotate(45deg);
 }
 .tree-row.selected { background: var(--md-primary-dim) !important; }
-.tree-row { position: relative; }
+.tree-row { position: relative; display: flex; align-items: center; }
 .tree-row .file-item { flex: 1; min-width: 0; }
 
 /* ── Selection Bar ────────────────────────────────────────────────── */
