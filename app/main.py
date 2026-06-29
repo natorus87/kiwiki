@@ -4,8 +4,8 @@ import os
 import re
 from pathlib import Path
 
-import bleach
 import markdown as md_lib
+import nh3
 import yaml
 from fastapi import FastAPI, Depends, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
 
 from . import session_store, user_store
 from .auth import ROLE_HIERARCHY, get_current_user, parse_users, require_role
@@ -56,36 +57,18 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
-_ALLOWED_TAGS = set(bleach.sanitizer.ALLOWED_TAGS) | {
-    "p",
-    "br",
-    "pre",
-    "code",
-    "blockquote",
-    "hr",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "table",
-    "thead",
-    "tbody",
-    "tr",
-    "th",
-    "td",
-    "span",
-    "div",
+_NH3_TAGS = {
+    "a", "abbr", "b", "blockquote", "br", "code", "div", "em", "h1", "h2", "h3",
+    "h4", "h5", "h6", "hr", "i", "li", "ol", "p", "pre", "span", "strong",
+    "table", "tbody", "td", "th", "thead", "tr", "ul",
 }
-_ALLOWED_ATTRS = {
-    **bleach.sanitizer.ALLOWED_ATTRIBUTES,
-    "a": ["href", "title", "rel"],
-    "code": ["class"],
-    "span": ["class"],
-    "div": ["class"],
-    "th": ["align"],
-    "td": ["align"],
+_NH3_ATTRS = {
+    "a": {"href", "title", "rel"},
+    "code": {"class"},
+    "span": {"class"},
+    "div": {"class"},
+    "th": {"align"},
+    "td": {"align"},
 }
 
 
@@ -94,12 +77,11 @@ def _render_markdown_safe(content: str) -> str:
         content,
         extensions=["fenced_code", "tables", "nl2br"],
     )
-    return bleach.clean(
+    return nh3.clean(
         rendered,
-        tags=_ALLOWED_TAGS,
-        attributes=_ALLOWED_ATTRS,
-        protocols={"http", "https", "mailto"},
-        strip=True,
+        tags=_NH3_TAGS,
+        attributes=_NH3_ATTRS,
+        url_schemes={"http", "https", "mailto"},
     )
 
 
@@ -117,13 +99,9 @@ app.include_router(mcp_router)
 # CORS — optional: KIWIKI_CORS_ORIGINS = "https://wiki.example,https://api.example"
 # Default "*" mit WARNS-LOG — in Produktivumgebung auf erlaubte Origins setzen
 # ---------------------------------------------------------------------------
-_cors_origins_raw = os.getenv("KIWIKI_CORS_ORIGINS", "*")
-if _cors_origins_raw == "*":
-    logging.warning(
-        "CORS allow_origins is set to '*'. Configure KIWIKI_CORS_ORIGINS with "
-        "explicit origins (comma-separated) for production deployments."
-    )
-    _cors_origins: list[str] = ["*"]
+_cors_origins_raw = os.getenv("KIWIKI_CORS_ORIGINS", "")
+if not _cors_origins_raw:
+    _cors_origins: list[str] = []
 else:
     _cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
 
@@ -133,6 +111,20 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # ---------------------------------------------------------------------------
 # Rate Limiting — Login: 5/min, Write: 30/min, Read: 60/min pro IP
@@ -280,7 +272,7 @@ async def login_submit(request: Request, api_key: str = Form(...)):
     record = session_store.create_session(username, role, api_key)
     response = RedirectResponse(url="/", status_code=303)
     # Trust-proxy: secure cookie nur hinter HTTPS/Proxy
-    _trust_proxy = os.getenv("KIWIKI_TRUST_PROXY", "true").lower() == "true"
+    _trust_proxy = os.getenv("KIWIKI_TRUST_PROXY", "false").lower() == "true"
     response.set_cookie(
         "kiwiki_session",
         record.token,
@@ -379,35 +371,35 @@ _SVG_FILE = (
     '</svg>'
 )
 # Gemeinsame Attribute für Button-Icons — currentColor wird via CSS color-Eigenschaft gesteuert
-_B = 'xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"'
+_SVG_BTN_ATTRS = 'xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="btn-icon"'
 
 _SVG_EDIT = (
-    f'<svg {_B}>'
+    f'<svg {_SVG_BTN_ATTRS}>'
     '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>'
     '<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>'
     '</svg>'
 )
 _SVG_TRASH = (
-    f'<svg {_B}>'
+    f'<svg {_SVG_BTN_ATTRS}>'
     '<polyline points="3 6 5 6 21 6"/>'
     '<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'
     '</svg>'
 )
 _SVG_FILE_PLUS = (
-    f'<svg {_B}>'
+    f'<svg {_SVG_BTN_ATTRS}>'
     '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>'
     '<polyline points="14 2 14 8 20 8"/>'
     '<line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>'
     '</svg>'
 )
 _SVG_FOLDER_PLUS = (
-    f'<svg {_B}>'
+    f'<svg {_SVG_BTN_ATTRS}>'
     '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'
     '<line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>'
     '</svg>'
 )
 _SVG_MOVE = (
-    f'<svg {_B}>'
+    f'<svg {_SVG_BTN_ATTRS}>'
     '<polyline points="5 9 2 12 5 15"/>'
     '<polyline points="9 5 12 2 15 5"/>'
     '<line x1="2" y1="12" x2="22" y2="12"/>'

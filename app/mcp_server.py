@@ -1570,11 +1570,20 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
                 "structuredContent": json.loads(text),
             })
         except PermissionError as exc:
-            return _rpc_err(req_id, -32001, str(exc))
+            return _rpc_ok(req_id, {
+                "content": [{"type": "text", "text": f"Permission denied: {exc}"}],
+                "isError": True,
+            })
         except (FileNotFoundError, ValueError) as exc:
-            return _rpc_err(req_id, -32000, str(exc))
+            return _rpc_ok(req_id, {
+                "content": [{"type": "text", "text": str(exc)}],
+                "isError": True,
+            })
         except Exception as exc:
-            return _rpc_err(req_id, -32000, f"Internal error: {exc}")
+            return _rpc_ok(req_id, {
+                "content": [{"type": "text", "text": f"Internal error: {exc}"}],
+                "isError": True,
+            })
 
     return _rpc_err(req_id, -32601, f"Method not found: {method!r}")
 
@@ -2574,12 +2583,9 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         _need_read()
         markdown_count = len(_markdown_paths("."))
         init_db()
-        conn = get_db()
-        try:
+        with get_db() as conn:
             indexed_count = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
             database = conn.execute("PRAGMA database_list").fetchone()[2]
-        finally:
-            conn.close()
         return json.dumps({"markdown_files": markdown_count, "indexed_files": indexed_count, "database": database}, ensure_ascii=False, indent=2)
 
     if name == "whoami":

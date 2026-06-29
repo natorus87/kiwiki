@@ -35,9 +35,8 @@ class TestIndexFile:
         rel = tmp_file("notes/test.md")
         init_db()
         index_file(rel)
-        conn = get_db()
-        rows = conn.execute("SELECT path, title, content FROM files WHERE path = ?", (rel,)).fetchall()
-        conn.close()
+        with get_db() as conn:
+            rows = conn.execute("SELECT path, title, content FROM files WHERE path = ?", (rel,)).fetchall()
         assert len(rows) == 1
         assert rows[0]["title"] == "Test"
         assert "Body" in rows[0]["content"]
@@ -51,9 +50,8 @@ class TestIndexFile:
         rel = tmp_file("notes/suchtest.md", content)
         init_db()
         index_file(rel)
-        conn = get_db()
-        row = conn.execute("SELECT tags, updated_at, owner FROM files WHERE path = ?", (rel,)).fetchone()
-        conn.close()
+        with get_db() as conn:
+            row = conn.execute("SELECT tags, updated_at, owner FROM files WHERE path = ?", (rel,)).fetchone()
         assert row["tags"] == "python,test"
         assert row["updated_at"] == "2026-06-01"
         assert row["owner"] == "testuser"
@@ -67,9 +65,8 @@ class TestDeindexFile:
         init_db()
         index_file(rel)
         deindex_file(rel)
-        conn = get_db()
-        rows = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
-        conn.close()
+        with get_db() as conn:
+            rows = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
         assert rows == 0
 
 

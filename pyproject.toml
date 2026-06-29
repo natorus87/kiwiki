@@ -1,3 +1,10 @@
+[project]
+name = "kiwiki"
+version = "0.1.0"
+description = "KI-gestütztes Wiki mit MCP-Server"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+
 [tool.ruff]
 target-version = "py312"
 line-length = 120
@@ -6,3 +13,6 @@ line-length = 120
 ignore = [
   "E501",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

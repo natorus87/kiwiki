@@ -125,7 +125,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             response = JSONResponse(
                 status_code=429,
                 content={
-                    "detail": "Zu viele Anfragen. Bitte spatieren Sie versuchen.",
+                    "detail": "Zu viele Anfragen. Bitte später erneut versuchen.",
                     "retry_after": max(0, int(reset_at - now)),
                 },
                 headers={"Retry-After": str(max(0, int(reset_at - now)))},

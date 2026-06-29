@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import frontmatter
 from .models import FileInfo, FileContent
 from .tenancy import BASE_DATA_DIR, user_root
@@ -75,7 +75,7 @@ def write_file(path: str, content: str) -> FileContent:
     file_path = safe_path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     post = frontmatter.loads(content) if content else frontmatter.Post("")
-    post.metadata["updated"] = datetime.now().isoformat().split("T")[0]
+    post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(frontmatter.dumps(post))
     return FileContent(path=path, content=post.content, frontmatter=post.metadata)
@@ -92,7 +92,7 @@ def append_file(path: str, content: str) -> FileContent:
     with open(file_path, "r", encoding="utf-8") as f:
         post = frontmatter.load(f)
     post.content += "\n" + content
-    post.metadata["updated"] = datetime.now().isoformat().split("T")[0]
+    post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(frontmatter.dumps(post))
     return FileContent(path=path, content=post.content, frontmatter=post.metadata)
@@ -135,10 +135,10 @@ def list_files(path: str = ".") -> list[FileInfo]:
                 content = read_file(rel_path)
                 updated = content.frontmatter.get(
                     "updated",
-                    datetime.fromtimestamp(stat.st_mtime).isoformat().split("T")[0],
+                    datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat().split("T")[0],
                 )
             except Exception:
-                updated = datetime.fromtimestamp(stat.st_mtime).isoformat().split("T")[0]
+                updated = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat().split("T")[0]
             items.append(
                 FileInfo(
                     path=rel_path,
@@ -208,7 +208,7 @@ def create_note(title: str, content: str, tags: list[str], owner: str, folder: s
     while safe_path(path).exists():
         path = f"{folder}/{slug}-{i}.md"
         i += 1
-    now = datetime.now().isoformat().split("T")[0]
+    now = datetime.now(timezone.utc).isoformat().split("T")[0]
     fm = {
         "title": title,
         "type": "note",
@@ -242,7 +242,7 @@ def edit_file(path: str, new_str: str, old_str: str = "") -> FileContent:
         post.content = post.content.replace(old_str, new_str, 1)
     else:
         post.content = post.content.rstrip("\n") + "\n\n" + new_str
-    post.metadata["updated"] = datetime.now().isoformat().split("T")[0]
+    post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(frontmatter.dumps(post))
     return FileContent(path=path, content=post.content, frontmatter=post.metadata)
@@ -259,7 +259,7 @@ def update_frontmatter(path: str, updates: dict) -> FileContent:
     with open(file_path, "r", encoding="utf-8") as f:
         post = frontmatter.load(f)
     post.metadata.update(updates)
-    post.metadata["updated"] = datetime.now().isoformat().split("T")[0]
+    post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(frontmatter.dumps(post))
     return FileContent(path=path, content=post.content, frontmatter=post.metadata)

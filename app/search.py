@@ -1,6 +1,7 @@
 import logging
 import re
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 from .models import SearchResult
@@ -16,30 +17,33 @@ def _db_file() -> Path:
     return db_dir / "index.sqlite"
 
 
-def get_db() -> sqlite3.Connection:
-    """Get database connection for the current user's namespace."""
+@contextmanager
+def get_db():
+    """Context manager for database connections — ensures cleanup on error."""
     conn = sqlite3.connect(str(_db_file()))
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def init_db() -> None:
     """Initialize FTS5 table if not exists."""
-    conn = get_db()
-    conn.execute(
+    with get_db() as conn:
+        conn.execute(
+            """
+        CREATE VIRTUAL TABLE IF NOT EXISTS files USING fts5(
+            path,
+            title,
+            tags,
+            content,
+            updated_at,
+            owner
+        )
         """
-    CREATE VIRTUAL TABLE IF NOT EXISTS files USING fts5(
-        path,
-        title,
-        tags,
-        content,
-        updated_at,
-        owner
-    )
-    """
-    )
-    conn.commit()
-    conn.close()
+        )
+        conn.commit()
 
 
 def index_file(file_path: str) -> None:
@@ -49,7 +53,6 @@ def index_file(file_path: str) -> None:
     """
     from .storage import safe_path, read_file
 
-    conn = None
     try:
         full_path = safe_path(file_path)
         if not full_path.exists() or not full_path.is_file():
@@ -59,29 +62,25 @@ def index_file(file_path: str) -> None:
         tags = ",".join(content.frontmatter.get("tags", []))
         updated_at = content.frontmatter.get("updated", "")
         owner = content.frontmatter.get("owner", "")
-        conn = get_db()
-        conn.execute("DELETE FROM files WHERE path = ?", (file_path,))
-        conn.execute(
-            """
-        INSERT INTO files (path, title, tags, content, updated_at, owner)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-            (file_path, title, tags, content.content, updated_at, owner),
-        )
-        conn.commit()
+        with get_db() as conn:
+            conn.execute("DELETE FROM files WHERE path = ?", (file_path,))
+            conn.execute(
+                """
+            INSERT INTO files (path, title, tags, content, updated_at, owner)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+                (file_path, title, tags, content.content, updated_at, owner),
+            )
+            conn.commit()
     except Exception:
         logger.exception("Failed to index markdown file %r", file_path)
-    finally:
-        if conn is not None:
-            conn.close()
 
 
 def deindex_file(file_path: str) -> None:
     """Remove a file from the FTS5 index."""
-    conn = get_db()
-    conn.execute("DELETE FROM files WHERE path = ?", (file_path,))
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        conn.execute("DELETE FROM files WHERE path = ?", (file_path,))
+        conn.commit()
 
 
 def _sanitize_fts(query: str) -> str:
@@ -134,8 +133,7 @@ def _to_results(rows) -> list[SearchResult]:
 def search(query: str) -> list[SearchResult]:
     """Full-text search with FTS5; falls back to LIKE on FTS syntax errors."""
     init_db()
-    conn = get_db()
-    try:
+    with get_db() as conn:
         clean = _sanitize_fts(query)
         try:
             rows = _fts_rows(conn, clean)
@@ -151,8 +149,6 @@ def search(query: str) -> list[SearchResult]:
         if not results:
             results = _to_results(_path_rows(conn, query))
         return results
-    finally:
-        conn.close()
 
 
 def reindex_all() -> int:
@@ -160,10 +156,9 @@ def reindex_all() -> int:
     Reindex all markdown files in the current user's namespace.
     Returns count of indexed files.
     """
-    conn = get_db()
-    conn.execute("DELETE FROM files")
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        conn.execute("DELETE FROM files")
+        conn.commit()
     count = 0
     root = user_root()
     for md_file in root.rglob("*.md"):

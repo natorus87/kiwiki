@@ -633,7 +633,7 @@ class TestToolDispatch:
             mcp_server.parse_users = original_parse
 
     async def test_unauth_access(self):
-        """Kein User → PermissionError."""
+        """Kein User → isError im Result (MCP-konform)."""
         body = {
             "jsonrpc": "2.0",
             "id": 12,
@@ -641,8 +641,9 @@ class TestToolDispatch:
             "params": {"name": "read_file", "arguments": {"path": "notes/test.md"}},
         }
         result = await _handle_message(body, None)
-        assert "error" in result
-        assert result["error"]["code"] == -32001
+        assert "result" in result
+        assert result["result"]["isError"] is True
+        assert "Permission denied" in result["result"]["content"][0]["text"]
 
     async def test_read_without_admin(self, _setup_users):
         from app import mcp_server
@@ -657,8 +658,9 @@ class TestToolDispatch:
                 "params": {"name": "delete_file", "arguments": {"path": "notes/test.md"}},
             }
             result = await _handle_message(body, User(username="alice", role="read"))
-            assert "error" in result
-            assert result["error"]["code"] == -32001
+            assert "result" in result
+            assert result["result"]["isError"] is True
+            assert "Admin permission required" in result["result"]["content"][0]["text"]
         finally:
             mcp_server.parse_users = original_parse
 
@@ -670,8 +672,9 @@ class TestToolDispatch:
             "params": {"name": "nicht_existent", "arguments": {}},
         }
         result = await _handle_message(body, User(username="alice", role="admin"))
-        assert "error" in result
-        assert "Unknown tool" in result["error"]["message"]
+        assert "result" in result
+        assert result["result"]["isError"] is True
+        assert "Unknown tool" in result["result"]["content"][0]["text"]
 
 
 class TestGrepRedosHardening:
@@ -703,9 +706,11 @@ class TestGrepRedosHardening:
             },
         }
         result = await _handle_message(body, User(username="alice", role="admin"))
-        # Tool wirft ValueError → JSON-RPC -32000
-        assert "error" in result
-        assert "ReDoS" in result["error"]["message"] or "rejected" in result["error"]["message"].lower()
+        # Tool wirft ValueError → isError im Result (MCP-konform)
+        assert "result" in result
+        assert result["result"]["isError"] is True
+        text = result["result"]["content"][0]["text"]
+        assert "ReDoS" in text or "rejected" in text.lower()
 
     async def test_alternation_bomb_rejected(self, _setup):
         body = {
@@ -718,7 +723,8 @@ class TestGrepRedosHardening:
             },
         }
         result = await _handle_message(body, User(username="alice", role="admin"))
-        assert "error" in result
+        assert "result" in result
+        assert result["result"]["isError"] is True
 
     async def test_pathological_pattern_with_long_input_rejected(self, _setup):
         body = {
@@ -731,7 +737,8 @@ class TestGrepRedosHardening:
             },
         }
         result = await _handle_message(body, User(username="alice", role="admin"))
-        assert "error" in result
+        assert "result" in result
+        assert result["result"]["isError"] is True
 
     async def test_pattern_too_long_rejected(self, _setup):
         body = {
@@ -744,8 +751,9 @@ class TestGrepRedosHardening:
             },
         }
         result = await _handle_message(body, User(username="alice", role="admin"))
-        assert "error" in result
-        assert "too long" in result["error"]["message"].lower()
+        assert "result" in result
+        assert result["result"]["isError"] is True
+        assert "too long" in result["result"]["content"][0]["text"].lower()
 
     async def test_simple_grep_still_works(self, _setup):
         body = {
