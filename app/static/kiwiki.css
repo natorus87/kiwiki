@@ -304,12 +304,15 @@ header::before {
 .hamburger {
   display: none;
   align-items: center; justify-content: center;
-  width: 44px; height: 58px;
+  width: 50px; height: 58px;
   background: none; border: none; cursor: pointer;
   color: var(--md-on-surface-v); flex-shrink: 0;
-  transition: color var(--t);
+  transition: color var(--t), background var(--t);
+  -webkit-tap-highlight-color: transparent;
 }
 .hamburger:hover { color: var(--md-on-surface); }
+.hamburger:active { background: var(--md-surface-c); }
+.hamburger svg { width: 23px; height: 23px; }
 
 .sidebar-backdrop {
   display: none;
