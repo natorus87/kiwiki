@@ -7,6 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-07-01
+
+### Fixed
+- **Edit button missing in mobile view**: `ui_file` endpoint did not pass `user` to the template context, so `{% if user and user.role in ['write', 'admin'] %}` was always false — the "Bearbeiten" button was hidden for everyone, most noticeable on mobile/tablet
+
+### Added
+- Regression test `tests/test_ui_file.py` covering Edit/Export/Delete button visibility per role
+
+## [2.1.0] - 2026-06-29
+
 ### Added
 - **12 new MCP tools** (46 total): `git_commit`, `file_history`, `diff`, `statistics`, `template`, `validate_links`, `link_graph`, `rename`, `batch_tag`, `export`, `duplicate_check`, `ai_summarize`
 - **Multi-select mode**: Toggle via toolbar button, context menu, or FAB — batch delete, move, tag, export

@@ -485,6 +485,7 @@ async def ui_file(request: Request, path: str):
                 "owner": fm.get("owner"),
                 "tags": fm.get("tags") or [],
                 "rendered": rendered,
+                "user": user,
                 "can_delete": can_delete,
                 "svg_edit": svg_edit,
                 "svg_trash": svg_trash,
