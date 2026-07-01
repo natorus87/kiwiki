@@ -1336,10 +1336,12 @@ function kwCloseFabOutside(e) {
       var isOpen = sidebar.classList.contains('open');
       // Open: Start in linker Edge-Zone (egal wo auf der Seite gewischt wird,
       // solange die Geste am linken Rand beginnt).
-      // Close: Geste aus dem linken Bereich bei geöffneter Sidebar.
+      // Close: Geste auf der geöffneten Sidebar — Sidebar hat width:100vw
+      // auf Mobile, daher akzeptieren wir jeden Touch-Punkt auf der linken
+      // 85% der Breite (rechte 15% bleiben für künftige Aktionen frei).
       if (!isOpen && startX <= edgeZone) {
         isTracking = true; intent = 'open';
-      } else if (isOpen && startX < window.innerWidth / 2) {
+      } else if (isOpen && startX < window.innerWidth * 0.85) {
         isTracking = true; intent = 'close';
       }
     }, { passive: true });
