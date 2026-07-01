@@ -1315,7 +1315,7 @@ function kwCloseFabOutside(e) {
   var sidebar = document.querySelector('.sidebar');
   if (!sidebar) return;
 
-  var startX = 0, dist = 0, isTracking = false, intent = null;
+  var startX = 0, startY = 0, dist = 0, isTracking = false, intent = null;
   var edgeZone = 24;
   var openThreshold = 40;
   var closeThreshold = 60;
@@ -1329,6 +1329,7 @@ function kwCloseFabOutside(e) {
       if (!kwIsMobileSidebar()) return;
       var t = e.touches[0];
       startX = t.clientX;
+      startY = t.clientY;
       dist = 0;
       isTracking = false;
       intent = null;
