@@ -24,31 +24,31 @@
   {% endif %}
 
   <div class="file-tree" id="file-tree"
-       tabindex="0"
+       role="tree"
        aria-label="Dateibaum. Rechtsklick oder langes Drücken öffnet Aktionen."
        hx-get="/ui/files?path=." hx-trigger="load" hx-swap="innerHTML">
-    <div class="tree-loading">Lade…</div>
+    <div class="tree-loading" role="status" aria-live="polite">Lade…</div>
   </div>
 
   <div class="tree-selection-bar" id="selection-bar" hidden>
     <span class="selection-count" id="selection-count">0 ausgewählt</span>
     <div class="selection-actions">
-      <button type="button" class="btn btn-ghost btn-sm" onclick="kwBatchMove()" title="Verschieben">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="kwBatchMove()" title="Verschieben" aria-label="Auswahl verschieben">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
       </button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="kwBatchTag()" title="Tags setzen">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="kwBatchTag()" title="Tags setzen" aria-label="Tags setzen">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>
       </button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="kwExportSelected()" title="Exportieren">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="kwExportSelected()" title="Exportieren" aria-label="Auswahl exportieren">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       </button>
       {% if user and user.role == 'admin' %}
-      <button type="button" class="btn btn-danger btn-sm" onclick="kwBatchDelete()" title="Löschen">
+      <button type="button" class="btn btn-danger btn-sm" onclick="kwBatchDelete()" title="Löschen" aria-label="Auswahl löschen">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
       </button>
       {% endif %}
     </div>
-    <button type="button" class="btn btn-ghost btn-sm" onclick="kwClearSelection()" title="Auswahl aufheben">
+    <button type="button" class="btn btn-ghost btn-sm" onclick="kwClearSelection()" title="Auswahl aufheben" aria-label="Auswahl aufheben">
       <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
     </button>
   </div>
@@ -305,7 +305,7 @@
         Dein persönlicher Wissensspeicher. Notizen leben als Markdown-Dateien, bleiben lokal strukturiert und sind direkt für Suche und KI-Workflows nutzbar.
       </p>
       <div class="quick-actions">
-        <button type="button" class="btn btn-primary needs-write" onclick="window.location.href='/editor?path=notes/neue-notiz.md'">
+        <button type="button" class="btn btn-primary needs-write" onclick="kwNewNote()">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
           Neue Notiz
         </button>
@@ -376,7 +376,7 @@ Authorization: Bearer &lt;api-key&gt;</code></pre>
 {% if user and user.role in ['write', 'admin'] %}
 <!-- Floating Action Button (Mobile) -->
 <div class="fab-menu" id="fab-menu">
-  <button type="button" class="fab-menu-item" onclick="window.location.href='/editor?path=notes/neue-notiz.md'">
+  <button type="button" class="fab-menu-item" onclick="kwNewNote()">
     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
     Neue Notiz
   </button>

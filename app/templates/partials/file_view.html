@@ -1,16 +1,16 @@
 <div class="content-inner file-content-inner">
   <nav class="breadcrumb" aria-label="Pfadnavigation">
-    <a href="/" class="breadcrumb-item" onclick="event.preventDefault(); htmx.ajax('GET','/ui/files?path=.',{target:'#main-content',swap:'innerHTML'})">Wiki</a>
+    <button type="button" class="breadcrumb-item" onclick="htmx.ajax('GET','/ui/files?path=.',{target:'#main-content',swap:'innerHTML'})">Wiki</button>
     {% set parts = path.split('/') %}
     {% set ns = namespace(accum='') %}
     {% for part in parts %}
       {% set ns.accum = ns.accum + '/' + part if ns.accum else part %}
       {% if not loop.last %}
-        <span class="breadcrumb-sep">/</span>
-        <a href="#" class="breadcrumb-item" onclick="event.preventDefault(); toggleFolderByName('{{ ns.accum }}')">{{ part }}</a>
+        <span class="breadcrumb-sep" aria-hidden="true">/</span>
+        <button type="button" class="breadcrumb-item" onclick="toggleFolderByName('{{ ns.accum }}')">{{ part }}</button>
       {% else %}
-        <span class="breadcrumb-sep">/</span>
-        <span class="breadcrumb-item current">{{ part }}</span>
+        <span class="breadcrumb-sep" aria-hidden="true">/</span>
+        <span class="breadcrumb-item current" aria-current="page">{{ part }}</span>
       {% endif %}
     {% endfor %}
   </nav>
@@ -33,7 +33,7 @@
           {% if tags %}
             Tags:
             {% for tag in tags %}
-              <span class="tag">{{ tag }}</span>
+              <button type="button" class="tag" onclick="kwSearchTag({{ tag|tojson|forceescape }})" title="Nach Tag '{{ tag }}' suchen">{{ tag }}</button>
             {% endfor %}
           {% endif %}
           {% if not updated and not owner and not tags %}Keine Metadaten{% endif %}

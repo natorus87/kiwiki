@@ -101,6 +101,17 @@
     padding: 0.9rem;
     background: var(--md-surface);
   }
+  @media (max-width: 1024px) {
+    .settings-form {
+      grid-template-columns: 1fr 1fr;
+    }
+    .settings-form .settings-actions,
+    .settings-form .settings-field:last-child,
+    .settings-form .btn-primary {
+      grid-column: span 2;
+      justify-self: end;
+    }
+  }
   .settings-field label {
     display: block;
     font-size: 0.68rem;

@@ -1,5 +1,5 @@
 {% if not results %}
-  <p class="no-results">Keine Ergebnisse.</p>
+  <p class="no-results" role="status">Keine Treffer für „{{ query }}“.</p>
 {% else %}
   {% for result in results %}
     <button type="button" class="search-result" onclick="loadFile({{ result.path|tojson|forceescape }})">

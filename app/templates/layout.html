@@ -25,11 +25,13 @@
     var KIWIKI_ROLE_LEVEL = window.KIWIKI.roleLevel;
   </script>
 
-  <link rel="stylesheet" href="/static/kiwiki.css?v=20260609-context-menu">
+  <link rel="stylesheet" href="/static/kiwiki.css?v=20260701-a11y">
   {% block extra_styles %}{% endblock %}
 </head>
 <body class="role-{{ user.role if user else 'none' }}">
-<script src="/static/kiwiki.js?v=20260609-context-menu"></script>
+<script src="/static/kiwiki.js?v=20260701-a11y"></script>
+
+<a href="#main-content" class="skip-link sr-only">Zum Inhalt springen</a>
 
 <header>
   <button type="button" class="hamburger" onclick="toggleSidebar()" aria-label="Menü" aria-controls="file-tree" aria-expanded="false">
@@ -48,8 +50,6 @@
     <input type="search" name="query" class="search-input" placeholder="Suchen…" autocomplete="off" aria-label="Wiki durchsuchen" aria-controls="search-results">
     <div id="search-results" role="region" aria-label="Suchergebnisse" aria-live="polite"></div>
   </form>
-
-  <div class="header-right" aria-hidden="true"></div>
 </header>
 
 <button type="button" class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()" aria-label="Sidebar schließen"></button>
@@ -57,9 +57,9 @@
 <div class="app-layout" id="app-layout">
   {% block sidebar %}{% endblock %}
   <div class="sidebar-resizer" id="sidebar-resizer"></div>
-  <div class="content-area" id="main-content">
+  <main class="content-area" id="main-content" tabindex="-1">
     {% block content %}{% endblock %}
-  </div>
+  </main>
 </div>
 
 <script src="/static/kiwiki-motion.bundle.js?v=20260608" defer></script>

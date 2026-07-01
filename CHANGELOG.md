@@ -7,6 +7,44 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-07-01
+
+### Added — Accessibility
+- **`<main>` landmark + Skip-Link** („Zum Inhalt springen") für Tastatur-Screader-Nutzer (`layout.html`)
+- **ARIA tree roles**: Dateibaum jetzt als `role="tree"` mit `treeitem`/`group`/`aria-level`/`aria-expanded`
+- **Focus-Trap** in `kwDialog`-Modalen — Tab/Shift+Tab bleibt im Dialog
+- **Mobile-Sidebar-Escape**: `Esc` schließt Sidebar, Fokus springt zurück an Hamburger
+- **`aria-live`** auf Toast-Stack und Search-Ergebnisse; Error-Toasts sind `role="alert"`
+- **`aria-label`** auf Mobile Selektions-Buttons (Verschieben/Tags/Export/Löschen)
+- **Tags klickbar**: Erzeugen auf Klick eine Suche mit `tag:<value>`-Präfix
+- **Tag-Suche** (`tag:<value>`) in FTS5-Suche via LIKE-Fallback auf `tags`-Spalte
+- **Reduced-Motion** globaler Schutz bereits am Top des Stylesheets + im Login
+
+### Added — UX
+- **`kwNewNote()`** — „Neue Notiz" fragt Dateinamen ab statt `notes/neue-notiz.md` zu überschreiben
+- **Editor `beforeunload`-Warnung** bei ungespeicherten Änderungen
+- **„Keine Treffer für …"** als `role="status"` in den Suchergebnissen
+- **Sidebar-Resizer** jetzt sichtbar (4px Hover-Indikator statt versteckt)
+
+### Changed
+- **`.btn-danger`** klar rot abgesetzt (Error-dim Hintergrund, Error-Border) — Löschaktionen wirken nicht mehr harmlos
+- **`.file-meta`** nutzt `--md-on-surface-v` statt schwachem `--md-outline` (besserer Kontrast)
+- **Breadcrumb** als `<button>` statt `<a href="#">` (funktionierte ohne JS tot)
+- **Editor-Save-Toast** via zentralem `kwToast()` statt eigenem `.save-toast`-Markup
+- **Tree-Filter** + Select-Toggle auf Mobile jetzt 44×44px / 16px Font (WCAG 2.2, kein iOS-Zoom)
+- **Settings-Grid** responsive bis 1024px (2-Spalten, Submit in eigener Zeile)
+- **Hint-Text "Doppelklick zum Umbenennen"** statt englischsprachigem „double-click to rename"
+- **`#file-tree` `tabindex="0"`** entfernt (keine doppelten Tab-Stops neben inneren Buttons)
+- **`role="status"` + `aria-busy`-markiertes Loading-Hint** für Tree/Recent-Reloads
+
+### Fixed — Codebase
+- **CSS-Konsolidierung**: Redundantes zweites `:root` aus dem „Professional UI refresh"-Block entfernt — Token-Quelle jetzt eindeutig
+- **Leerer `header-right`-Platzhalter** entfernt
+
+### Tests
+- `tests/test_ui_file.py` um Regression-Tests für: Tags als klickbare Buttons, Tag-Suche, `<main>`-Landmark + Skip-Link ergänzt
+- 136 Tests grün, Ruff clean
+
 ## [2.1.1] - 2026-07-01
 
 ### Fixed

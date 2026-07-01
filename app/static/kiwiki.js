@@ -24,6 +24,10 @@ function openSidebar() {
   }
   if (b) b.classList.add('open');
   if (btn) btn.setAttribute('aria-expanded', 'true');
+  if (s && kwIsMobileSidebar()) {
+    var first = s.querySelector('.file-item, .sidebar-btn, .btn, input, a, button');
+    if (first) first.focus();
+  }
 }
 function closeSidebar() {
   var s = document.querySelector('.sidebar');
@@ -35,6 +39,7 @@ function closeSidebar() {
   }
   if (b) b.classList.remove('open');
   if (btn) btn.setAttribute('aria-expanded', 'false');
+  if (s && s.contains(document.activeElement) && btn) btn.focus();
 }
 function toggleSidebar() {
   var s = document.querySelector('.sidebar');
@@ -622,6 +627,28 @@ document.addEventListener('DOMContentLoaded', function() {
 function openEditor(path) {
   window.location.href = '/editor?path=' + encodeURIComponent(path);
 }
+
+async function kwNewNote() {
+  var name = await kwPrompt({
+    title: 'Neue Notiz',
+    message: 'Dateiname (z. B. <code>meine-notiz.md</code>):',
+    placeholder: 'meine-notiz.md',
+    submitLabel: 'Erstellen',
+  });
+  if (!name) return;
+  if (!name.endsWith('.md')) name += '.md';
+  var path = 'notes/' + name;
+  openEditor(path);
+}
+
+function kwSearchTag(tag) {
+  var input = document.querySelector('.search-input');
+  if (input) {
+    input.value = 'tag:' + tag;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
+  }
+}
 async function newFileIn(folderPath) {
   var name = await kwPrompt({
     title: 'Neue Datei',
@@ -779,6 +806,17 @@ function kwDialog(opts) {
         e.preventDefault();
         close(opts.input ? (input.value.trim() || null) : true);
       }
+      else if (e.key === 'Tab' && backdrop.contains(document.activeElement)) {
+        var focusables = backdrop.querySelectorAll('button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])');
+        if (!focusables.length) return;
+        var firstEl = focusables[0];
+        var lastEl = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === firstEl) {
+          e.preventDefault(); lastEl.focus();
+        } else if (!e.shiftKey && document.activeElement === lastEl) {
+          e.preventDefault(); firstEl.focus();
+        }
+      }
     }
     okBtn.addEventListener('click', function() {
       close(opts.input ? (input.value.trim() || null) : true);
@@ -815,12 +853,16 @@ function kwToast(message, options) {
     stack = document.createElement('div');
     stack.id = 'kw-toast-stack';
     stack.className = 'kw-toast-stack';
+    stack.setAttribute('role', 'region');
+    stack.setAttribute('aria-label', 'Benachrichtigungen');
+    stack.setAttribute('aria-live', 'polite');
     document.body.appendChild(stack);
   }
   var t = document.createElement('div');
   var isError = options.type === 'error';
   t.className = 'kw-toast' + (isError ? ' error' : '');
-  t.innerHTML = '<span class="kw-toast-icon">' + (isError ? KW_ICONS.error : KW_ICONS.check) + '</span>'
+  if (isError) t.setAttribute('role', 'alert');
+  t.innerHTML = '<span class="kw-toast-icon" aria-hidden="true">' + (isError ? KW_ICONS.error : KW_ICONS.check) + '</span>'
               + '<span class="kw-toast-msg">' + escapeHtml(message) + '</span>';
   stack.appendChild(t);
   requestAnimationFrame(function() { t.classList.add('show'); });
@@ -836,10 +878,12 @@ function toggleFolder(el, path, treeId) {
   if (row.classList.contains('open')) {
     subtree.innerHTML = '';
     row.classList.remove('open');
+    row.setAttribute('aria-expanded', 'false');
     el.setAttribute('aria-expanded', 'false');
     kwRemoveOpenFolder(path);
   } else {
     row.classList.add('open');
+    row.setAttribute('aria-expanded', 'true');
     el.setAttribute('aria-expanded', 'true');
     kwAddOpenFolder(path);
     htmx.ajax('GET', '/ui/files?path=' + encodeURIComponent(path), {
@@ -926,6 +970,8 @@ document.addEventListener('click', function(e) {
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
     kwCloseAccountMenu();
+    var s = document.querySelector('.sidebar');
+    if (s && s.classList.contains('open') && kwIsMobileSidebar()) { closeSidebar(); return; }
     var results = document.getElementById('search-results');
     if (results && results.innerHTML) {
       results.innerHTML = '';

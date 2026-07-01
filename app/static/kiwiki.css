@@ -106,6 +106,24 @@ header, .app-layout { position: relative; z-index: 1; }
   white-space: nowrap;
   border: 0;
 }
+.skip-link:focus,
+.skip-link:focus-visible {
+  position: fixed;
+  top: 0.5rem; left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  width: auto; height: auto;
+  padding: 0.5rem 1rem;
+  margin: 0;
+  clip: auto;
+  overflow: visible;
+  background: var(--md-primary);
+  color: var(--md-primary-ink);
+  border-radius: var(--radius-xl);
+  font-weight: 600;
+  font-size: 0.85rem;
+  box-shadow: var(--shadow-raised);
+}
 
 /* ── Header ─────────────────────────────────────────────────────────── */
 header {
@@ -769,11 +787,11 @@ body.role-read  .needs-write { display: none !important; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.file-meta { font-size: 0.72rem; color: var(--md-outline); font-family: var(--font-mono); }
+.file-meta { font-size: 0.74rem; color: var(--md-on-surface-v); font-family: var(--font-mono); }
 .file-actions { display: flex; gap: 0.4rem; flex-shrink: 0; padding-top: 0.2rem; }
 
 .tag {
-  display: inline-block;
+  display: inline-flex; align-items: center;
   background: var(--md-primary-dim);
   color: var(--md-primary);
   border: 1px solid var(--md-primary-border);
@@ -781,7 +799,12 @@ body.role-read  .needs-write { display: none !important; }
   padding: 0.1rem 0.55rem;
   font-size: 0.65rem; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.04em;
+  font-family: var(--font-body);
+  cursor: pointer;
+  margin: 0.12rem 0.15rem 0.12rem 0;
+  transition: background var(--t), color var(--t), border-color var(--t);
 }
+.tag:hover { background: var(--md-primary); color: var(--md-primary-ink); border-color: var(--md-primary); }
 
 /* ── Buttons ─────────────────────────────────────────────────────────── */
 .btn {
@@ -819,11 +842,11 @@ body.role-read  .needs-write { display: none !important; }
 .btn-primary:active { transform: translateY(0); box-shadow: none; }
 
 .btn-danger {
-  background: transparent;
-  color: var(--md-on-surface-v);
-  border-color: var(--md-outline-v);
+  background: var(--md-error-dim);
+  color: var(--md-error);
+  border-color: var(--md-error-border);
 }
-.btn-danger:hover { background: var(--md-error-dim); color: var(--md-error); border-color: var(--md-error-border); }
+.btn-danger:hover { background: rgba(224, 120, 104, 0.22); color: #f5c5b8; border-color: var(--md-error); }
 
 .btn-ghost {
   background: transparent;
@@ -1316,9 +1339,13 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
   /* Datei-Aktionen: volle Breite */
   .file-actions .btn { flex: 1; justify-content: center; }
 
-  /* Sidebar-Filter + Toggle: kompakter */
-  .tree-toolbar { padding: 0.25rem 0.4rem; gap: 0.15rem; }
-  .btn-select-toggle { width: 36px; height: 36px; }
+  /* Sidebar-Filter + Toggle: Touch-Target >=44px und 16px Font (iOS-Zoom) */
+  .tree-toolbar { padding: 0.35rem 0.4rem; gap: 0.25rem; }
+  .tree-filter { min-height: 44px; font-size: 16px; padding: 0.5rem 0.7rem; }
+  .btn-select-toggle { width: 44px; height: 44px; }
+
+  /* Sidebar-Resizer: auf Touch-Geräten unsichtbar,.setCursor nicht nötig */
+  .sidebar-resizer { display: none; }
 }
 
 /* ── Modal / Toast / Bestätigung ──────────────────────────────────── */
@@ -1488,44 +1515,11 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
 }
 
 /* ── Professional UI refresh ───────────────────────────────────────── */
+/* Note: single :root source of truth — token overrides consolidated here. */
 :root {
-  --md-bg:          #1f1e1b;
-  --md-bg-subtle:   #24221f;
-  --md-surface:     #2a2823;
-  --md-surface-c:   #312e28;
-  --md-surface-ch:  #38342d;
-  --md-surface-cht: #423d34;
-
-  --md-primary:       #b8df78;
-  --md-primary-hover: #c4ea86;
-  --md-primary-c:     #354823;
-  --md-primary-c-on:  #f2f8df;
-  --md-primary-ink:   #223016;
-  --md-primary-dim:   rgba(184, 223, 120, 0.16);
-  --md-primary-dim2:  rgba(184, 223, 120, 0.08);
-  --md-primary-border: rgba(184, 223, 120, 0.34);
-
-  --md-accent:        var(--md-primary);
-  --md-accent-dim:    var(--md-primary-dim);
-  --md-warm:          #d6ab6d;
-
-  --md-on-surface:    #f0e9dc;
-  --md-on-surface-v:  #c9beb0;
-  --md-outline:       #a99d8d;
-  --md-outline-v:     #4b453b;
-  --md-outline-strong:#62594b;
-
-  --md-secondary:     #d4c3a5;
-  --md-secondary-c:   #3b3429;
-
-  --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
-  --radius-xl: 999px;
-
-  --shadow-soft: 0 1px 2px rgba(15, 13, 11, 0.22), 0 18px 42px rgba(15, 13, 11, 0.18);
-  --shadow-raised: 0 1px 2px rgba(15, 13, 11, 0.24), 0 24px 60px rgba(15, 13, 11, 0.22);
 }
 
 body { letter-spacing: 0; }
@@ -1795,11 +1789,15 @@ header::before,
   border-color: transparent;
 }
 .sidebar-resizer {
-  width: 0;
-  opacity: 0;
+  width: 4px;
+  opacity: 0.4;
+  background: transparent;
+  cursor: col-resize;
+  transition: opacity var(--t), background var(--t);
 }
 .sidebar-resizer:hover,
 .sidebar-resizer.dragging {
+  opacity: 1;
   background: var(--md-primary-border);
 }
 
@@ -2195,11 +2193,11 @@ a.breadcrumb-item:hover { color: var(--md-primary); background: var(--md-primary
 /* ── Keyboard shortcut hints ──────────────────────────────────────── */
 @media (hover: hover) {
   .tree-row .file-item.active::after {
-    content: 'double-click to rename';
+    content: 'Doppelklick zum Umbenennen';
     position: absolute;
     right: 0.5rem;
     font-size: 0.6rem;
-    color: var(--md-outline);
+    color: var(--md-on-surface-v);
     opacity: 0;
     transition: opacity 0.4s ease 0.8s;
     pointer-events: none;

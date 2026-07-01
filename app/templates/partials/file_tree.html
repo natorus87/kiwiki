@@ -1,6 +1,7 @@
 {% for item in items %}
   {% if item.is_dir %}
-    <div class="tree-row" data-path="{{ item.path }}" data-kind="dir" draggable="true">
+    <div class="tree-row" role="treeitem" aria-level="{{ item.path.split('/')|length }}" aria-expanded="false"
+         data-path="{{ item.path }}" data-kind="dir" draggable="true">
       {% if user and user.role in ['write', 'admin'] %}
       <input type="checkbox" class="tree-checkbox" data-path="{{ item.path }}" data-kind="dir"
              onclick="event.stopPropagation(); kwToggleSelect(this)" aria-label="{{ item.name }} auswählen">
@@ -15,9 +16,10 @@
         {{ svg_folder|safe }}<span class="item-name">{{ item.name }}</span>
       </button>
     </div>
-    <div id="{{ item.tree_id }}" class="subtree" data-parent="{{ item.path }}"></div>
+    <div id="{{ item.tree_id }}" class="subtree" role="group" data-parent="{{ item.path }}"></div>
   {% else %}
-    <div class="tree-row" data-path="{{ item.path }}" data-kind="file" draggable="true">
+    <div class="tree-row" role="treeitem" aria-level="{{ item.path.split('/')|length }}"
+         data-path="{{ item.path }}" data-kind="file" draggable="true">
       {% if user and user.role in ['write', 'admin'] %}
       <input type="checkbox" class="tree-checkbox" data-path="{{ item.path }}" data-kind="file"
              onclick="event.stopPropagation(); kwToggleSelect(this)" aria-label="{{ item.name }} auswählen">

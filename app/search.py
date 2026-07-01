@@ -131,9 +131,23 @@ def _to_results(rows) -> list[SearchResult]:
 
 
 def search(query: str) -> list[SearchResult]:
-    """Full-text search with FTS5; falls back to LIKE on FTS syntax errors."""
+    """Full-text search with FTS5; falls back to LIKE on FTS syntax errors.
+
+    Special prefix ``tag:<value>`` performs a LIKE search on the ``tags``
+    column (FTS5 column filters are brittle, so we sidestep them here).
+    """
     init_db()
     with get_db() as conn:
+        tag_match = re.match(r'^\s*tag:(.+?)\s*$', query, re.IGNORECASE)
+        if tag_match:
+            tag_term = tag_match.group(1).strip()
+            rows = conn.execute(
+                "SELECT path, title, content, 0 AS rank FROM files "
+                "WHERE ',' || tags || ',' LIKE ? ORDER BY title LIMIT 50",
+                ("%" + tag_term + "%",),
+            ).fetchall()
+            return _to_results(rows)
+
         clean = _sanitize_fts(query)
         try:
             rows = _fts_rows(conn, clean)

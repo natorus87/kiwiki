@@ -508,7 +508,7 @@ async def ui_search(request: Request):
         return templates.TemplateResponse(
             request=request,
             name="partials/search_results.html",
-            context={"results": results},
+            context={"results": results, "query": query},
         )
     except Exception as exc:
         return HTMLResponse(f'<div class="error">{html.escape(str(exc))}</div>')
