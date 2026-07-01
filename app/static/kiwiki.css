@@ -78,16 +78,26 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  /* iOS/Safari: body selbst darf nicht scrollen, sonst entsteht zusammen mit
+     dem sticky Header ein zweiter Scroll-Kontext (Doppelscroll,
+     Header-Wackeln, Scroll-Chaining beim iOS-Rubber-Band). */
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-overscroll-behavior: none;
 }
 
-body::before {
-  content: '';
-  position: fixed; inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background: var(--md-bg);
-}
 header, .app-layout { position: relative; z-index: 1; }
+
+/* iOS/Safari: Scroll-Chaining verhindern (Rubber-Band stoppt am Container)
+   und Momentum-Scrolling in inneren Bereichen sicherstellen */
+.content-area,
+.file-tree,
+#tui-editor-wrap,
+.kw-toast-stack,
+.kw-modal-backdrop {
+  overscroll-behavior: contain;
+  -webkit-overscroll-behavior: contain;
+}
 
 ::selection { background: var(--md-primary-dim); color: var(--md-primary); }
 :focus-visible {
@@ -1178,9 +1188,9 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
   /* Sidebar: volle Bildschirmbreite, 100dvh für Safari */
   .sidebar {
     position: fixed;
-    left: 0; top: 56px;
-    height: calc(100vh - 56px);
-    height: calc(100dvh - 56px);
+    left: 0; top: 58px;
+    height: calc(100vh - 58px);
+    height: calc(100dvh - 58px);
     width: 100vw !important;
     z-index: 300;
     transform: translateX(-100%);
@@ -1319,7 +1329,7 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
   /* Editor: bessere Mobile-Leiste */
   .editor-bar {
     position: sticky;
-    top: 56px;
+    top: 58px;
     z-index: 50;
   }
 
@@ -1523,9 +1533,6 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
 }
 
 body { letter-spacing: 0; }
-body::before {
-  background: var(--md-bg);
-}
 
 .logo-text,
 .hero-title,
@@ -1699,9 +1706,6 @@ header {
 }
 
 /* ── Business UI refinement ────────────────────────────────────────── */
-body::before {
-  background: var(--md-bg);
-}
 
 header {
   background: var(--md-bg-subtle);
