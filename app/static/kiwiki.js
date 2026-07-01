@@ -1312,36 +1312,55 @@ function kwCloseFabOutside(e) {
 
 /* ── Touch Gestures: Swipe to open/close sidebar ──────────────────── */
 (function() {
-  var startX = 0, startY = 0, dist = 0, threshold = 60;
   var sidebar = document.querySelector('.sidebar');
-  var isTracking = false;
+  if (!sidebar) return;
 
-  function isMobile() { return window.matchMedia && window.matchMedia('(max-width: 768px)').matches; }
+  var startX = 0, dist = 0, isTracking = false, intent = null;
+  var edgeZone = 24;
+  var openThreshold = 40;
+  var closeThreshold = 60;
+  var bound = false;
 
-  document.addEventListener('touchstart', function(e) {
-    if (!isMobile()) return;
-    var touch = e.touches[0];
-    startX = touch.clientX;
-    startY = touch.clientY;
-    dist = 0;
-    isTracking = true;
-  }, { passive: true });
+  function bind() {
+    if (bound) return;
+    bound = true;
 
-  document.addEventListener('touchmove', function(e) {
-    if (!isTracking || !isMobile()) return;
-    var touch = e.touches[0];
-    var dx = touch.clientX - startX;
-    var dy = touch.clientY - startY;
-    if (Math.abs(dy) > Math.abs(dx)) { isTracking = false; return; }
-    dist = dx;
-  }, { passive: true });
+    document.addEventListener('touchstart', function(e) {
+      if (!kwIsMobileSidebar()) return;
+      var t = e.touches[0];
+      startX = t.clientX;
+      dist = 0;
+      isTracking = false;
+      intent = null;
+      var isOpen = sidebar.classList.contains('open');
+      // Open: Start in linker Edge-Zone (egal wo auf der Seite gewischt wird,
+      // solange die Geste am linken Rand beginnt).
+      // Close: Geste aus dem linken Bereich bei geöffneter Sidebar.
+      if (!isOpen && startX <= edgeZone) {
+        isTracking = true; intent = 'open';
+      } else if (isOpen && startX < window.innerWidth / 2) {
+        isTracking = true; intent = 'close';
+      }
+    }, { passive: true });
 
-  document.addEventListener('touchend', function() {
-    if (!isTracking || !isMobile()) return;
-    isTracking = false;
-    if (!sidebar) return;
-    var isOpen = sidebar.classList.contains('open');
-    if (dist > threshold && !isOpen) { openSidebar(); }
-    else if (dist < -threshold && isOpen) { closeSidebar(); }
-  }, { passive: true });
+    document.addEventListener('touchmove', function(e) {
+      if (!isTracking || !kwIsMobileSidebar()) return;
+      var t = e.touches[0];
+      var dx = t.clientX - startX;
+      var dy = t.clientY - startY;
+      if (Math.abs(dy) > Math.abs(dx)) { isTracking = false; return; }
+      dist = dx;
+    }, { passive: true });
+
+    document.addEventListener('touchend', function() {
+      if (!isTracking || !kwIsMobileSidebar()) return;
+      isTracking = false;
+      if (intent === 'open' && dist > openThreshold) openSidebar();
+      else if (intent === 'close' && dist < -closeThreshold) closeSidebar();
+    }, { passive: true });
+  }
+
+  if (kwIsMobileSidebar()) bind();
+  var mq = window.matchMedia('(max-width: 768px)');
+  mq.addEventListener('change', function(e) { if (e.matches) bind(); });
 })();
