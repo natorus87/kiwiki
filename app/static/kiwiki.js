@@ -14,6 +14,11 @@ function kwIsMobileSidebar() {
   return window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
 }
 
+// openSidebar/closeSidebar (v2.2 a11y):
+// - Fokus springt beim Öffnen (mobile) aufs erste fokussierbare Element
+// - Beim Schließen kehrt der Fokus zum Hamburger zurück
+// - aria-expanded am Hamburger spiegelt den Zustand wider
+// - Mobile-Esc-Handler schließt die Sidebar (siehe keydown-Listener unten)
 function openSidebar() {
   var s = document.querySelector('.sidebar');
   var b = document.getElementById('sidebar-backdrop');
@@ -628,6 +633,10 @@ function openEditor(path) {
   window.location.href = '/editor?path=' + encodeURIComponent(path);
 }
 
+// kwNewNote() — löst das "Neue Notiz überschreibt notes/neue-notiz.md"-Problem
+// (P0 v2.2): Statt direkt zum Editor mit hardcoded Pfad zu springen, fragen wir
+// den Nutzer nach einem Dateinamen. So kann keine bestehende Notiz versehentlich
+// überschrieben werden. `notes/` wird als Default-Ordner vorausgesetzt.
 async function kwNewNote() {
   var name = await kwPrompt({
     title: 'Neue Notiz',
@@ -641,6 +650,9 @@ async function kwNewNote() {
   openEditor(path);
 }
 
+// kwSearchTag() — sucht nach Dateien mit einem bestimmten Tag. Wird aus den
+// klickbaren Tag-Chips in file_view.html aufgerufen. Prefix "tag:" wird in
+// app/search.py als LIKE-Suche auf die FTS5-`tags`-Spalte aufgelöst.
 function kwSearchTag(tag) {
   var input = document.querySelector('.search-input');
   if (input) {
@@ -763,6 +775,14 @@ var KW_ICONS = {
 // opts.message wird als HTML in den Dialog eingefügt — Caller muss alle
 // untrusted Werte (User-Pfade, API-Antworten) selbst via escapeHtml() escapen.
 // opts.title / opts.placeholder / opts.defaultValue / Button-Labels werden hier escaped.
+//
+// Accessibility (v2.2):
+// - role=dialog aria-modal=true im Markup
+// - Focus springt beim Öffnen auf das erste fokussierbare Element (Input/OK-Button)
+// - Tab/Shift+Tab bleiben im Dialog (Focus-Trap in onKey)
+// - Esc schließt der Dialog und resolved mit null/false
+// - Enter bestätigt, auch wenn Fokus auf dem OK-Button liegt
+// Siehe docs/ui-accessibility.md für das vollständige Modell.
 function kwDialog(opts) {
   return new Promise(function(resolve) {
     var backdrop = document.createElement('div');

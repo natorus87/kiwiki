@@ -182,6 +182,10 @@
   let __pathChanged = false;
   pathInput.addEventListener('input', function() { __pathChanged = true; });
 
+  // beforeunload-Warnung (v2.2 P0): der Browser zeigt seine native "Verlassen?"-Box,
+  // sobald der Nutzer weg-navigiert und entweder der Inhalt seit dem letzten Save oder
+  // der Dateipfad sich geändert hat. Nach erfolgreichem saveFile() wird __lastSavedMarkdown
+  // aktualisiert, so dass Ctrl+S+Back direkt nach dem Speichern KEINE false Warnung auslöst.
   window.addEventListener('beforeunload', function(e) {
     const dirty = (pathInput.value.trim() !== initialPath) || (editor.getMarkdown() !== __lastSavedMarkdown);
     if (dirty) {

@@ -45,6 +45,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `tests/test_ui_file.py` um Regression-Tests für: Tags als klickbare Buttons, Tag-Suche, `<main>`-Landmark + Skip-Link ergänzt
 - 136 Tests grün, Ruff clean
 
+### Docs
+- **`docs/ui-accessibility.md`** neu: WCAG 2.2 AA-Modell, Tastatur-Shortcuts, ARIA-Tree, Touch-Targets, Fokus-Management, PR-Checkliste
+- **`docs/architecture.md`** neu: Template-Hierarchie, Tenancy/Request-Flow, Helper-Konventionen, Cache-Busting, Test-Matrix
+- **`README.md`** um v2.2-Features, Keyboard-Shortcuts-Tabelle und Architektur-Verweis ergänzt
+- **`CONTRIBUTING.md`** um Frontend-Workflow, UI-PR-Checkliste, Helper-Naming ergänzt
+- **In-Code-Kommentare** an `kwDialog` (Focus-Trap), `openSidebar`/`closeSidebar` (Fokus-Management), `kwNewNote`/`kwSearchTag` (Zweck) und `beforeunload`-Guard
+
 ## [2.1.1] - 2026-07-01
 
 ### Fixed

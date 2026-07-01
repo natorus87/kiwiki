@@ -29,10 +29,20 @@ Visit **[kiwiki.xyz](https://kiwiki.xyz)** for the project website, FAQ, agent i
 - **Markdown files with YAML frontmatter** — Your file system is the source of truth. No proprietary database, no vendor lock-in, simple to back up.
 - **100 % privacy** — Self-hosted on your infrastructure. No cloud, no telemetry, no vendor lock-in.
 - **Per-user isolated wiki folders** under `/data/<username>/` with role-based access (`read` / `write` / `admin`).
-- **SQLite FTS5 full-text search** — Search thousands of Markdown files in milliseconds, including via MCP from your AI.
-- **Responsive web UI** — FastAPI with Jinja2, HTMX, and Toast UI Editor. Works from 4K desktop to mobile.
+- **SQLite FTS5 full-text search** — Search thousands of Markdown files in milliseconds, including via MCP from your AI. Special prefix `tag:<value>` filters by tag.
+- **Responsive web UI** — FastAPI with Jinja2, HTMX, and Toast UI Editor. Works from 4K desktop to mobile, with WCAG 2.2 AA-oriented accessibility (see [docs/ui-accessibility.md](docs/ui-accessibility.md)).
 - **Streamable HTTP MCP endpoint** at `/mcp` (legacy HTTP/SSE at `/mcp/sse`) with OAuth 2.1 authorization-code flow for ChatGPT-style connectors.
 - **Docker Compose and Helm** — One command to start. Kubernetes-ready.
+
+### Web UI highlights (v2.2)
+
+- **Click-to-create new note**: The "Neue Notiz" button prompts for a filename instead of overwriting `notes/neue-notiz.md`.
+- **Tag search**: Click any tag chip in a note to run `tag:<value>` search across your workspace.
+- **Unsaved-changes guard**: Editor warns before navigation when content has changed.
+- **Keyboard-friendly tree**: `role="tree"` with `aria-level`/`aria-expanded`, double-click to rename, inline edit.
+- **Mobile UX**: 44 px touch targets, IOS-zoom-safe 16 px inputs, sidebar Esc + focus return, action-sheet context menu.
+- **Skip-Link**: Visible on first Tab press — jumps straight to the main content area.
+- **Reduced-motion safe**: All animations honor `prefers-reduced-motion` — including login and editor.
 
 ## Quick Start
 
@@ -184,6 +194,26 @@ For autonomous agents, prefer `write_many` when updating several files and `chun
 ### Admin (admin role only)
 
 `validate_wiki` · `delete_file` · `sort`
+
+## Keyboard Shortcuts
+
+| Shortcut | Action | Notes |
+|---|---|---|
+| `Tab` | First focus reveals the **Skip-Link**, then header → sidebar → content | Available on every page |
+| `Esc` | Close mobile sidebar, search dropdown, account menu, modal, or context menu | Auto-detects open layer |
+| `Ctrl/Cmd + S` | Save current note in Editor | Also works from the FAB on mobile |
+| `dd` | Delete active file (admin) / folder | Pressed consecutively within 600 ms |
+| `mm` | Move active item | Works on files and folders |
+| `ee` | Edit active file in editor | Requires `write` role |
+| `rr` | Rename active item (inline) | Works on files and folders |
+| `F10 + Shift` | Open context menu for focused tree item | Alternative to the `ContextMenu` key |
+| `Enter` / `Space` on tree item | Toggle folder or open file | Same as click |
+
+See [docs/ui-accessibility.md](docs/ui-accessibility.md) for the full accessibility model.
+
+## Architecture
+
+The kiwiki frontend is intentionally framework-free — server-rendered Jinja2 templates plus HTMX for partial swaps, plus a small vanilla-JS layer (`app/static/kiwiki.js`) for interactive widgets (sidebar, tree, dialogs, toasts). All styles live in a single `app/static/kiwiki.css` with one `:root` token source. See [docs/architecture.md](docs/architecture.md) for the layout, request flow, namespaces, and helper conventions before contributing frontend changes.
 
 ## Local Development
 
