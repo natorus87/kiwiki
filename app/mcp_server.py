@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import secrets
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -110,6 +111,46 @@ _MCP_UPLOAD_TTL_SECONDS = int(os.getenv("KIWIKI_MCP_UPLOAD_TTL_SECONDS", "3600")
 _MCP_MAX_UPLOAD_BYTES = int(os.getenv("KIWIKI_MCP_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 _MCP_MAX_UPLOAD_CHUNKS = int(os.getenv("KIWIKI_MCP_MAX_UPLOAD_CHUNKS", "1000"))
 _chunked_writes: dict[str, dict] = {}
+
+# B6: Agent tracker — logs MCP tool calls to a JSONL file per namespace.
+_agent_log_lock = threading.Lock()
+_AGENT_LOG_MAX_BYTES = 5 * 1024 * 1024  # 5 MB max, then rotate
+_AGENT_LOG_FILE = ".kiwiki/agent_log.jsonl"
+
+# E2: Async grep jobs — background grep with polling.
+_grep_jobs: dict[str, dict] = {}
+_grep_job_counter = 0
+
+
+def _log_agent_call(user: "User | None", tool: str, args: dict, success: bool, error: str = "") -> None:
+    """B6: Append a tool call entry to the agent log file (JSONL format)."""
+    try:
+        ns = user.username if user else "anonymous"
+        root = user_root() if user else None
+        if root is None:
+            return
+        log_path = root / _AGENT_LOG_FILE
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "ts": time.time(),
+            "user": ns,
+            "tool": tool,
+            "args": {k: v for k, v in args.items() if k != "content"},  # skip large content
+            "success": success,
+        }
+        if error:
+            entry["error"] = error[:200]
+        with _agent_log_lock:
+            # Rotate if file is too large
+            if log_path.exists() and log_path.stat().st_size > _AGENT_LOG_MAX_BYTES:
+                rotated = log_path.with_suffix(".jsonl.1")
+                if rotated.exists():
+                    rotated.unlink()
+                log_path.rename(rotated)
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
 
 
 def _base_url(request: Request) -> str:
@@ -1179,6 +1220,42 @@ TOOLS = [
             "required": ["path"],
         },
     },
+    # ── E3: Search History ────────────────────────────────────────────────────
+    {
+        "name": "search_history",
+        "description": "Returns recent search queries with result counts. Useful for seeing what was searched before.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Max number of entries (default: 10)"},
+            },
+            "required": [],
+        },
+    },
+    # ── E5: Dead Link Check ──────────────────────────────────────────────────
+    {
+        "name": "dead_link_check",
+        "description": "Scans all markdown files for broken internal links. Returns a list of broken links with source file and line number.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Subtree to check (default: '.' = entire wiki)"},
+            },
+            "required": [],
+        },
+    },
+    # ── E2: Async Grep Status ────────────────────────────────────────────────
+    {
+        "name": "grep_status",
+        "description": "Check the status of a background grep job started by grep. Returns results when complete.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "job_id": {"type": "string", "description": "The job ID returned by a previous grep call"},
+            },
+            "required": ["job_id"],
+        },
+    },
 ]
 
 _STRING_MAP_SCHEMA = {
@@ -1720,6 +1797,48 @@ _OUTPUT_SCHEMAS = {
         "required": ["path", "summary", "word_count", "headings", "key_facts"],
         "additionalProperties": False,
     },
+    "search_history": {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "timestamp": {"type": "number"},
+                "result_count": {"type": "integer"},
+            },
+            "required": ["query", "timestamp", "result_count"],
+        },
+    },
+    "dead_link_check": {
+        "type": "object",
+        "properties": {
+            "checked_files": {"type": "integer"},
+            "broken_links": {"type": "array", "items": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string"},
+                    "line": {"type": "integer"},
+                    "link": {"type": "string"},
+                    "target_exists": {"type": "boolean"},
+                },
+                "required": ["source", "line", "link", "target_exists"],
+            }},
+            "valid_count": {"type": "integer"},
+            "broken_count": {"type": "integer"},
+        },
+        "required": ["checked_files", "broken_links", "valid_count", "broken_count"],
+        "additionalProperties": False,
+    },
+    "grep_status": {
+        "type": "object",
+        "properties": {
+            "status": {"type": "string", "enum": ["running", "completed", "not_found"]},
+            "job_id": {"type": "string"},
+            "result": {"type": "object"},
+        },
+        "required": ["status", "job_id"],
+        "additionalProperties": False,
+    },
 }
 
 _READ_ONLY_TOOLS = {
@@ -1738,6 +1857,9 @@ _READ_ONLY_TOOLS = {
     "backlinks",
     "preview_edit",
     "validate_wiki",
+    "search_history",
+    "dead_link_check",
+    "grep_status",
     "related_files",
     "tag_index",
     "search_status",
@@ -1848,7 +1970,11 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
 
         return _rpc_ok(req_id, {
             "protocolVersion": negotiated,
-            "capabilities": {"tools": {}},
+            "capabilities": {
+                "tools": {},
+                "resources": {"listChanged": False},  # B1
+                "prompts": {},  # B5
+            },
             "serverInfo": {"name": "kiwiki", "version": "0.1.0"},
             "instructions": (
                 "This is kiwiki — a Markdown-based personal wiki. "
@@ -1872,26 +1998,240 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
     if method == "tools/list":
         return _rpc_ok(req_id, {"tools": TOOLS})
 
+    # ── B1: MCP Resources ────────────────────────────────────────────────────
+    if method == "resources/list":
+        resources = [
+            {
+                "uri": "kiwiki://index",
+                "name": "Wiki Index",
+                "description": "The main index.md file with navigation structure",
+                "mimeType": "text/markdown",
+            },
+            {
+                "uri": "kiwiki://agents",
+                "name": "Agent Instructions",
+                "description": "AGENTS.md with instructions for AI agents",
+                "mimeType": "text/markdown",
+            },
+            {
+                "uri": "kiwiki://tags",
+                "name": "Tag Index",
+                "description": "All tags with file counts and paths",
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "kiwiki://recent",
+                "name": "Recent Files",
+                "description": "Recently modified files sorted newest first",
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "kiwiki://search_history",
+                "name": "Search History",
+                "description": "Recent search queries with result counts",
+                "mimeType": "application/json",
+            },
+        ]
+        return _rpc_ok(req_id, {"resources": resources})
+
+    if method == "resources/read":
+        uri = params.get("uri", "")
+        if user is not None and is_valid_username(user.username):
+            set_user_ns(user.username)
+
+        if uri == "kiwiki://index":
+            try:
+                content = read_file("index.md").content
+            except Exception:
+                content = "# Index\nNo index.md found."
+            return _rpc_ok(req_id, {
+                "contents": [{"uri": uri, "mimeType": "text/markdown", "text": content}]
+            })
+        elif uri == "kiwiki://agents":
+            try:
+                content = read_file("AGENTS.md").content
+            except Exception:
+                content = "# Agents\nNo AGENTS.md found."
+            return _rpc_ok(req_id, {
+                "contents": [{"uri": uri, "mimeType": "text/markdown", "text": content}]
+            })
+        elif uri == "kiwiki://tags":
+            tag_data = await _dispatch("tag_index", {}, user)
+            return _rpc_ok(req_id, {
+                "contents": [{"uri": uri, "mimeType": "application/json", "text": tag_data}]
+            })
+        elif uri == "kiwiki://recent":
+            recent_data = await _dispatch("recent_files", {"limit": 20}, user)
+            return _rpc_ok(req_id, {
+                "contents": [{"uri": uri, "mimeType": "application/json", "text": recent_data}]
+            })
+        elif uri == "kiwiki://search_history":
+            from .search import get_search_history
+            history = get_search_history(20)
+            return _rpc_ok(req_id, {
+                "contents": [{"uri": uri, "mimeType": "application/json", "text": json.dumps(history)}]
+            })
+        return _rpc_err(req_id, -32602, f"Unknown resource: {uri}")
+
+    # ── B5: MCP Prompts ──────────────────────────────────────────────────────
+    if method == "prompts/list":
+        prompts = [
+            {
+                "name": "meeting_note",
+                "description": "Create a structured meeting note with agenda, attendees, and action items",
+                "arguments": [
+                    {"name": "title", "description": "Meeting title", "required": True},
+                    {"name": "date", "description": "Meeting date (YYYY-MM-DD)", "required": False},
+                ],
+            },
+            {
+                "name": "decision_record",
+                "description": "Record an architectural or project decision with context and consequences",
+                "arguments": [
+                    {"name": "title", "description": "Decision title", "required": True},
+                    {"name": "context", "description": "What situation prompted this decision", "required": False},
+                ],
+            },
+            {
+                "name": "bug_report",
+                "description": "Structured bug report with steps to reproduce and environment info",
+                "arguments": [
+                    {"name": "title", "description": "Bug title", "required": True},
+                ],
+            },
+            {
+                "name": "feature_spec",
+                "description": "Feature specification with user story, acceptance criteria, and tasks",
+                "arguments": [
+                    {"name": "title", "description": "Feature title", "required": True},
+                ],
+            },
+            {
+                "name": "daily_summary",
+                "description": "Summarize what was done today based on recent file changes",
+                "arguments": [],
+            },
+        ]
+        return _rpc_ok(req_id, {"prompts": prompts})
+
+    if method == "prompts/get":
+        prompt_name = params.get("name", "")
+        args = params.get("arguments", {})
+
+        if prompt_name == "meeting_note":
+            title = args.get("title", "Meeting")
+            date = args.get("date", time.strftime("%Y-%m-%d"))
+            return _rpc_ok(req_id, {
+                "description": f"Create a meeting note for: {title}",
+                "messages": [{
+                    "role": "user",
+                    "content": {
+                        "type": "text",
+                        "text": (
+                            f"Create a meeting note titled '{title}' dated {date}.\n"
+                            "Use the template tool with type 'meeting', or create a note in notes/meetings/ with this structure:\n"
+                            "- Agenda\n- Participants\n- Decisions\n- Action Items (table: Who | What | Deadline)"
+                        ),
+                    },
+                }],
+            })
+        elif prompt_name == "decision_record":
+            title = args.get("title", "Decision")
+            context = args.get("context", "")
+            return _rpc_ok(req_id, {
+                "description": f"Record decision: {title}",
+                "messages": [{
+                    "role": "user",
+                    "content": {
+                        "type": "text",
+                        "text": (
+                            f"Record an architectural decision: '{title}'\n"
+                            f"Context: {context}\n" if context else ""
+                            "Create a note in decisions/ with:\n"
+                            "- Context (situation)\n- Decision (what was decided)\n- Consequences (positive + negative)\n- Alternatives considered"
+                        ),
+                    },
+                }],
+            })
+        elif prompt_name == "bug_report":
+            title = args.get("title", "Bug")
+            return _rpc_ok(req_id, {
+                "description": f"Report bug: {title}",
+                "messages": [{
+                    "role": "user",
+                    "content": {
+                        "type": "text",
+                        "text": (
+                            f"Create a bug report: '{title}'\n"
+                            "Use the template tool with type 'bug', or create in notes/bugs/ with:\n"
+                            "- Steps to reproduce\n- Expected behavior\n- Actual behavior\n- Possible fix\n- Environment (OS, version)"
+                        ),
+                    },
+                }],
+            })
+        elif prompt_name == "feature_spec":
+            title = args.get("title", "Feature")
+            return _rpc_ok(req_id, {
+                "description": f"Specify feature: {title}",
+                "messages": [{
+                    "role": "user",
+                    "content": {
+                        "type": "text",
+                        "text": (
+                            f"Write a feature specification: '{title}'\n"
+                            "Use the template tool with type 'feature', or create in notes/features/ with:\n"
+                            "- User Story (As a ... I want ... so that ...)\n"
+                            "- Acceptance Criteria\n"
+                            "- Implementation Approach\n"
+                            "- Tasks\n"
+                            "- Testing plan"
+                        ),
+                    },
+                }],
+            })
+        elif prompt_name == "daily_summary":
+            return _rpc_ok(req_id, {
+                "description": "Summarize today's activity",
+                "messages": [{
+                    "role": "user",
+                    "content": {
+                        "type": "text",
+                        "text": (
+                            "Summarize what was done today in this wiki.\n"
+                            "1. Call recent_files to see what changed today\n"
+                            "2. Call search_status to check index health\n"
+                            "3. Create a summary note in notes/ with today's date"
+                        ),
+                    },
+                }],
+            })
+        return _rpc_err(req_id, -32602, f"Unknown prompt: {prompt_name}")
+
     if method == "tools/call":
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {}) or {}
         try:
             text = await _dispatch(tool_name, arguments, user)
+            # B6: Log tool call to agent tracker
+            _log_agent_call(user, tool_name, arguments, success=True)
             return _rpc_ok(req_id, {
                 "content": [{"type": "text", "text": text}],
                 "structuredContent": json.loads(text),
             })
         except PermissionError as exc:
+            _log_agent_call(user, tool_name, arguments, success=False, error=str(exc))
             return _rpc_ok(req_id, {
                 "content": [{"type": "text", "text": f"Permission denied: {exc}"}],
                 "isError": True,
             })
         except (FileNotFoundError, ValueError) as exc:
+            _log_agent_call(user, tool_name, arguments, success=False, error=str(exc))
             return _rpc_ok(req_id, {
                 "content": [{"type": "text", "text": str(exc)}],
                 "isError": True,
             })
         except Exception as exc:
+            _log_agent_call(user, tool_name, arguments, success=False, error=str(exc))
             return _rpc_ok(req_id, {
                 "content": [{"type": "text", "text": f"Internal error: {exc}"}],
                 "isError": True,
@@ -3255,5 +3595,56 @@ nav{{margin-bottom:2rem}}section{{margin-bottom:3rem;border-bottom:1px solid #ee
             key_facts = [s[:200] for s in sentences[:3]]
         summary = " ".join(summary_parts)[:max_length * 5]
         return json.dumps({"path": path, "summary": summary, "word_count": word_count, "headings": headings, "key_facts": key_facts}, ensure_ascii=False, indent=2)
+
+    # ── E3: Search History ────────────────────────────────────────────────────
+    if name == "search_history":
+        _need_read()
+        from .search import get_search_history
+        limit = max(1, min(int(args.get("limit", 10)), 100))
+        history = get_search_history(limit)
+        return json.dumps(history, ensure_ascii=False, indent=2)
+
+    # ── E5: Dead Link Check ──────────────────────────────────────────────────
+    if name == "dead_link_check":
+        _need_read()
+        scope = args.get("path", ".")
+        broken = []
+        valid = 0
+        checked = 0
+        md_files = _markdown_paths(scope)
+        for md_file in md_files:
+            rel = _rel_path(md_file)
+            checked += 1
+            try:
+                text = md_file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            for lineno, link in _local_markdown_links(text):
+                if link.startswith(("http://", "https://", "mailto:", "#")):
+                    valid += 1
+                    continue
+                target = _resolve_local_link(rel, link)
+                exists = target is not None and safe_path(target).exists() if target else False
+                if exists:
+                    valid += 1
+                else:
+                    broken.append({"source": rel, "line": lineno, "link": link, "target_exists": False})
+        return json.dumps({
+            "checked_files": checked,
+            "broken_links": broken,
+            "valid_count": valid,
+            "broken_count": len(broken),
+        }, ensure_ascii=False, indent=2)
+
+    # ── E2: Grep Status ──────────────────────────────────────────────────────
+    if name == "grep_status":
+        _need_read()
+        job_id = args.get("job_id", "")
+        job = _grep_jobs.get(job_id)
+        if job is None:
+            return json.dumps({"status": "not_found", "job_id": job_id, "result": None}, ensure_ascii=False)
+        if job["status"] == "running":
+            return json.dumps({"status": "running", "job_id": job_id, "result": None}, ensure_ascii=False)
+        return json.dumps({"status": "completed", "job_id": job_id, "result": job["result"]}, ensure_ascii=False, indent=2)
 
     raise ValueError(f"Unknown tool: {name!r}")

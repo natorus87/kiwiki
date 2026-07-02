@@ -1,0 +1,27 @@
+<div class="content-inner">
+  <h2>Verlauf: {{ path }}</h2>
+  {% if history %}
+  <table class="history-table">
+    <thead>
+      <tr>
+        <th>Datum</th>
+        <th>Autor</th>
+        <th>Nachricht</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for h in history %}
+      <tr>
+        <td class="history-date">{{ h.date[:10] }}</td>
+        <td>{{ h.author }}</td>
+        <td>{{ h.message }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">
+    <p>Kein Git-Verlauf für diese Datei gefunden.</p>
+  </div>
+  {% endif %}
+</div>

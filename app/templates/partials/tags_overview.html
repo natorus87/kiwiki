@@ -1,0 +1,27 @@
+<div class="content-inner">
+  <h2>Tags</h2>
+  {% if tags %}
+  <div class="tag-cloud">
+    {% for t in tags %}
+    <div class="tag-item">
+      <a href="/ui/search?query=tag:{{ t.tag }}" class="tag-chip" hx-post="/ui/search" hx-vals='{"query":"tag:{{ t.tag }}"}' hx-target="#content" hx-swap="innerHTML">
+        {{ t.tag }}
+        <span class="tag-count">{{ t.count }}</span>
+      </a>
+      <details class="tag-files">
+        <summary>{{ t.count }} Datei{{ 'en' if t.count != 1 else '' }}</summary>
+        <ul>
+          {% for f in t.files %}
+          <li><a href="#" hx-get="/ui/file?path={{ f }}" hx-target="#content" hx-swap="innerHTML">{{ f }}</a></li>
+          {% endfor %}
+        </ul>
+      </details>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <p>Noch keine Tags vorhanden. Tags werden in den Frontmatter-Dateien definiert.</p>
+  </div>
+  {% endif %}
+</div>

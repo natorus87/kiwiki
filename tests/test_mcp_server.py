@@ -24,7 +24,7 @@ from app.mcp_server import (
 )
 from app.models import User
 
-TOOL_COUNT = 46
+TOOL_COUNT = 49
 ADDED_TOOLS = {
     "recent_files",
     "backlinks",

@@ -31,6 +31,7 @@ from .models import (
 from .rate_limiter import RateLimitMiddleware
 from .search import deindex_file, index_file, init_db, reindex_all, reindex_changed, search as search_files
 from .storage import (
+    _read_frontmatter_only,
     append_file,
     create_folder,
     create_note,
@@ -542,6 +543,84 @@ async def ui_recent(request: Request):
         )
     except Exception:
         return HTMLResponse("")
+
+
+@app.get("/ui/tags", response_class=HTMLResponse)
+async def ui_tags(request: Request):
+    """E4: Global tag overview page."""
+    user = _session_user(request)
+    try:
+        all_files = list_files(".")
+        tags: dict[str, list[str]] = {}
+        for f in all_files:
+            if f.is_dir:
+                continue
+            try:
+                meta = _read_frontmatter_only(f.path)
+                for tag in meta.get("tags", []):
+                    tags.setdefault(str(tag), []).append(f.path)
+            except Exception:
+                continue
+        tag_items = [
+            {"tag": tag, "count": len(files), "files": sorted(files)}
+            for tag, files in sorted(tags.items(), key=lambda x: (-len(x[1]), x[0]))
+        ]
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/tags_overview.html",
+            context={"tags": tag_items, "user": user},
+        )
+    except Exception:
+        return HTMLResponse('<div class="error">Fehler beim Laden der Tags</div>')
+
+
+@app.get("/ui/search-history", response_class=HTMLResponse)
+async def ui_search_history(request: Request):
+    """E3: Search history endpoint."""
+    user = _session_user(request)
+    try:
+        from .search import get_search_history
+        history = get_search_history(20)
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/search_history.html",
+            context={"history": history, "user": user},
+        )
+    except Exception:
+        return HTMLResponse("")
+
+
+@app.get("/ui/history", response_class=HTMLResponse)
+async def ui_file_history(request: Request, path: str = ""):
+    """B7: Git file history page."""
+    user = _session_user(request)
+    if not path:
+        return HTMLResponse('<div class="error">Kein Dateipfad angegeben</div>')
+    try:
+        import subprocess
+        root = user_root()
+        result = subprocess.run(
+            ["git", "log", "-20", "--pretty=format:%H|%aI|%an|%s", "--", path],
+            cwd=root, capture_output=True, text=True,
+        )
+        history = []
+        for line in result.stdout.strip().splitlines():
+            if "|" in line:
+                parts = line.split("|", 3)
+                if len(parts) == 4:
+                    history.append({
+                        "hash": parts[0],
+                        "date": parts[1],
+                        "author": parts[2],
+                        "message": parts[3],
+                    })
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/file_history.html",
+            context={"path": path, "history": history, "user": user},
+        )
+    except Exception as exc:
+        return HTMLResponse(f'<div class="error">{html.escape(str(exc))}</div>')
 
 
 @app.post("/ui/rename", response_class=HTMLResponse)

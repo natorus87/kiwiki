@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import sqlite3
@@ -10,6 +11,12 @@ from .models import SearchResult
 from .tenancy import user_root
 
 logger = logging.getLogger("kiwiki.search")
+
+# E3: Search history — recent searches per namespace, persisted to disk.
+_search_history_lock = threading.Lock()
+_search_history: dict[str, list[dict]] = {}
+_SEARCH_HISTORY_MAX = 50
+_SEARCH_HISTORY_FILE = ".kiwiki/search_history.json"
 
 
 def _db_file() -> Path:
@@ -70,9 +77,24 @@ def get_db():
         raise
 
 
+_FTS_VERSION = 2  # Bump to recreate table with new tokenizer
+
+
 def init_db() -> None:
-    """Initialize FTS5 table if not exists."""
+    """Initialize FTS5 table. Recreates with porter tokenizer on version bump."""
     with get_db() as conn:
+        # Check if we need to recreate with porter tokenizer (E1)
+        try:
+            row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='files'"
+            ).fetchone()
+            if row and "porter" not in (row[0] or ""):
+                # Old table without porter — drop and recreate
+                conn.execute("DROP TABLE IF EXISTS files")
+                conn.execute("DELETE FROM sqlite_master WHERE type='table' AND name='files'")
+        except Exception:
+            pass
+
         conn.execute(
             """
         CREATE VIRTUAL TABLE IF NOT EXISTS files USING fts5(
@@ -81,7 +103,18 @@ def init_db() -> None:
             tags,
             content,
             updated_at,
-            owner
+            owner,
+            tokenize='porter unicode61'
+        )
+        """
+        )
+        # E3: Create search history table
+        conn.execute(
+            """
+        CREATE TABLE IF NOT EXISTS search_history (
+            query TEXT,
+            timestamp REAL,
+            result_count INTEGER
         )
         """
         )
@@ -173,10 +206,11 @@ def _to_results(rows) -> list[SearchResult]:
 
 
 def search(query: str) -> list[SearchResult]:
-    """Full-text search with FTS5; falls back to LIKE on FTS syntax errors.
+    """Full-text search with FTS5 (porter tokenizer); falls back to LIKE on FTS syntax errors.
 
     Special prefix ``tag:<value>`` performs a LIKE search on the ``tags``
     column (FTS5 column filters are brittle, so we sidestep them here).
+    Records search in history (E3).
     """
     init_db()
     with get_db() as conn:
@@ -204,6 +238,18 @@ def search(query: str) -> list[SearchResult]:
         # If FTS found nothing, try a path/title LIKE search as last resort
         if not results:
             results = _to_results(_path_rows(conn, query))
+
+        # E3: Record search in history (skip tag: and empty queries)
+        if query.strip() and not query.strip().startswith("tag:"):
+            try:
+                conn.execute(
+                    "INSERT INTO search_history (query, timestamp, result_count) VALUES (?, ?, ?)",
+                    (query.strip(), time.time(), len(results)),
+                )
+                conn.commit()
+            except Exception:
+                pass
+
         return results
 
 
@@ -271,3 +317,29 @@ def reindex_changed() -> int:
         pass
 
     return count
+
+
+def get_search_history(limit: int = 10) -> list[dict]:
+    """E3: Return recent unique search queries, newest first."""
+    init_db()
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT query, MAX(timestamp) as ts, MAX(result_count) as cnt "
+            "FROM search_history GROUP BY query ORDER BY ts DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [{"query": r["query"], "timestamp": r["ts"], "result_count": r["cnt"]} for r in rows]
+
+
+def record_search(query: str, result_count: int) -> None:
+    """E3: Explicitly record a search (for external callers like MCP tools)."""
+    init_db()
+    with get_db() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO search_history (query, timestamp, result_count) VALUES (?, ?, ?)",
+                (query.strip(), time.time(), result_count),
+            )
+            conn.commit()
+        except Exception:
+            pass

@@ -1,0 +1,19 @@
+<div class="content-inner">
+  <h2>Letzte Suchen</h2>
+  {% if history %}
+  <ul class="search-history-list">
+    {% for h in history %}
+    <li class="search-history-item">
+      <a href="#" hx-post="/ui/search" hx-vals='{"query":"{{ h.query }}"}' hx-target="#content" hx-swap="innerHTML">
+        {{ h.query }}
+      </a>
+      <span class="search-history-meta">{{ h.result_count }} Treffer</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="empty-state">
+    <p>Noch keine Suchen durchgeführt.</p>
+  </div>
+  {% endif %}
+</div>
