@@ -1221,6 +1221,12 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
+  /* iOS Safari: Horizontale Browser-Gesten (Back-Swipe) am Content blockieren,
+     vertikales Scrollen bleibt erlaubt. */
+  .content-area {
+    touch-action: pan-y;
+  }
+
   /* Touch-Targets: WCAG-Minimum 44×44px */
   .tree-row .file-item { min-height: 44px; font-size: 0.9rem; padding: 0.5rem 0.6rem; }
   .tree-btn { width: 44px; height: 44px; }

@@ -43,7 +43,7 @@ On viewports ≤ 768 px the sidebar slides in from the left:
 - `Esc` closes the sidebar (in addition to backdrop tap and hamburger toggle)
 - On close, focus returns to the hamburger button
 - Long-press on a tree item triggers the action sheet (`kwOpenMobileActionSheet`)
-- Swiping from the left screen edge opens the sidebar; swiping left when open closes it (touch gestures handler in `kiwiki.js`)
+- Swiping right anywhere on the content area opens the sidebar; swiping left anywhere on the open sidebar closes it (touch gestures handler in `kiwiki.js`). The handler is always bound at page load; `kwIsMobileSidebar()` gates actual tracking to viewports ≤ 768 px. Minimum swipe distance: 60 px.
 
 ## Touch Targets & iOS-Zoom Prevention
 

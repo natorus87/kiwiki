@@ -1316,15 +1316,18 @@ function kwCloseFabOutside(e) {
   if (!sidebar) return;
 
   var startX = 0, startY = 0, dist = 0, isTracking = false, intent = null;
-  var edgeZone = 24;
-  var openThreshold = 40;
+  var openThreshold = 60;
   var closeThreshold = 60;
+  // Area am linken Bildschirmrand, ab der iOS Safari's Back-Swipe greift
+  var edgeZone = 30;
   var bound = false;
 
   function bind() {
     if (bound) return;
     bound = true;
 
+    // passive: false ist nötig, damit preventDefault() iOS Safari's
+    // eingebaute "Swipe-from-edge-to-go-back"-Geste unterdrücken kann.
     document.addEventListener('touchstart', function(e) {
       if (!kwIsMobileSidebar()) return;
       var t = e.touches[0];
@@ -1334,17 +1337,18 @@ function kwCloseFabOutside(e) {
       isTracking = false;
       intent = null;
       var isOpen = sidebar.classList.contains('open');
-      // Open: Start in linker Edge-Zone (egal wo auf der Seite gewischt wird,
-      // solange die Geste am linken Rand beginnt).
-      // Close: Geste auf der geöffneten Sidebar — Sidebar hat width:100vw
-      // auf Mobile, daher akzeptieren wir jeden Touch-Punkt auf der linken
-      // 85% der Breite (rechte 15% bleiben für künftige Aktionen frei).
-      if (!isOpen && startX <= edgeZone) {
+      var onSidebar = sidebar.contains(e.target);
+      if (!isOpen && !onSidebar) {
         isTracking = true; intent = 'open';
-      } else if (isOpen && startX < window.innerWidth * 0.85) {
+      } else if (isOpen && onSidebar) {
         isTracking = true; intent = 'close';
       }
-    }, { passive: true });
+      // iOS Safari: Back-Swipe-Geste am linken Rand unterdrücken,
+      // wenn wir einen Open-Swipe tracken.
+      if (isTracking && intent === 'open' && startX < edgeZone) {
+        e.preventDefault();
+      }
+    }, { passive: false });
 
     document.addEventListener('touchmove', function(e) {
       if (!isTracking || !kwIsMobileSidebar()) return;
@@ -1353,7 +1357,11 @@ function kwCloseFabOutside(e) {
       var dy = t.clientY - startY;
       if (Math.abs(dy) > Math.abs(dx)) { isTracking = false; return; }
       dist = dx;
-    }, { passive: true });
+      // Weiterhin verhindern, dass Safari die Geste übernimmt
+      if (intent === 'open' && startX < edgeZone) {
+        e.preventDefault();
+      }
+    }, { passive: false });
 
     document.addEventListener('touchend', function() {
       if (!isTracking || !kwIsMobileSidebar()) return;
@@ -1363,7 +1371,5 @@ function kwCloseFabOutside(e) {
     }, { passive: true });
   }
 
-  if (kwIsMobileSidebar()) bind();
-  var mq = window.matchMedia('(max-width: 768px)');
-  mq.addEventListener('change', function(e) { if (e.matches) bind(); });
+  bind();
 })();

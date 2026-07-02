@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- **iOS Safari: Swipe-Geste am linken Rand** — `touchstart`/`touchmove`-Listener von `passive: true` auf `passive: false` umgestellt, damit `preventDefault()` iOS Safari's eingebaute "Swipe-from-edge-to-go-back"-Geste unterdrücken kann. Zusätzlich `touch-action: pan-y` auf `.content-area` im Mobile-Breakpoint gesetzt.
+
+### Changed
+- **Touch-Swipe-Geste** für Sidebar: Swipe-Right zum Öffnen funktioniert jetzt vom **gesamten Content-Bereich** (nicht mehr nur von der linken Bildschirmkante). Swipe-Left zum Schließen funktioniert von überall auf der Sidebar. `edgeZone`-Threshold entfernt, `openThreshold` auf 60px gesetzt. Handler wird immer gebunden (kein viewport-Check bei Laden mehr).
+
 ## [2.2.0] - 2026-07-01
 
 ### Added — Accessibility
