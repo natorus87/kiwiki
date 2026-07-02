@@ -8,7 +8,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Fixed
-- **iOS Safari: Viewport-Lock für Touch-Gesten** — `position: fixed; inset: 0` auf `body` (PWA-Muster nach Licium) sperrt den Viewport und verhindert, dass Safari Edge-Swipes als Browser-Back-Gesten abfängt. Zusätzlich `user-scalable=no, maximum-scale=1.0` im Viewport-Meta-Tag.
+- **Touch-Swipe-Geste komplett tot auf iPad** — Zwei kritische Bugs: (1) `kiwiki.js` wurde vor dem DOM geladen (Script in `layout.html` Zeile 32, Sidebar-Element erst Zeile 58), IIFE fand `null` und boundete keine Listener. Fix: `DOMContentLoaded`-Wrapper + `querySelector` inside `bind()`. (2) Breakpoint `max-width: 768px` schloss alle iPads aus (810–1024px). Fix: Alle Breakpoints auf `1024px` erweitert (CSS + JS).
 
 ### Changed
 - **Touch-Swipe-Geste** für Sidebar: Swipe-Right zum Öffnen funktioniert jetzt vom **gesamten Content-Bereich** (nicht mehr nur von der linken Bildschirmkante). Swipe-Left zum Schließen funktioniert von überall auf der Sidebar. `edgeZone`-Threshold entfernt, `openThreshold` auf 60px gesetzt. Handler wird immer gebunden (kein viewport-Check bei Laden mehr).

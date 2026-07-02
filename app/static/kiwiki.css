@@ -1164,7 +1164,7 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
 .fab-menu-item svg { color: var(--md-primary); flex-shrink: 0; }
 
 /* ── Mobile ─────────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .hamburger { display: flex; }
 
   /* Safari: Safe-Area links/rechts im Header (Landscape) */
@@ -1702,7 +1702,7 @@ header {
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .app-layout {
     height: calc(100vh - 58px);
     height: calc(100dvh - 58px);
@@ -1978,7 +1978,7 @@ header::before,
   background: var(--md-surface-c);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .sidebar {
     box-shadow: none;
     background: var(--md-bg);

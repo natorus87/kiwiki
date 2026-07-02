@@ -11,7 +11,7 @@ function apiHeaders(extra) {
 }
 
 function kwIsMobileSidebar() {
-  return window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+  return window.matchMedia && window.matchMedia('(max-width: 1024px)').matches;
 }
 
 // openSidebar/closeSidebar (v2.2 a11y):
@@ -58,7 +58,7 @@ function loadFile(path, el) {
   var results = document.getElementById('search-results');
   if (results) results.innerHTML = '';
   htmx.ajax('GET', '/ui/file?path=' + encodeURIComponent(path), { target: '#main-content', swap: 'innerHTML' });
-  if (window.innerWidth <= 768) closeSidebar();
+  if (window.innerWidth <= 1024) closeSidebar();
 }
 
 function kwOpenDoc(path) {
@@ -925,7 +925,7 @@ function kwInitSidebarResizer() {
   if (resizer.dataset.kwBound === '1') return;
   resizer.dataset.kwBound = '1';
 
-  if (window.innerWidth > 768) {
+  if (window.innerWidth > 1024) {
     var savedW = parseInt(localStorage.getItem('kiwiki_sidebar_w'), 10);
     if (savedW && savedW > 0) {
       sidebar.style.width  = savedW + 'px';
@@ -1312,9 +1312,6 @@ function kwCloseFabOutside(e) {
 
 /* ── Touch Gestures: Swipe to open/close sidebar ──────────────────── */
 (function() {
-  var sidebar = document.querySelector('.sidebar');
-  if (!sidebar) return;
-
   var startX = 0, startY = 0, dist = 0, isTracking = false, intent = null;
   var openThreshold = 60;
   var closeThreshold = 60;
@@ -1322,6 +1319,8 @@ function kwCloseFabOutside(e) {
 
   function bind() {
     if (bound) return;
+    var sidebar = document.querySelector('.sidebar');
+    if (!sidebar) return;
     bound = true;
 
     document.addEventListener('touchstart', function(e) {
@@ -1358,5 +1357,9 @@ function kwCloseFabOutside(e) {
     }, { passive: true });
   }
 
-  bind();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bind);
+  } else {
+    bind();
+  }
 })();
