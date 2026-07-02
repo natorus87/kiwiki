@@ -1,6 +1,8 @@
 import logging
 import re
 import sqlite3
+import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -17,15 +19,55 @@ def _db_file() -> Path:
     return db_dir / "index.sqlite"
 
 
+# ── Connection pool (A4) ─────────────────────────────────────────────────────
+# Simple per-thread connection pool: each thread gets one persistent connection
+# per database file. Connections are recycled across requests within the same
+# thread, avoiding the overhead of connect()/close() on every call.
+
+_pool_lock = threading.Lock()
+_pool: dict[str, sqlite3.Connection] = {}
+
+
+def _get_pooled_conn(db_path: str) -> sqlite3.Connection:
+    """Return a persistent connection for the given database path."""
+    key = db_path
+    with _pool_lock:
+        conn = _pool.get(key)
+        if conn is not None:
+            try:
+                conn.execute("SELECT 1")
+                return conn
+            except sqlite3.ProgrammingError:
+                _pool.pop(key, None)
+        conn = sqlite3.connect(db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=-8000")  # 8 MB page cache
+        _pool[key] = conn
+        return conn
+
+
+def close_pool() -> None:
+    """Close all pooled connections (call on shutdown)."""
+    with _pool_lock:
+        for conn in _pool.values():
+            try:
+                conn.close()
+            except Exception:
+                pass
+        _pool.clear()
+
+
 @contextmanager
 def get_db():
-    """Context manager for database connections — ensures cleanup on error."""
-    conn = sqlite3.connect(str(_db_file()))
-    conn.row_factory = sqlite3.Row
+    """Context manager for database connections — uses connection pool."""
+    db_path = str(_db_file())
+    conn = _get_pooled_conn(db_path)
     try:
         yield conn
-    finally:
-        conn.close()
+    except Exception:
+        raise
 
 
 def init_db() -> None:
@@ -181,4 +223,51 @@ def reindex_all() -> int:
             continue
         index_file(rel_path)
         count += 1
+    return count
+
+
+def reindex_changed() -> int:
+    """
+    A6: Lazy reindex — only reindex files whose mtime is newer than the
+    last index timestamp. Falls back to full reindex if no timestamp exists.
+    Returns count of (re)indexed files.
+    """
+    from .storage import safe_path
+
+    db_dir = user_root() / ".kiwiki"
+    db_dir.mkdir(parents=True, exist_ok=True)
+    timestamp_file = db_dir / ".last_reindex"
+
+    last_reindex = 0.0
+    if timestamp_file.exists():
+        try:
+            last_reindex = float(timestamp_file.read_text().strip())
+        except (ValueError, OSError):
+            last_reindex = 0.0
+
+    root = user_root()
+    count = 0
+
+    if last_reindex > 0:
+        # Incremental: only reindex files modified since last reindex
+        for md_file in root.rglob("*.md"):
+            rel_path = str(md_file.relative_to(root))
+            if rel_path in {"AGENTS.md", "index.md"}:
+                continue
+            try:
+                if md_file.stat().st_mtime > last_reindex:
+                    index_file(rel_path)
+                    count += 1
+            except Exception:
+                continue
+    else:
+        # No timestamp yet — full reindex
+        count = reindex_all()
+
+    # Write current timestamp
+    try:
+        timestamp_file.write_text(str(time.time()))
+    except OSError:
+        pass
+
     return count

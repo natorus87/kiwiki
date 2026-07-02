@@ -1,4 +1,6 @@
 import os
+import threading
+import time
 from pathlib import Path
 from datetime import datetime, timezone
 import frontmatter
@@ -13,6 +15,48 @@ DATA_DIR = BASE_DATA_DIR
 # Max bytes to read for frontmatter-only extraction (YAML frontmatter is
 # always at the top of the file and typically < 1 KB).
 _FRONTMATTER_READ_LIMIT = 8192
+
+# ── Frontmatter cache (A3) ────────────────────────────────────────────────────
+# Keyed by (namespace, relative_path, mtime). Avoids re-parsing YAML on every
+# metadata read when the file hasn't changed on disk.
+_fm_cache_lock = threading.Lock()
+_fm_cache: dict[tuple[str, str, float], dict] = {}
+_FM_CACHE_MAX = 2048
+
+
+def _invalidate_fm_cache(path: str = "") -> None:
+    """Invalidate frontmatter cache entries. Empty path clears entire cache."""
+    with _fm_cache_lock:
+        if not path:
+            _fm_cache.clear()
+        else:
+            ns = ""
+            try:
+                from .tenancy import current_user_ns
+                ns = current_user_ns()
+            except RuntimeError:
+                pass
+            keys_to_remove = [k for k in _fm_cache if k[0] == ns and k[1] == path]
+            for k in keys_to_remove:
+                del _fm_cache[k]
+
+
+# ── list_all_files cache (A2) ────────────────────────────────────────────────
+# Cached per namespace. Invalidated on any write to the user's namespace.
+_list_cache_lock = threading.Lock()
+_list_cache: dict[str, tuple[float, list[dict]]] = {}
+_LIST_CACHE_TTL = 5  # seconds — short TTL catches rapid successive reads
+
+
+def _invalidate_list_cache() -> None:
+    """Invalidate the list_all_files cache for the current namespace."""
+    with _list_cache_lock:
+        try:
+            from .tenancy import current_user_ns
+            ns = current_user_ns()
+            _list_cache.pop(ns, None)
+        except RuntimeError:
+            _list_cache.clear()
 
 
 def _path_parts(path: str) -> tuple[str, ...]:
@@ -61,15 +105,37 @@ def _read_frontmatter_only(path: str) -> dict:
     Reads only the first _FRONTMATTER_READ_LIMIT bytes, which is sufficient
     for YAML frontmatter (always at the top, typically < 1 KB).
     Returns the metadata dict; content is not extracted.
+    Results are cached per (namespace, path, mtime) — invalidated on writes.
     """
     file_path = safe_path(path)
     if not file_path.exists() or not file_path.is_file():
         return {}
     try:
+        stat = file_path.stat()
+        mtime = stat.st_mtime
+        ns = ""
+        try:
+            from .tenancy import current_user_ns
+            ns = current_user_ns()
+        except RuntimeError:
+            pass
+        cache_key = (ns, path, mtime)
+        with _fm_cache_lock:
+            cached = _fm_cache.get(cache_key)
+            if cached is not None:
+                return cached
         with open(file_path, "r", encoding="utf-8") as f:
             raw = f.read(_FRONTMATTER_READ_LIMIT)
         post = frontmatter.loads(raw)
-        return post.metadata
+        meta = post.metadata
+        with _fm_cache_lock:
+            if len(_fm_cache) >= _FM_CACHE_MAX:
+                # Evict oldest 25%
+                sorted_keys = sorted(_fm_cache.keys(), key=lambda k: k[2])
+                for k in sorted_keys[: _FM_CACHE_MAX // 4]:
+                    del _fm_cache[k]
+            _fm_cache[cache_key] = meta
+        return meta
     except Exception:
         return {}
 
@@ -101,6 +167,8 @@ def write_file(path: str, content: str) -> FileContent:
     post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(frontmatter.dumps(post))
+    _invalidate_fm_cache(path)
+    _invalidate_list_cache()
     return FileContent(path=path, content=post.content, frontmatter=post.metadata)
 
 
@@ -118,6 +186,8 @@ def append_file(path: str, content: str) -> FileContent:
     post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(frontmatter.dumps(post))
+    _invalidate_fm_cache(path)
+    _invalidate_list_cache()
     return FileContent(path=path, content=post.content, frontmatter=post.metadata)
 
 
@@ -188,12 +258,15 @@ def delete_file(path: str) -> None:
     if not path.endswith(".md"):
         raise ValueError("Only .md files may be deleted")
     file_path.unlink()
+    _invalidate_fm_cache(path)
+    _invalidate_list_cache()
 
 
 def create_folder(path: str) -> None:
     """Create a folder."""
     dir_path = safe_path(path)
     dir_path.mkdir(parents=True, exist_ok=True)
+    _invalidate_list_cache()
 
 
 def delete_folder(path: str) -> None:
@@ -215,6 +288,8 @@ def delete_folder(path: str) -> None:
     if dir_path.resolve() == user_root().resolve():
         raise ValueError("Cannot delete the data root directory")
     shutil.rmtree(dir_path)
+    _invalidate_fm_cache()
+    _invalidate_list_cache()
 
 
 def create_note(title: str, content: str, tags: list[str], owner: str, folder: str = "notes") -> str:
@@ -245,6 +320,8 @@ def create_note(title: str, content: str, tags: list[str], owner: str, folder: s
     file_path.parent.mkdir(parents=True, exist_ok=True)
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(frontmatter.dumps(post))
+    _invalidate_fm_cache(path)
+    _invalidate_list_cache()
     return path
 
 
@@ -268,6 +345,8 @@ def edit_file(path: str, new_str: str, old_str: str = "") -> FileContent:
     post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(frontmatter.dumps(post))
+    _invalidate_fm_cache(path)
+    _invalidate_list_cache()
     return FileContent(path=path, content=post.content, frontmatter=post.metadata)
 
 
@@ -285,6 +364,8 @@ def update_frontmatter(path: str, updates: dict) -> FileContent:
     post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(frontmatter.dumps(post))
+    _invalidate_fm_cache(path)
+    _invalidate_list_cache()
     return FileContent(path=path, content=post.content, frontmatter=post.metadata)
 
 
@@ -302,6 +383,8 @@ def move_folder(src: str, dst: str) -> None:
         raise ValueError(f"Destination already exists: {dst}")
     dst_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(src_path), str(dst_path))
+    _invalidate_fm_cache()
+    _invalidate_list_cache()
 
 
 def move_file(src: str, dst: str) -> FileContent:
@@ -322,6 +405,9 @@ def move_file(src: str, dst: str) -> FileContent:
         raise ValueError(f"Destination already exists: {dst}")
     dst_path.parent.mkdir(parents=True, exist_ok=True)
     src_path.rename(dst_path)
+    _invalidate_fm_cache(src)
+    _invalidate_fm_cache(dst)
+    _invalidate_list_cache()
     return read_file(dst)
 
 
@@ -330,7 +416,7 @@ def list_all_files(path: str = ".") -> list[dict]:
     Recursively list all markdown files under path (within the user's namespace).
     Returns list of {path, title, updated, tags} dicts for the AI to navigate.
     Uses lightweight frontmatter extraction (first 8 KB only) instead of
-    full file reads for metadata.
+    full file reads for metadata. Results are cached per namespace (A2).
     """
     root = user_root()
     if path == ".":
@@ -338,19 +424,54 @@ def list_all_files(path: str = ".") -> list[dict]:
         dir_path = root
     else:
         dir_path = safe_path(path)
+
+    # Check cache (A2) — key includes the actual root path to avoid stale
+    # cache hits when the data directory changes (e.g. between test fixtures).
+    ns = ""
+    try:
+        from .tenancy import current_user_ns
+        ns = current_user_ns()
+    except RuntimeError:
+        pass
+    cache_key = f"{root}:{ns}:{path}"
+    now = time.time()
+    with _list_cache_lock:
+        cached = _list_cache.get(cache_key)
+        if cached and now - cached[0] < _LIST_CACHE_TTL:
+            return cached[1]
+
+    # Use os.scandir for faster recursive traversal (A5)
     items = []
-    for item in sorted(dir_path.rglob("*.md"), key=lambda x: str(x)):
-        if ".kiwiki" in str(item):
-            continue
-        rel_path = str(item.relative_to(root))
-        try:
-            meta = _read_frontmatter_only(rel_path)
-            title = meta.get("title", item.stem)
-            updated = meta.get("updated", "")
-            tags = meta.get("tags", [])
-        except Exception:
-            title = item.stem
-            updated = ""
-            tags = []
-        items.append({"path": rel_path, "title": title, "updated": updated, "tags": tags})
+    _scan_markdown_recursive(dir_path, root, items)
+    items.sort(key=lambda x: x["path"])
+
+    with _list_cache_lock:
+        _list_cache[cache_key] = (now, items)
     return items
+
+
+def _scan_markdown_recursive(dir_path: Path, root: Path, items: list) -> None:
+    """Recursively scan for .md files using os.scandir (A5)."""
+    if not dir_path.exists() or not dir_path.is_dir():
+        return
+    try:
+        entries = list(os.scandir(dir_path))
+    except (PermissionError, FileNotFoundError):
+        return
+    for entry in entries:
+        if entry.name == ".kiwiki":
+            continue
+        if entry.is_dir(follow_symlinks=False):
+            _scan_markdown_recursive(Path(entry.path), root, items)
+        elif entry.is_file(follow_symlinks=False) and entry.name.endswith(".md"):
+            rel_path = os.path.relpath(entry.path, root)
+            try:
+                meta = _read_frontmatter_only(rel_path)
+                title = meta.get("title", Path(entry.name).stem)
+                updated = meta.get("updated", "")
+                tags = meta.get("tags", [])
+            except Exception:
+                title = Path(entry.name).stem
+                updated = ""
+                tags = []
+            items.append({"path": rel_path, "title": title, "updated": updated, "tags": tags})

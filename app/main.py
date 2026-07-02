@@ -29,7 +29,7 @@ from .models import (
     WriteFileRequest,
 )
 from .rate_limiter import RateLimitMiddleware
-from .search import deindex_file, index_file, init_db, reindex_all, search as search_files
+from .search import deindex_file, index_file, init_db, reindex_all, reindex_changed, search as search_files
 from .storage import (
     append_file,
     create_folder,
@@ -225,7 +225,18 @@ async def startup() -> None:
         set_user_ns(username)
         ensure_user_workspace(username)
         init_db()
-        reindex_all()
+        # A6: Lazy reindex — nur geänderte Dateien neu indexieren
+        count = reindex_changed()
+        if count > 0:
+            logging.getLogger("kiwiki.startup").info(
+                "Lazy reindexed %d file(s) for user %s", count, username
+            )
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    from .search import close_pool
+    close_pool()
 
 
 # ---------------------------------------------------------------------------
@@ -578,7 +589,11 @@ async def ui_export(request: Request):
 @app.get("/api/files")
 async def api_list_files(path: str = ".", user: User = Depends(get_current_user)):
     try:
-        return list_files(path)
+        from starlette.responses import JSONResponse
+        resp = JSONResponse(list_files(path))
+        # A7: Short cache for read-only listing
+        resp.headers["Cache-Control"] = "private, max-age=5"
+        return resp
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -586,7 +601,11 @@ async def api_list_files(path: str = ".", user: User = Depends(get_current_user)
 @app.get("/api/file")
 async def api_read_file(path: str, user: User = Depends(get_current_user)):
     try:
-        return read_file(path)
+        from starlette.responses import JSONResponse
+        resp = JSONResponse(read_file(path))
+        # A7: Short cache for read-only file content
+        resp.headers["Cache-Control"] = "private, max-age=5"
+        return resp
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")
     except Exception as exc:
