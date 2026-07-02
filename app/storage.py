@@ -10,6 +10,10 @@ from .tenancy import BASE_DATA_DIR, user_root
 # the *current user's* root via user_root().
 DATA_DIR = BASE_DATA_DIR
 
+# Max bytes to read for frontmatter-only extraction (YAML frontmatter is
+# always at the top of the file and typically < 1 KB).
+_FRONTMATTER_READ_LIMIT = 8192
+
 
 def _path_parts(path: str) -> tuple[str, ...]:
     return tuple(part for part in path.replace("\\", "/").strip("/").split("/") if part)
@@ -49,6 +53,25 @@ def safe_path(path: str) -> Path:
     if normalized != root and not str(normalized).startswith(str(root) + os.sep):
         raise ValueError(f"Path traversal detected: {path!r}")
     return normalized
+
+
+def _read_frontmatter_only(path: str) -> dict:
+    """Extract frontmatter metadata without reading the full file content.
+
+    Reads only the first _FRONTMATTER_READ_LIMIT bytes, which is sufficient
+    for YAML frontmatter (always at the top, typically < 1 KB).
+    Returns the metadata dict; content is not extracted.
+    """
+    file_path = safe_path(path)
+    if not file_path.exists() or not file_path.is_file():
+        return {}
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            raw = f.read(_FRONTMATTER_READ_LIMIT)
+        post = frontmatter.loads(raw)
+        return post.metadata
+    except Exception:
+        return {}
 
 
 def read_file(path: str) -> FileContent:
@@ -102,6 +125,8 @@ def list_files(path: str = ".") -> list[FileInfo]:
     """
     List files and directories in path (within the current user's namespace).
     Returns sorted list with directories first.
+    Uses lightweight frontmatter extraction (first 8 KB only) instead of
+    full file reads for metadata.
     """
     root = user_root()
     if path == ".":
@@ -131,14 +156,12 @@ def list_files(path: str = ".") -> list[FileInfo]:
             )
         else:
             stat = item.stat()
+            mtime_str = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat().split("T")[0]
             try:
-                content = read_file(rel_path)
-                updated = content.frontmatter.get(
-                    "updated",
-                    datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat().split("T")[0],
-                )
+                meta = _read_frontmatter_only(rel_path)
+                updated = meta.get("updated", mtime_str)
             except Exception:
-                updated = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat().split("T")[0]
+                updated = mtime_str
             items.append(
                 FileInfo(
                     path=rel_path,
@@ -305,7 +328,9 @@ def move_file(src: str, dst: str) -> FileContent:
 def list_all_files(path: str = ".") -> list[dict]:
     """
     Recursively list all markdown files under path (within the user's namespace).
-    Returns list of {path, title, updated} dicts for the AI to navigate.
+    Returns list of {path, title, updated, tags} dicts for the AI to navigate.
+    Uses lightweight frontmatter extraction (first 8 KB only) instead of
+    full file reads for metadata.
     """
     root = user_root()
     if path == ".":
@@ -319,10 +344,10 @@ def list_all_files(path: str = ".") -> list[dict]:
             continue
         rel_path = str(item.relative_to(root))
         try:
-            fc = read_file(rel_path)
-            title = fc.frontmatter.get("title", item.stem)
-            updated = fc.frontmatter.get("updated", "")
-            tags = fc.frontmatter.get("tags", [])
+            meta = _read_frontmatter_only(rel_path)
+            title = meta.get("title", item.stem)
+            updated = meta.get("updated", "")
+            tags = meta.get("tags", [])
         except Exception:
             title = item.stem
             updated = ""

@@ -37,6 +37,7 @@ from .auth import ROLE_HIERARCHY, parse_users
 from .models import User
 from .search import deindex_file, get_db, index_file, init_db, reindex_all, search as fts_search
 from .storage import (
+    _read_frontmatter_only,
     append_file,
     create_note,
     delete_file,
@@ -99,6 +100,11 @@ _OAUTH_CLIENT_TTL_SECONDS = int(os.getenv("KIWIKI_OAUTH_CLIENT_TTL_SECONDS", "86
 _OAUTH_MAX_REDIRECT_URIS = int(os.getenv("KIWIKI_OAUTH_MAX_REDIRECT_URIS", "10"))
 _OAUTH_MAX_REDIRECT_URI_LENGTH = 2048
 _DEFAULT_ALLOWED_REDIRECT_HOSTS = "chatgpt.com,chat.openai.com"
+
+# Cache for initialize instructions (AGENTS.md + index.md content per namespace)
+# Avoids re-reading these files on every MCP connection.
+_initialize_cache: dict[str, tuple[float, str]] = {}
+_INITIALIZE_CACHE_TTL = 60  # seconds
 
 _MCP_UPLOAD_TTL_SECONDS = int(os.getenv("KIWIKI_MCP_UPLOAD_TTL_SECONDS", "3600"))
 _MCP_MAX_UPLOAD_BYTES = int(os.getenv("KIWIKI_MCP_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
@@ -1823,12 +1829,23 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
             ensure_user_workspace(user.username)
         requested = params.get("protocolVersion", MCP_PROTOCOL_VERSION)
         negotiated = requested if requested in SUPPORTED_PROTOCOL_VERSIONS else MCP_PROTOCOL_VERSION
-        try:
-            agents = read_file("AGENTS.md").content
-            index  = read_file("index.md").content
-            schema_hint = f"\n\n--- AGENTS.md ---\n{agents}\n\n--- index.md ---\n{index}"
-        except Exception:
-            schema_hint = ""
+
+        # Use cached schema hint if available (avoids re-reading AGENTS.md + index.md
+        # on every MCP connection — these files rarely change)
+        cache_key = user.username if user else "anon"
+        now = time.time()
+        cached = _initialize_cache.get(cache_key)
+        if cached and now - cached[0] < _INITIALIZE_CACHE_TTL:
+            schema_hint = cached[1]
+        else:
+            try:
+                agents = read_file("AGENTS.md").content
+                index  = read_file("index.md").content
+                schema_hint = f"\n\n--- AGENTS.md ---\n{agents}\n\n--- index.md ---\n{index}"
+            except Exception:
+                schema_hint = ""
+            _initialize_cache[cache_key] = (now, schema_hint)
+
         return _rpc_ok(req_id, {
             "protocolVersion": negotiated,
             "capabilities": {"tools": {}},
@@ -2063,10 +2080,10 @@ def _file_summary(path) -> dict:
     rel = _rel_path(path)
     stat = path.stat()
     try:
-        fc = read_file(rel)
-        title = fc.frontmatter.get("title", path.stem)
-        updated = fc.frontmatter.get("updated", "")
-        tags = fc.frontmatter.get("tags", [])
+        meta = _read_frontmatter_only(rel)
+        title = meta.get("title", path.stem)
+        updated = meta.get("updated", "")
+        tags = meta.get("tags", [])
     except Exception:
         title = path.stem
         updated = ""
@@ -2104,11 +2121,11 @@ def _resolve_local_link(source_rel: str, link: str) -> str | None:
 
 
 def _frontmatter_title_and_tags(path: str) -> tuple[str, list[str], dict]:
-    fc = read_file(path)
-    tags = fc.frontmatter.get("tags", [])
+    meta = _read_frontmatter_only(path)
+    tags = meta.get("tags", [])
     if not isinstance(tags, list):
         tags = []
-    return fc.frontmatter.get("title", os.path.splitext(os.path.basename(path))[0]), tags, fc.frontmatter
+    return meta.get("title", os.path.splitext(os.path.basename(path))[0]), tags, meta
 
 
 def _index_markdown(path: str) -> None:
@@ -2145,6 +2162,9 @@ def _write_markdown_content(path: str, content: str, mode: str = "replace", crea
         else:
             raise FileNotFoundError(f"File not found: {path!r}")
     _index_markdown(path)
+    # Invalidate initialize cache when index.md or AGENTS.md change
+    if path in ("index.md", "AGENTS.md"):
+        _initialize_cache.clear()
     dumped = frontmatter_dump_payload(fc.content, fc.frontmatter)
     return {
         "path": fc.path,
@@ -2578,20 +2598,27 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
 
         async def _scan_all() -> list:
             out: list = []
-            for filepath in files:
+
+            async def _scan_file(filepath):
                 rel = str(filepath.relative_to(user_root()))
-                # Per-File-Timeout schuetzt vor einem hengenden File.
                 try:
-                    hits = await asyncio.wait_for(
+                    return await asyncio.wait_for(
                         asyncio.to_thread(_scan_one, filepath, rel, compiled, context_n),
                         timeout=PER_FILE_TIMEOUT_S,
                     )
                 except asyncio.TimeoutError:
                     logger.warning("grep: file %s timed out after %.1fs, skipped", rel, PER_FILE_TIMEOUT_S)
-                    continue
-                out.extend(hits)
-                if len(out) >= max_results:
-                    return out[:max_results]
+                    return []
+
+            # Scan files in parallel batches for better throughput
+            BATCH_SIZE = 8
+            for i in range(0, len(files), BATCH_SIZE):
+                batch = files[i:i + BATCH_SIZE]
+                results = await asyncio.gather(*(_scan_file(fp) for fp in batch))
+                for hits in results:
+                    out.extend(hits)
+                    if len(out) >= max_results:
+                        return out[:max_results]
             return out
 
         try:
@@ -2775,12 +2802,13 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         for filepath in files:
             rel = _rel_path(filepath)
             try:
-                fc = read_file(rel)
-                title = fc.frontmatter.get("title", "")
+                # Single read: extract frontmatter from lightweight read, links from full text
+                meta = _read_frontmatter_only(rel)
+                title = meta.get("title", "")
                 if title:
                     titles.setdefault(str(title).lower(), []).append(rel)
                 for field in required:
-                    if field not in fc.frontmatter or fc.frontmatter.get(field) in ("", None):
+                    if field not in meta or meta.get(field) in ("", None):
                         issues.append({"path": rel, "type": "missing_frontmatter", "message": f"Missing frontmatter field: {field}"})
                 text = filepath.read_text(encoding="utf-8")
             except Exception as exc:
@@ -2947,8 +2975,6 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         scope = args.get("path", ".")
         all_files = list_all_files(scope)
         total_files = len(all_files)
-        total_words = 0
-        total_chars = 0
         files_by_folder: dict[str, int] = {}
         tag_counts: dict[str, int] = {}
         for f in all_files:
@@ -2957,13 +2983,25 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             files_by_folder[folder] = files_by_folder.get(folder, 0) + 1
             for tag in f.get("tags", []):
                 tag_counts[str(tag)] = tag_counts.get(str(tag), 0) + 1
+
+        def _count_words(f):
             try:
                 fc = read_file(f["path"])
-                words = len(fc.content.split())
-                total_words += words
-                total_chars += len(fc.content)
+                return len(fc.content.split()), len(fc.content)
             except Exception:
-                pass
+                return 0, 0
+
+        # Count words in parallel batches
+        total_words = 0
+        total_chars = 0
+        BATCH_SIZE = 8
+        for i in range(0, len(all_files), BATCH_SIZE):
+            batch = all_files[i:i + BATCH_SIZE]
+            results = await asyncio.gather(*(asyncio.to_thread(_count_words, f) for f in batch))
+            for words, chars in results:
+                total_words += words
+                total_chars += chars
+
         top_tags = [{"tag": t, "count": c} for t, c in sorted(tag_counts.items(), key=lambda x: -x[1])[:20]]
         dated = [f for f in all_files if f.get("updated")]
         dated.sort(key=lambda x: x.get("updated", ""), reverse=True)
@@ -3015,23 +3053,38 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         broken = []
         valid = 0
         checked = 0
-        for md_file in _markdown_paths(scope):
+
+        md_files = _markdown_paths(scope)
+
+        def _check_file(md_file):
             rel = _rel_path(md_file)
-            checked += 1
             try:
                 text = md_file.read_text(encoding="utf-8")
             except Exception:
-                continue
+                return []
+            file_broken = []
+            file_valid = 0
             for lineno, link in _local_markdown_links(text):
                 if link.startswith(("http://", "https://", "mailto:", "#")):
-                    valid += 1
+                    file_valid += 1
                     continue
                 target = _resolve_local_link(rel, link)
                 exists = target is not None and safe_path(target).exists() if target else False
                 if exists:
-                    valid += 1
+                    file_valid += 1
                 else:
-                    broken.append({"source": rel, "line": lineno, "link": link, "target_exists": False})
+                    file_broken.append({"source": rel, "line": lineno, "link": link, "target_exists": False})
+            return file_broken, file_valid
+
+        # Process in parallel batches
+        BATCH_SIZE = 8
+        for i in range(0, len(md_files), BATCH_SIZE):
+            batch = md_files[i:i + BATCH_SIZE]
+            results = await asyncio.gather(*(asyncio.to_thread(_check_file, fp) for fp in batch))
+            for file_broken, file_valid in results:
+                broken.extend(file_broken)
+                valid += file_valid
+                checked += 1
         return json.dumps({"checked_files": checked, "broken_links": broken, "valid_count": valid, "broken_count": len(broken)}, ensure_ascii=False, indent=2)
 
     if name == "link_graph":
@@ -3043,18 +3096,30 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         edges = []
         incoming: dict[str, int] = {}
         outgoing: dict[str, int] = {}
-        for f in all_files_list:
+
+        def _extract_links(f):
             try:
                 md_file = (user_root() / f["path"]).resolve()
                 text = md_file.read_text(encoding="utf-8")
             except Exception:
-                continue
-            for _, link in _local_markdown_links(text):
-                target = _resolve_local_link(f["path"], link)
-                if target and target in path_set:
-                    edges.append({"source": f["path"], "target": target, "link_text": link})
-                    outgoing[f["path"]] = outgoing.get(f["path"], 0) + 1
-                    incoming[target] = incoming.get(target, 0) + 1
+                return []
+            return [(f["path"], link) for _, link in _local_markdown_links(text)]
+
+        # Read files in parallel batches
+        BATCH_SIZE = 8
+        all_links = []
+        for i in range(0, len(all_files_list), BATCH_SIZE):
+            batch = all_files_list[i:i + BATCH_SIZE]
+            results = await asyncio.gather(*(asyncio.to_thread(_extract_links, f) for f in batch))
+            for file_links in results:
+                all_links.extend(file_links)
+
+        for source, link in all_links:
+            target = _resolve_local_link(source, link)
+            if target and target in path_set:
+                edges.append({"source": source, "target": target, "link_text": link})
+                outgoing[source] = outgoing.get(source, 0) + 1
+                incoming[target] = incoming.get(target, 0) + 1
         linked = set(incoming.keys()) | set(outgoing.keys())
         orphaned = [f["path"] for f in all_files_list if f["path"] not in linked and f["path"] not in ("index.md", "AGENTS.md")]
         most_linked = [{"path": p, "count": c} for p, c in sorted(incoming.items(), key=lambda x: -x[1])[:10]]
@@ -3094,8 +3159,8 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         mode = args.get("mode", "merge")
         updated = []
         for path in files:
-            fc = read_file(path)
-            existing_tags = list(fc.frontmatter.get("tags", []))
+            meta = _read_frontmatter_only(path)
+            existing_tags = list(meta.get("tags", []))
             if mode == "replace":
                 new_tags = tags
             else:
