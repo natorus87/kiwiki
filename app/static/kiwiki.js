@@ -1318,16 +1318,12 @@ function kwCloseFabOutside(e) {
   var startX = 0, startY = 0, dist = 0, isTracking = false, intent = null;
   var openThreshold = 60;
   var closeThreshold = 60;
-  // Area am linken Bildschirmrand, ab der iOS Safari's Back-Swipe greift
-  var edgeZone = 30;
   var bound = false;
 
   function bind() {
     if (bound) return;
     bound = true;
 
-    // passive: false ist nötig, damit preventDefault() iOS Safari's
-    // eingebaute "Swipe-from-edge-to-go-back"-Geste unterdrücken kann.
     document.addEventListener('touchstart', function(e) {
       if (!kwIsMobileSidebar()) return;
       var t = e.touches[0];
@@ -1343,12 +1339,7 @@ function kwCloseFabOutside(e) {
       } else if (isOpen && onSidebar) {
         isTracking = true; intent = 'close';
       }
-      // iOS Safari: Back-Swipe-Geste am linken Rand unterdrücken,
-      // wenn wir einen Open-Swipe tracken.
-      if (isTracking && intent === 'open' && startX < edgeZone) {
-        e.preventDefault();
-      }
-    }, { passive: false });
+    }, { passive: true });
 
     document.addEventListener('touchmove', function(e) {
       if (!isTracking || !kwIsMobileSidebar()) return;
@@ -1357,11 +1348,7 @@ function kwCloseFabOutside(e) {
       var dy = t.clientY - startY;
       if (Math.abs(dy) > Math.abs(dx)) { isTracking = false; return; }
       dist = dx;
-      // Weiterhin verhindern, dass Safari die Geste übernimmt
-      if (intent === 'open' && startX < edgeZone) {
-        e.preventDefault();
-      }
-    }, { passive: false });
+    }, { passive: true });
 
     document.addEventListener('touchend', function() {
       if (!isTracking || !kwIsMobileSidebar()) return;

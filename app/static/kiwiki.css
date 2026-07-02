@@ -80,10 +80,15 @@ body {
   text-rendering: optimizeLegibility;
   /* iOS/Safari: body selbst darf nicht scrollen, sonst entsteht zusammen mit
      dem sticky Header ein zweiter Scroll-Kontext (Doppelscroll,
-     Header-Wackeln, Scroll-Chaining beim iOS-Rubber-Band). */
+     Header-Wackeln, Scroll-Chaining beim iOS-Rubber-Band).
+     position:fixed + inset:0 sperrt den Viewport (PWA-Muster),
+     verhindert Safari-Back-Gesten am linken Rand und stabilisiert
+     Touch-Event-Lieferung. */
   overflow: hidden;
   overscroll-behavior: none;
   -webkit-overscroll-behavior: none;
+  position: fixed;
+  inset: 0;
 }
 
 header, .app-layout { position: relative; z-index: 1; }
