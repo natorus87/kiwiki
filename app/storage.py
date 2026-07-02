@@ -17,46 +17,26 @@ DATA_DIR = BASE_DATA_DIR
 _FRONTMATTER_READ_LIMIT = 8192
 
 # ── Frontmatter cache (A3) ────────────────────────────────────────────────────
-# Keyed by (namespace, relative_path, mtime). Avoids re-parsing YAML on every
-# metadata read when the file hasn't changed on disk.
 _fm_cache_lock = threading.Lock()
-_fm_cache: dict[tuple[str, str, float], dict] = {}
-_FM_CACHE_MAX = 2048
+_fm_cache: dict[tuple, dict] = {}
 
 
 def _invalidate_fm_cache(path: str = "") -> None:
     """Invalidate frontmatter cache entries. Empty path clears entire cache."""
     with _fm_cache_lock:
-        if not path:
-            _fm_cache.clear()
-        else:
-            ns = ""
-            try:
-                from .tenancy import current_user_ns
-                ns = current_user_ns()
-            except RuntimeError:
-                pass
-            keys_to_remove = [k for k in _fm_cache if k[0] == ns and k[1] == path]
-            for k in keys_to_remove:
-                del _fm_cache[k]
+        _fm_cache.clear()
 
 
 # ── list_all_files cache (A2) ────────────────────────────────────────────────
-# Cached per namespace. Invalidated on any write to the user's namespace.
 _list_cache_lock = threading.Lock()
 _list_cache: dict[str, tuple[float, list[dict]]] = {}
-_LIST_CACHE_TTL = 5  # seconds — short TTL catches rapid successive reads
+_LIST_CACHE_TTL = 5
 
 
 def _invalidate_list_cache() -> None:
-    """Invalidate the list_all_files cache for the current namespace."""
+    """Invalidate the list_all_files cache."""
     with _list_cache_lock:
-        try:
-            from .tenancy import current_user_ns
-            ns = current_user_ns()
-            _list_cache.pop(ns, None)
-        except RuntimeError:
-            _list_cache.clear()
+        _list_cache.clear()
 
 
 def _path_parts(path: str) -> tuple[str, ...]:
@@ -105,37 +85,15 @@ def _read_frontmatter_only(path: str) -> dict:
     Reads only the first _FRONTMATTER_READ_LIMIT bytes, which is sufficient
     for YAML frontmatter (always at the top, typically < 1 KB).
     Returns the metadata dict; content is not extracted.
-    Results are cached per (namespace, path, mtime) — invalidated on writes.
     """
     file_path = safe_path(path)
     if not file_path.exists() or not file_path.is_file():
         return {}
     try:
-        stat = file_path.stat()
-        mtime = stat.st_mtime
-        ns = ""
-        try:
-            from .tenancy import current_user_ns
-            ns = current_user_ns()
-        except RuntimeError:
-            pass
-        cache_key = (ns, path, mtime)
-        with _fm_cache_lock:
-            cached = _fm_cache.get(cache_key)
-            if cached is not None:
-                return cached
         with open(file_path, "r", encoding="utf-8") as f:
             raw = f.read(_FRONTMATTER_READ_LIMIT)
         post = frontmatter.loads(raw)
-        meta = post.metadata
-        with _fm_cache_lock:
-            if len(_fm_cache) >= _FM_CACHE_MAX:
-                # Evict oldest 25%
-                sorted_keys = sorted(_fm_cache.keys(), key=lambda k: k[2])
-                for k in sorted_keys[: _FM_CACHE_MAX // 4]:
-                    del _fm_cache[k]
-            _fm_cache[cache_key] = meta
-        return meta
+        return post.metadata
     except Exception:
         return {}
 
@@ -209,11 +167,11 @@ def list_files(path: str = ".") -> list[FileInfo]:
     if not dir_path.is_dir():
         raise ValueError(f"Not a directory: {path}")
     items = []
-    for item in sorted(dir_path.iterdir(), key=lambda x: (not x.is_dir(), x.name)):
+    for item in sorted(dir_path.iterdir(), key=lambda x: (not x.is_dir(follow_symlinks=False), x.name)):
         if item.name == ".kiwiki":
             continue
         rel_path = str(item.relative_to(root))
-        if item.is_dir():
+        if item.is_dir(follow_symlinks=False):
             has_children = any(True for _ in item.iterdir())
             items.append(
                 FileInfo(
@@ -224,7 +182,7 @@ def list_files(path: str = ".") -> list[FileInfo]:
                     has_children=has_children,
                 )
             )
-        else:
+        elif item.is_file(follow_symlinks=False):
             stat = item.stat()
             mtime_str = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat().split("T")[0]
             try:
@@ -416,7 +374,7 @@ def list_all_files(path: str = ".") -> list[dict]:
     Recursively list all markdown files under path (within the user's namespace).
     Returns list of {path, title, updated, tags} dicts for the AI to navigate.
     Uses lightweight frontmatter extraction (first 8 KB only) instead of
-    full file reads for metadata. Results are cached per namespace (A2).
+    full file reads for metadata.
     """
     root = user_root()
     if path == ".":
@@ -425,8 +383,7 @@ def list_all_files(path: str = ".") -> list[dict]:
     else:
         dir_path = safe_path(path)
 
-    # Check cache (A2) — key includes the actual root path to avoid stale
-    # cache hits when the data directory changes (e.g. between test fixtures).
+    # Check cache (A2)
     ns = ""
     try:
         from .tenancy import current_user_ns

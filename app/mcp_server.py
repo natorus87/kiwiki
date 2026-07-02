@@ -120,6 +120,24 @@ _AGENT_LOG_FILE = ".kiwiki/agent_log.jsonl"
 # E2: Async grep jobs — background grep with polling.
 _grep_jobs: dict[str, dict] = {}
 _grep_job_counter = 0
+_GREP_JOBS_MAX = 50
+_GREP_JOB_TTL = 600  # 10 minutes
+
+
+def _prune_grep_jobs() -> None:
+    """Remove completed grep jobs older than _GREP_JOB_TTL or excess entries."""
+    now = time.time()
+    expired = [
+        jid for jid, job in _grep_jobs.items()
+        if job["status"] != "running" and now - job.get("created_at", 0) > _GREP_JOB_TTL
+    ]
+    for jid in expired:
+        _grep_jobs.pop(jid, None)
+    # Cap total jobs
+    if len(_grep_jobs) > _GREP_JOBS_MAX:
+        sorted_jobs = sorted(_grep_jobs.keys(), key=lambda k: _grep_jobs[k].get("created_at", 0))
+        for jid in sorted_jobs[: len(_grep_jobs) - _GREP_JOBS_MAX]:
+            _grep_jobs.pop(jid, None)
 
 
 def _log_agent_call(user: "User | None", tool: str, args: dict, success: bool, error: str = "") -> None:
@@ -2138,6 +2156,7 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
         elif prompt_name == "decision_record":
             title = args.get("title", "Decision")
             context = args.get("context", "")
+            context_line = f"Context: {context}\n" if context else ""
             return _rpc_ok(req_id, {
                 "description": f"Record decision: {title}",
                 "messages": [{
@@ -2146,7 +2165,7 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
                         "type": "text",
                         "text": (
                             f"Record an architectural decision: '{title}'\n"
-                            f"Context: {context}\n" if context else ""
+                            f"{context_line}"
                             "Create a note in decisions/ with:\n"
                             "- Context (situation)\n- Decision (what was decided)\n- Consequences (positive + negative)\n- Alternatives considered"
                         ),
@@ -2231,9 +2250,10 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
                 "isError": True,
             })
         except Exception as exc:
-            _log_agent_call(user, tool_name, arguments, success=False, error=str(exc))
+            logger.exception("MCP tool call failed: %s", tool_name)
+            _log_agent_call(user, tool_name, arguments, success=False, error=str(exc)[:200])
             return _rpc_ok(req_id, {
-                "content": [{"type": "text", "text": f"Internal error: {exc}"}],
+                "content": [{"type": "text", "text": "Internal error. Check server logs for details."}],
                 "isError": True,
             })
 
@@ -3381,7 +3401,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         }
         if template_type == "adr":
             template_type = "decision"
-        content = templates.get(template_type, templates["note"])
+        content = templates.get(template_type, "")
         write_file(path, content)
         index_file(path)
         return json.dumps({"path": path, "status": "created", "template_type": template_type}, ensure_ascii=False)
@@ -3401,7 +3421,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             try:
                 text = md_file.read_text(encoding="utf-8")
             except Exception:
-                return []
+                return [], 0
             file_broken = []
             file_valid = 0
             for lineno, link in _local_markdown_links(text):

@@ -601,7 +601,7 @@ async def ui_file_history(request: Request, path: str = ""):
         root = user_root()
         result = subprocess.run(
             ["git", "log", "-20", "--pretty=format:%H|%aI|%an|%s", "--", path],
-            cwd=root, capture_output=True, text=True,
+            cwd=root, capture_output=True, text=True, timeout=10,
         )
         history = []
         for line in result.stdout.strip().splitlines():

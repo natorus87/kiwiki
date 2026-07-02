@@ -12,12 +12,6 @@ from .tenancy import user_root
 
 logger = logging.getLogger("kiwiki.search")
 
-# E3: Search history — recent searches per namespace, persisted to disk.
-_search_history_lock = threading.Lock()
-_search_history: dict[str, list[dict]] = {}
-_SEARCH_HISTORY_MAX = 50
-_SEARCH_HISTORY_FILE = ".kiwiki/search_history.json"
-
 
 def _db_file() -> Path:
     """Per-user FTS database location (one DB per namespace)."""
@@ -71,17 +65,15 @@ def get_db():
     """Context manager for database connections — uses connection pool."""
     db_path = str(_db_file())
     conn = _get_pooled_conn(db_path)
-    try:
-        yield conn
-    except Exception:
-        raise
+    yield conn
 
 
 _FTS_VERSION = 2  # Bump to recreate table with new tokenizer
 
 
 def init_db() -> None:
-    """Initialize FTS5 table. Recreates with porter tokenizer on version bump."""
+    """Initialize FTS5 table. Recreates with porter tokenizer on version bump.
+    Uses CREATE TABLE IF NOT EXISTS for idempotency."""
     with get_db() as conn:
         # Check if we need to recreate with porter tokenizer (E1)
         try:
@@ -245,6 +237,11 @@ def search(query: str) -> list[SearchResult]:
                 conn.execute(
                     "INSERT INTO search_history (query, timestamp, result_count) VALUES (?, ?, ?)",
                     (query.strip(), time.time(), len(results)),
+                )
+                # Prune old entries (keep last 1000)
+                conn.execute(
+                    "DELETE FROM search_history WHERE rowid NOT IN "
+                    "(SELECT rowid FROM search_history ORDER BY timestamp DESC LIMIT 1000)"
                 )
                 conn.commit()
             except Exception:

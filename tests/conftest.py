@@ -34,6 +34,10 @@ def _isolated_data_dir(monkeypatch, tmp_path: Path):
     user_store_mod._PARSE_DIAG_LOGGED = False
     user_store_mod._LOCAL_DIAG_LOGGED = False
     user_store_mod._MERGE_DIAG_LOGGED = False
+    # Clear all caches between tests
+    from app.storage import _invalidate_fm_cache, _invalidate_list_cache
+    _invalidate_fm_cache()
+    _invalidate_list_cache()
     yield tmp_path
 
 
