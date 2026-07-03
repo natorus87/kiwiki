@@ -182,7 +182,7 @@ def list_files(path: str = ".") -> list[FileInfo]:
                     has_children=has_children,
                 )
             )
-        elif item.is_file(follow_symlinks=False):
+        elif not item.is_symlink() and item.is_file():
             stat = item.stat()
             mtime_str = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat().split("T")[0]
             try:
