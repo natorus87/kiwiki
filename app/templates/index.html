@@ -277,7 +277,30 @@
 
   /* ── Recent files ────────────────────────────────────────────────── */
   .recent-files {
+    margin-bottom: 0;
+  }
+
+  /* ── Dashboard: two-panel recent files ──────────────────────────── */
+  .dashboard {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.2rem;
     margin-bottom: 2rem;
+  }
+  .dashboard-panel {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-v);
+    border-radius: var(--radius-md);
+    padding: 1rem 1.1rem 0.8rem;
+    min-height: 120px;
+  }
+  .dashboard-panel .section-label {
+    margin-bottom: 0.7rem;
+  }
+  @media (max-width: 700px) {
+    .dashboard {
+      grid-template-columns: 1fr;
+    }
   }
 
   /* ── Subtle noise overlay ────────────────────────────────────────── */
@@ -297,6 +320,23 @@
 
 {% block content %}
 <div class="content-inner">
+  <!-- ── Dashboard: Zuletzt bearbeitet & erstellt ─────────────────── -->
+  <section class="dashboard">
+    <div class="dashboard-panel">
+      <p class="section-label">Zuletzt bearbeitet</p>
+      <div id="recent-edited" class="recent-files" hx-get="/ui/recent-edited" hx-trigger="load" hx-swap="innerHTML">
+        <div class="recent-loading" style="color:var(--md-outline);font-size:0.82rem;">Lade…</div>
+      </div>
+    </div>
+    <div class="dashboard-panel">
+      <p class="section-label">Zuletzt erstellt</p>
+      <div id="recent-created" class="recent-files" hx-get="/ui/recent-created" hx-trigger="load" hx-swap="innerHTML">
+        <div class="recent-loading" style="color:var(--md-outline);font-size:0.82rem;">Lade…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Hero & Info ──────────────────────────────────────────────── -->
   <section class="hero">
     <div>
       <div class="hero-eyebrow"><span class="dot"></span>Markdown als Wahrheit</div>
@@ -348,11 +388,6 @@
       <div class="step-card-title">KI-Anbindung</div>
       <div class="step-card-text"><code>AGENTS.md</code> enthält Anweisungen für angeschlossene KI-Systeme.</div>
     </div>
-  </div>
-
-  <p class="section-label">Zuletzt geöffnet</p>
-  <div id="recent-files" class="recent-files" hx-get="/ui/recent" hx-trigger="load" hx-swap="innerHTML">
-    <div class="recent-loading" style="color:var(--md-outline);font-size:0.82rem;">Lade…</div>
   </div>
 
   <p class="section-label">MCP-Verbindung</p>

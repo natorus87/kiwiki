@@ -426,9 +426,11 @@ def _scan_markdown_recursive(dir_path: Path, root: Path, items: list) -> None:
                 meta = _read_frontmatter_only(rel_path)
                 title = meta.get("title", Path(entry.name).stem)
                 updated = meta.get("updated", "")
+                created = meta.get("created", "")
                 tags = meta.get("tags", [])
             except Exception:
                 title = Path(entry.name).stem
                 updated = ""
+                created = ""
                 tags = []
-            items.append({"path": rel_path, "title": title, "updated": updated, "tags": tags})
+            items.append({"path": rel_path, "title": title, "updated": updated, "created": created, "tags": tags})

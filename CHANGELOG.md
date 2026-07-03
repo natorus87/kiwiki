@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-07-03
+
+### Added
+- **Dashboard auf der Startseite** — Zwei Panels „Zuletzt bearbeitet" und „Zuletzt erstellt" oben auf der Startseite (je bis zu 8 Dateien, rekursiv durchsucht). Ermöglicht schnellen Zugriff auf letzte Arbeitsschritte. Hero-Sektion mit Info-Panel darunter verschoben.
+- **`/ui/recent-edited`** — Neuer HTMX-Endpoint: Dateien sortiert nach Frontmatter `updated` (rekursiv).
+- **`/ui/recent-created`** — Neuer HTMX-Endpoint: Dateien sortiert nach Frontmatter `created` (rekursiv).
+- **`created`-Feld in `list_all_files`** — `storage.py` liefert jetzt auch das `created`-Frontmatter-Feld für alle Dateien.
+
 ### Fixed
 - **Touch-Swipe-Geste komplett tot auf iPad** — Zwei kritische Bugs: (1) `kiwiki.js` wurde vor dem DOM geladen (Script in `layout.html` Zeile 32, Sidebar-Element erst Zeile 58), IIFE fand `null` und boundete keine Listener. Fix: `DOMContentLoaded`-Wrapper + `querySelector` inside `bind()`. (2) Breakpoint `max-width: 768px` schloss alle iPads aus (810–1024px). Fix: Alle Breakpoints auf `1024px` erweitert (CSS + JS).
 - **Häufige Abmeldung** — Session-Store war rein in-memory; bei jedem Container-Restart gingen alle Sessions verloren. Sessions nutzten `time.monotonic()` (reset bei Neustart) und hatten keine Sliding Expiration (Ablauf nach 12h egal ob aktiv). Fix: JSON-Datei-Persistenz (`/data/sessions.json`), `time.time()`, Sliding Expiration bei jedem Zugriff.

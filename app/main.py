@@ -37,6 +37,7 @@ from .storage import (
     create_note,
     delete_file,
     delete_folder,
+    list_all_files,
     list_files,
     move_file,
     move_folder,
@@ -539,6 +540,47 @@ async def ui_recent(request: Request):
         return templates.TemplateResponse(
             request=request,
             name="partials/recent_files.html",
+            context={"files": recent},
+        )
+    except Exception:
+        return HTMLResponse("")
+
+
+@app.get("/ui/recent-edited", response_class=HTMLResponse)
+async def ui_recent_edited(request: Request):
+    """Recently edited files (sorted by frontmatter 'updated'), recursive."""
+    user = _session_user(request)
+    if not user:
+        return HTMLResponse("")
+    try:
+        files = list_all_files(".")
+        files = [f for f in files if f["path"] not in ("index.md", "AGENTS.md")]
+        files.sort(key=lambda f: f.get("updated", ""), reverse=True)
+        recent = files[:8]
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/recent_edited.html",
+            context={"files": recent},
+        )
+    except Exception:
+        return HTMLResponse("")
+
+
+@app.get("/ui/recent-created", response_class=HTMLResponse)
+async def ui_recent_created(request: Request):
+    """Recently created files (sorted by frontmatter 'created'), recursive."""
+    user = _session_user(request)
+    if not user:
+        return HTMLResponse("")
+    try:
+        files = list_all_files(".")
+        files = [f for f in files if f["path"] not in ("index.md", "AGENTS.md")]
+        files = [f for f in files if f.get("created")]
+        files.sort(key=lambda f: f.get("created", ""), reverse=True)
+        recent = files[:8]
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/recent_created.html",
             context={"files": recent},
         )
     except Exception:
