@@ -314,6 +314,7 @@ header::before {
   color: var(--md-on-surface-v); flex-shrink: 0;
   transition: color var(--t), background var(--t);
   -webkit-tap-highlight-color: transparent;
+  border-radius: var(--radius-sm);
 }
 .hamburger:hover { color: var(--md-on-surface); }
 .hamburger:active { background: var(--md-surface-c); }

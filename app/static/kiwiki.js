@@ -50,6 +50,8 @@ function toggleSidebar() {
   var s = document.querySelector('.sidebar');
   if (s && s.classList.contains('open')) closeSidebar();
   else openSidebar();
+  var btn = document.querySelector('.hamburger');
+  if (btn) btn.blur();
 }
 function loadFile(path, el) {
   document.querySelectorAll('.file-item').forEach(function(item) { item.classList.remove('active'); });
