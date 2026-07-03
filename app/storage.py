@@ -167,11 +167,11 @@ def list_files(path: str = ".") -> list[FileInfo]:
     if not dir_path.is_dir():
         raise ValueError(f"Not a directory: {path}")
     items = []
-    for item in sorted(dir_path.iterdir(), key=lambda x: (not x.is_dir(follow_symlinks=False), x.name)):
+    for item in sorted(dir_path.iterdir(), key=lambda x: (not (not x.is_symlink() and x.is_dir()), x.name)):
         if item.name == ".kiwiki":
             continue
         rel_path = str(item.relative_to(root))
-        if item.is_dir(follow_symlinks=False):
+        if not item.is_symlink() and item.is_dir():
             has_children = any(True for _ in item.iterdir())
             items.append(
                 FileInfo(
