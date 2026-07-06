@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
 {% block sidebar %}
-<aside class="sidebar" aria-label="Dateien">
+<aside class="sidebar collapsed" aria-label="Dateien">
 
   <!-- Mobile-only: Kopfleiste mit Logo + Schließen-Button -->
   <div class="mobile-sidebar-header">
@@ -320,22 +320,6 @@
 
 {% block content %}
 <div class="content-inner">
-  <!-- ── Dashboard: Zuletzt bearbeitet & erstellt ─────────────────── -->
-  <section class="dashboard">
-    <div class="dashboard-panel">
-      <p class="section-label">Zuletzt bearbeitet</p>
-      <div id="recent-edited" class="recent-files" hx-get="/ui/recent-edited" hx-trigger="load" hx-swap="innerHTML">
-        <div class="recent-loading" style="color:var(--md-outline);font-size:0.82rem;">Lade…</div>
-      </div>
-    </div>
-    <div class="dashboard-panel">
-      <p class="section-label">Zuletzt erstellt</p>
-      <div id="recent-created" class="recent-files" hx-get="/ui/recent-created" hx-trigger="load" hx-swap="innerHTML">
-        <div class="recent-loading" style="color:var(--md-outline);font-size:0.82rem;">Lade…</div>
-      </div>
-    </div>
-  </section>
-
   <!-- ── Hero & Info ──────────────────────────────────────────────── -->
   <section class="hero">
     <div>
@@ -355,6 +339,22 @@
       <div class="hero-panel-row"><span>Format</span><strong>.md</strong></div>
       <div class="hero-panel-row"><span>Suche</span><strong>FTS5</strong></div>
       <div class="hero-panel-row"><span>Zugriff</span><strong>{{ user.role if user else 'none' }}</strong></div>
+    </div>
+  </section>
+
+  <!-- ── Dashboard: Zuletzt bearbeitet & erstellt ─────────────────── -->
+  <section class="dashboard">
+    <div class="dashboard-panel">
+      <p class="section-label">Zuletzt bearbeitet</p>
+      <div id="recent-edited" class="recent-files" hx-get="/ui/recent-edited" hx-trigger="load" hx-swap="innerHTML">
+        <div class="recent-loading" style="color:var(--md-outline);font-size:0.82rem;">Lade…</div>
+      </div>
+    </div>
+    <div class="dashboard-panel">
+      <p class="section-label">Zuletzt erstellt</p>
+      <div id="recent-created" class="recent-files" hx-get="/ui/recent-created" hx-trigger="load" hx-swap="innerHTML">
+        <div class="recent-loading" style="color:var(--md-outline);font-size:0.82rem;">Lade…</div>
+      </div>
     </div>
   </section>
 
