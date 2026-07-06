@@ -14,20 +14,31 @@ function kwIsMobileSidebar() {
   return window.matchMedia && window.matchMedia('(max-width: 1024px)').matches;
 }
 
-// openSidebar/closeSidebar (v2.2 a11y):
-// - Fokus springt beim Öffnen (mobile) aufs erste fokussierbare Element
-// - Beim Schließen kehrt der Fokus zum Hamburger zurück
-// - aria-expanded am Hamburger spiegelt den Zustand wider
-// - Mobile-Esc-Handler schließt die Sidebar (siehe keydown-Listener unten)
+// openSidebar/closeSidebar:
+// - Desktop: toggelt .collapsed (Sidebar schiebt Content)
+// - Mobile: toggelt .open + Transform (Sidebar überlagert)
 function openSidebar() {
   var s = document.querySelector('.sidebar');
   var b = document.getElementById('sidebar-backdrop');
   var btn = document.querySelector('.hamburger');
-  if (s) {
-    s.classList.add('open');
-    if (kwIsMobileSidebar()) s.style.transform = 'translateX(0)';
+  var logoWrap = document.querySelector('.logo-wrap');
+  if (kwIsMobileSidebar()) {
+    if (s) { s.classList.add('open'); s.style.transform = 'translateX(0)'; }
+    if (b) b.classList.add('open');
+  } else {
+    if (s) {
+      s.classList.remove('collapsed');
+      // Inline-Width vom Resizer wiederherstellen
+      var savedW = parseInt(localStorage.getItem('kiwiki_sidebar_w'), 10);
+      if (savedW && savedW > 0) {
+        s.style.width = savedW + 'px';
+        if (logoWrap) logoWrap.style.width = savedW + 'px';
+      } else {
+        s.style.width = '';
+        if (logoWrap) logoWrap.style.width = '';
+      }
+    }
   }
-  if (b) b.classList.add('open');
   if (btn) btn.setAttribute('aria-expanded', 'true');
   if (s && kwIsMobileSidebar()) {
     var first = s.querySelector('.file-item, .sidebar-btn, .btn, input, a, button');
@@ -38,18 +49,28 @@ function closeSidebar() {
   var s = document.querySelector('.sidebar');
   var b = document.getElementById('sidebar-backdrop');
   var btn = document.querySelector('.hamburger');
-  if (s) {
-    s.classList.remove('open');
-    s.style.transform = kwIsMobileSidebar() ? 'translateX(-100%)' : '';
+  var logoWrap = document.querySelector('.logo-wrap');
+  if (kwIsMobileSidebar()) {
+    if (s) { s.classList.remove('open'); s.style.transform = 'translateX(-100%)'; }
+    if (b) b.classList.remove('open');
+  } else {
+    if (s) {
+      s.classList.add('collapsed');
+      // Inline-Width löschen, damit CSS-Klasse greifen kann
+      s.style.width = '';
+      if (logoWrap) logoWrap.style.width = '';
+    }
   }
-  if (b) b.classList.remove('open');
   if (btn) btn.setAttribute('aria-expanded', 'false');
   if (s && s.contains(document.activeElement) && btn) btn.focus();
 }
 function toggleSidebar() {
   var s = document.querySelector('.sidebar');
-  if (s && s.classList.contains('open')) closeSidebar();
-  else openSidebar();
+  var isClosed = kwIsMobileSidebar()
+    ? !s || !s.classList.contains('open')
+    : s && s.classList.contains('collapsed');
+  if (isClosed) openSidebar();
+  else closeSidebar();
   var btn = document.querySelector('.hamburger');
   if (btn) btn.blur();
 }
@@ -993,7 +1014,10 @@ document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
     kwCloseAccountMenu();
     var s = document.querySelector('.sidebar');
-    if (s && s.classList.contains('open') && kwIsMobileSidebar()) { closeSidebar(); return; }
+    var isSidebarOpen = kwIsMobileSidebar()
+      ? (s && s.classList.contains('open'))
+      : (s && !s.classList.contains('collapsed'));
+    if (isSidebarOpen) { closeSidebar(); return; }
     var results = document.getElementById('search-results');
     if (results && results.innerHTML) {
       results.innerHTML = '';
