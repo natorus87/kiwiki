@@ -52,6 +52,23 @@ layout.html                   Base: <head>, header, sidebar slot, <main>, motion
 
 `layout.html` defines the `{% block sidebar %}`, `{% block content %}`, and `{% block extra_styles %}` slots used by index/editor/settings. `login.html` keeps its own CSS because it loads before any session exists.
 
+## Startseite (`index.html`)
+
+Layout-Reihenfolge im `{% block content %}`:
+
+1. **Hero-Block** — kiwiki-Titel, Tagline („Dein persönlicher Wissensspeicher…"), „Neue Notiz"-Button, Statuspanel (Format/Suche/Zugriff)
+2. **Dashboard** — Zwei Panels: „Zuletzt bearbeitet" + „Zuletzt erstellt" (je bis zu 8 Dateien, rekursiv via `list_all_files`)
+3. **Erste Schritte** — 4 Info-Karten (Notiz öffnen, Neue Notiz, Volltext-Suche, KI-Anbindung)
+4. **MCP-Verbindung** — Code-Blöcke für POST Streamable HTTP + GET SSE
+
+HTMX-Endpoints für Dashboard:
+- `/ui/recent-edited` → `partials/recent_edited.html` (sortiert nach `updated`-Frontmatter)
+- `/ui/recent-created` → `partials/recent_created.html` (sortiert nach `created`-Frontmatter)
+
+Sidebar (`{% block sidebar %}`):
+- Dateibaum mit Filter + Multi-Select Toolbar (write/admin)
+- Account-Menu Partial
+
 ## Partials (HTMX swaps)
 
 | Partial | Rendered by | Swapped into |
