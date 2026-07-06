@@ -7,6 +7,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- **Startseite Layout-Reihenfolge** — Dashboard-Panels („Zuletzt bearbeitet" / „Zuletzt erstellt") erscheinen jetzt unter dem kiwiki-Hero-Block statt darüber. Fokus liegt jetzt zuerst auf Branding/Tagline, dann auf recent activity.
+
 ## [2.5.0] - 2026-07-03
 
 ### Added
