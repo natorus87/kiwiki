@@ -307,18 +307,40 @@ header::before {
 .btn-logout:hover { color: var(--md-error); background: var(--md-error-dim); }
 
 .hamburger {
-  display: none;
+  display: flex;
   align-items: center; justify-content: center;
   width: 50px; height: 58px;
   background: none; border: none; cursor: pointer;
   color: var(--md-on-surface-v); flex-shrink: 0;
-  transition: color var(--t), background var(--t);
+  transition: color var(--t);
   -webkit-tap-highlight-color: transparent;
   border-radius: var(--radius-sm);
 }
-.hamburger:hover { color: var(--md-on-surface); }
-.hamburger:active { background: var(--md-surface-c); }
+.hamburger:hover { background: none; color: var(--md-on-surface-v); }
+.hamburger:focus { background: none; color: var(--md-on-surface-v); outline: none; }
+.hamburger:focus-visible { outline: none; }
 .hamburger svg { width: 23px; height: 23px; }
+
+/* Hamburger → X Animation */
+.hamburger-lines {
+  display: flex; flex-direction: column; gap: 5px;
+  width: 20px;
+}
+.hamburger-lines span {
+  display: block; width: 100%; height: 2px;
+  background: currentColor; border-radius: 2px;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+  transform-origin: center;
+}
+.hamburger[aria-expanded="true"] .hamburger-lines span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+.hamburger[aria-expanded="true"] .hamburger-lines span:nth-child(2) {
+  opacity: 0;
+}
+.hamburger[aria-expanded="true"] .hamburger-lines span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
 
 .sidebar-backdrop {
   display: none;
@@ -343,6 +365,11 @@ header::before {
   border-right: 1px solid var(--md-outline-v);
   display: flex; flex-direction: column;
   overflow: hidden; flex-shrink: 0;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar.collapsed {
+  width: 0;
+  border-right: none;
 }
 
 .sidebar-toolbar {
@@ -1166,7 +1193,6 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
 
 /* ── Mobile ─────────────────────────────────────────────────────────── */
 @media (max-width: 1024px) {
-  .hamburger { display: flex; }
 
   /* Safari: Safe-Area links/rechts im Header (Landscape) */
   header {
@@ -1194,7 +1220,7 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
     padding: 0.35rem 0.45rem;
   }
 
-  /* Sidebar: volle Bildschirmbreite, 100dvh für Safari */
+  /* Sidebar: Overlay-Verhalten auf Mobile */
   .sidebar {
     position: fixed;
     left: 0; top: 58px;
@@ -1207,6 +1233,7 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
     box-shadow: none;
   }
   .sidebar.open { transform: translateX(0); }
+  .sidebar.collapsed { width: 100vw !important; }
 
   /* Mobile-Header und Footer der Sidebar einblenden */
   .mobile-sidebar-header { display: flex; }
