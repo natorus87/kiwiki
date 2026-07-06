@@ -25,17 +25,19 @@
     var KIWIKI_ROLE_LEVEL = window.KIWIKI.roleLevel;
   </script>
 
-  <link rel="stylesheet" href="/static/kiwiki.css?v=20260701-a11y">
+  <link rel="stylesheet" href="/static/kiwiki.css?v=20260706-sidebar">
   {% block extra_styles %}{% endblock %}
 </head>
 <body class="role-{{ user.role if user else 'none' }}">
-<script src="/static/kiwiki.js?v=20260701-swipe"></script>
+<script src="/static/kiwiki.js?v=20260706-sidebar"></script>
 
 <a href="#main-content" class="skip-link sr-only">Zum Inhalt springen</a>
 
 <header>
   <button type="button" class="hamburger" onclick="toggleSidebar()" aria-label="Menü" aria-controls="file-tree" aria-expanded="false">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    <span class="hamburger-lines">
+      <span></span><span></span><span></span>
+    </span>
   </button>
   <a href="/" class="logo-wrap">
     <img src="/static/kiwiki-icon.png" alt="kiwiki" class="logo-icon">
