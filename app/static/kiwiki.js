@@ -1237,12 +1237,12 @@ async function kwBatchTag() {
       var fc = await fetch('/api/file?path=' + encodeURIComponent(paths[i])).then(function(r){return r.json()});
       var existing = (fc.frontmatter && fc.frontmatter.tags) || [];
       var merged = existing.concat(tagList.filter(function(t){return existing.indexOf(t)===-1}));
-      await fetch('/api/file', {
-        method: 'PUT',
+      var r = await fetch('/api/file/frontmatter', {
+        method: 'PATCH',
         headers: apiHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ path: paths[i], content: fc.content.replace(/^---[\s\S]*?---\n/, '---\n' + merged.map(function(t){return 'tags: [' + merged.join(', ') + ']'}).join('\n') + '\n---\n') }),
+        body: JSON.stringify({ path: paths[i], updates: { tags: merged } }),
       });
-      done++;
+      if (r.ok) done++;
     } catch(e) {}
   }
   kwToast(done + ' Dateien getaggt');
