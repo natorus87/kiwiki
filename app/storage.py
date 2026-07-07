@@ -85,17 +85,34 @@ def _read_frontmatter_only(path: str) -> dict:
     Reads only the first _FRONTMATTER_READ_LIMIT bytes, which is sufficient
     for YAML frontmatter (always at the top, typically < 1 KB).
     Returns the metadata dict; content is not extracted.
+
+    Cached by (resolved path, mtime) so unchanged files are only parsed
+    once per write. Writes invalidate the whole cache via
+    _invalidate_fm_cache(), so an mtime bump alone is enough to bypass
+    stale entries left by out-of-band edits (e.g. a mounted volume).
     """
     file_path = safe_path(path)
     if not file_path.exists() or not file_path.is_file():
         return {}
     try:
+        mtime_ns = file_path.stat().st_mtime_ns
+    except OSError:
+        return {}
+    cache_key = (str(file_path), mtime_ns)
+    with _fm_cache_lock:
+        cached = _fm_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
         with open(file_path, "r", encoding="utf-8") as f:
             raw = f.read(_FRONTMATTER_READ_LIMIT)
         post = frontmatter.loads(raw)
-        return post.metadata
+        metadata = post.metadata
     except Exception:
         return {}
+    with _fm_cache_lock:
+        _fm_cache[cache_key] = metadata
+    return metadata
 
 
 def read_file(path: str) -> FileContent:
