@@ -1,4 +1,5 @@
 import logging
+import secrets
 from fastapi import HTTPException, status
 from fastapi.requests import Request
 from .models import User
@@ -20,6 +21,21 @@ def parse_users() -> dict[str, tuple[str, str]]:
     Returns: {key: (username, role), ...}
     """
     return {key: (record.username, record.role) for key, record in user_store.users_by_key().items()}
+
+
+def _lookup_api_key(users_map: dict[str, tuple[str, str]], candidate: str) -> tuple[str, str] | None:
+    """Constant-time membership check against configured API keys.
+
+    A plain ``candidate in users_map`` dict lookup short-circuits on the
+    first mismatching key it hits in the hash bucket, which can leak
+    timing information about whether an attacker-supplied key is close to
+    a valid one. This always compares against every configured key.
+    """
+    found = None
+    for key, value in users_map.items():
+        if secrets.compare_digest(candidate.encode("utf-8"), key.encode("utf-8")):
+            found = value
+    return found
 
 
 async def get_current_user(request: Request) -> User:
@@ -51,13 +67,14 @@ async def get_current_user(request: Request) -> User:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         users_map = parse_users()
-        if api_key not in users_map:
+        match = _lookup_api_key(users_map, api_key)
+        if match is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid API key",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        username, role = users_map[api_key]
+        username, role = match
         if not is_valid_username(username):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -82,8 +99,9 @@ async def get_current_user(request: Request) -> User:
         # der Cookie-Wert der API-Key (fuer direkte API-Clients, die den
         # API-Key ins Cookie legen).
         users_map = parse_users()
-        if cookie_val in users_map:
-            username, role = users_map[cookie_val]
+        match = _lookup_api_key(users_map, cookie_val)
+        if match is not None:
+            username, role = match
             if not is_valid_username(username):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
