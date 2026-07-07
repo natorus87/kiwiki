@@ -70,10 +70,21 @@ def get_db():
 
 _FTS_VERSION = 2  # Bump to recreate table with new tokenizer
 
+# Per-namespace DBs are only schema-checked once per process lifetime;
+# every search()/index_file() call was re-running the sqlite_master
+# lookup and the CREATE TABLE IF NOT EXISTS statements otherwise.
+_initialized_dbs_lock = threading.Lock()
+_initialized_dbs: set[str] = set()
+
 
 def init_db() -> None:
     """Initialize FTS5 table. Recreates with porter tokenizer on version bump.
-    Uses CREATE TABLE IF NOT EXISTS for idempotency."""
+    Uses CREATE TABLE IF NOT EXISTS for idempotency. Skips the schema check
+    entirely once a given namespace's DB has been initialized this process."""
+    db_path = str(_db_file())
+    with _initialized_dbs_lock:
+        if db_path in _initialized_dbs:
+            return
     with get_db() as conn:
         # Check if we need to recreate with porter tokenizer (E1)
         try:
@@ -111,6 +122,8 @@ def init_db() -> None:
         """
         )
         conn.commit()
+    with _initialized_dbs_lock:
+        _initialized_dbs.add(db_path)
 
 
 def index_file(file_path: str) -> None:
