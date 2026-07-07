@@ -2,6 +2,7 @@ import html
 import logging
 import os
 import re
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import markdown as md_lib
@@ -97,7 +98,33 @@ def _reindex_moved_folder(src: str, dst: str, old_paths: list[str]) -> None:
         new_path = f"{dst.rstrip('/')}/{suffix}" if suffix else dst
         index_file(new_path)
 
-app = FastAPI(title="kiwiki", version="0.1.0")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    from .mcp_server import validate_oauth_config
+
+    validate_oauth_config()
+    users_map = parse_users()  # Validierungs-Log gleich beim Boot ausgeben
+    migrate_legacy_data_dir()
+    # Für jeden konfigurierten User: Workspace anlegen, DB initialisieren, Reindex
+    for username, _role in users_map.values():
+        if not is_valid_username(username):
+            continue
+        set_user_ns(username)
+        ensure_user_workspace(username)
+        init_db()
+        # A6: Lazy reindex — nur geänderte Dateien neu indexieren
+        count = reindex_changed()
+        if count > 0:
+            logging.getLogger("kiwiki.startup").info(
+                "Lazy reindexed %d file(s) for user %s", count, username
+            )
+    yield
+    from .search import close_pool
+    close_pool()
+
+
+app = FastAPI(title="kiwiki", version="0.1.0", lifespan=_lifespan)
 app.include_router(mcp_router)
 
 # ---------------------------------------------------------------------------
@@ -209,38 +236,6 @@ def _session_user(request: Request) -> User | None:
         return None
     set_user_ns(record.username)
     return User(username=record.username, role=record.role)
-
-
-# ---------------------------------------------------------------------------
-# Startup
-# ---------------------------------------------------------------------------
-
-@app.on_event("startup")
-async def startup() -> None:
-    from .mcp_server import validate_oauth_config
-
-    validate_oauth_config()
-    users_map = parse_users()  # Validierungs-Log gleich beim Boot ausgeben
-    migrate_legacy_data_dir()
-    # Für jeden konfigurierten User: Workspace anlegen, DB initialisieren, Reindex
-    for username, _role in users_map.values():
-        if not is_valid_username(username):
-            continue
-        set_user_ns(username)
-        ensure_user_workspace(username)
-        init_db()
-        # A6: Lazy reindex — nur geänderte Dateien neu indexieren
-        count = reindex_changed()
-        if count > 0:
-            logging.getLogger("kiwiki.startup").info(
-                "Lazy reindexed %d file(s) for user %s", count, username
-            )
-
-
-@app.on_event("shutdown")
-async def shutdown() -> None:
-    from .search import close_pool
-    close_pool()
 
 
 # ---------------------------------------------------------------------------
