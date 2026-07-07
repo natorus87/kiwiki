@@ -290,7 +290,11 @@ async def login_submit(request: Request, api_key: str = Form(...)) -> HTMLRespon
         record.token,
         httponly=True,
         secure=_trust_proxy,
-        samesite="lax",
+        # strict statt lax: kiwiki hat keinen Cross-Site-Einstiegspunkt (kein
+        # Login-Link aus E-Mails etc.), daher schliesst strict CSRF ueber die
+        # zustandsaendernden /ui/*-POST-Endpunkte, ohne einen legitimen Flow
+        # zu brechen — alle internen Requests (HTMX, Formulare) sind same-site.
+        samesite="strict",
         max_age=session_store.session_ttl_seconds(),
     )
     return response
