@@ -350,8 +350,9 @@ async def editor(request: Request, path: str = "") -> HTMLResponse:
             initial_content += fc.content
         except FileNotFoundError:
             initial_content = ""
-        except Exception as exc:
-            load_error = str(exc)
+        except Exception:
+            logging.exception("Failed to load file %r into editor", path)
+            load_error = "Datei konnte nicht geladen werden."
     return templates.TemplateResponse(
         request=request, name="editor.html",
         context={
@@ -461,8 +462,11 @@ async def ui_files(request: Request, path: str = ".") -> HTMLResponse:
                 "svg_move": _SVG_MOVE,
             },
         )
-    except Exception as exc:
+    except (ValueError, FileNotFoundError) as exc:
         return HTMLResponse(f'<div class="error">{html.escape(str(exc))}</div>')
+    except Exception:
+        logging.exception("Failed to render file tree for path %r", path)
+        return HTMLResponse('<div class="error">Ordner konnte nicht geladen werden.</div>')
 
 
 @app.get("/ui/file", response_class=HTMLResponse)
@@ -504,8 +508,11 @@ async def ui_file(request: Request, path: str) -> HTMLResponse:
         )
     except FileNotFoundError:
         return HTMLResponse('<div class="content-inner"><div class="empty-state error-state"><h2>Datei nicht gefunden</h2><p>Die ausgewählte Datei existiert nicht mehr oder wurde verschoben.</p></div></div>')
-    except Exception as exc:
+    except ValueError as exc:
         return HTMLResponse(f'<div class="content-inner"><div class="error">{html.escape(str(exc))}</div></div>')
+    except Exception:
+        logging.exception("Failed to render file view for path %r", path)
+        return HTMLResponse('<div class="content-inner"><div class="error">Datei konnte nicht geladen werden.</div></div>')
 
 
 @app.post("/ui/search", response_class=HTMLResponse)
@@ -521,8 +528,9 @@ async def ui_search(request: Request) -> HTMLResponse:
             name="partials/search_results.html",
             context={"results": results, "query": query},
         )
-    except Exception as exc:
-        return HTMLResponse(f'<div class="error">{html.escape(str(exc))}</div>')
+    except Exception:
+        logging.exception("Search failed for query %r", query)
+        return HTMLResponse('<div class="error">Suche fehlgeschlagen.</div>')
 
 
 @app.get("/ui/recent", response_class=HTMLResponse)
@@ -661,8 +669,9 @@ async def ui_file_history(request: Request, path: str = "") -> HTMLResponse:
             name="partials/file_history.html",
             context={"path": path, "history": history, "user": user},
         )
-    except Exception as exc:
-        return HTMLResponse(f'<div class="error">{html.escape(str(exc))}</div>')
+    except Exception:
+        logging.exception("Failed to load git history for path %r", path)
+        return HTMLResponse('<div class="error">Historie konnte nicht geladen werden.</div>')
 
 
 @app.post("/ui/rename", response_class=HTMLResponse)
@@ -679,8 +688,11 @@ async def ui_rename(request: Request) -> HTMLResponse:
         deindex_file(old_path)
         index_file(new_path)
         return HTMLResponse(f'<span class="item-name">{html.escape(new_path.rsplit("/", 1)[-1])}</span>')
-    except Exception as exc:
+    except (ValueError, FileNotFoundError) as exc:
         return HTMLResponse(f'<div class="error">{html.escape(str(exc))}</div>', status_code=400)
+    except Exception:
+        logging.exception("Failed to rename %r to %r", old_path, new_path)
+        return HTMLResponse('<div class="error">Umbenennen fehlgeschlagen.</div>', status_code=400)
 
 
 @app.post("/ui/export")
