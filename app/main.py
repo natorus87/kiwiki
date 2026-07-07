@@ -565,6 +565,7 @@ async def ui_recent_edited(request: Request) -> HTMLResponse:
             context={"files": recent},
         )
     except Exception:
+        logging.exception("Failed to render recent-edited panel")
         return HTMLResponse("")
 
 
@@ -586,6 +587,7 @@ async def ui_recent_created(request: Request) -> HTMLResponse:
             context={"files": recent},
         )
     except Exception:
+        logging.exception("Failed to render recent-created panel")
         return HTMLResponse("")
 
 
