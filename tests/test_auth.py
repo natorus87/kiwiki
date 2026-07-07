@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from app.auth import parse_users, get_current_user, require_role, ROLE_HIERARCHY
+from app.auth import _lookup_api_key, parse_users, get_current_user, require_role, ROLE_HIERARCHY
 from app.models import User
 
 
@@ -65,6 +65,25 @@ class TestParseUsers:
     def test_rolle_hierarchie(self):
         """ROLE_HIERARCHY hat die erwarteten Werte."""
         assert ROLE_HIERARCHY == {"read": 0, "write": 1, "admin": 2}
+
+
+class TestLookupApiKey:
+    """_lookup_api_key() — konstante-Zeit Alternative zu 'key in dict'."""
+
+    def test_treffer(self):
+        users_map = {"key1": ("alice", "read"), "key2": ("bob", "write")}
+        assert _lookup_api_key(users_map, "key2") == ("bob", "write")
+
+    def test_kein_treffer(self):
+        users_map = {"key1": ("alice", "read")}
+        assert _lookup_api_key(users_map, "unbekannt") is None
+
+    def test_leere_map(self):
+        assert _lookup_api_key({}, "irgendwas") is None
+
+    def test_leerer_candidate(self):
+        users_map = {"key1": ("alice", "read")}
+        assert _lookup_api_key(users_map, "") is None
 
 
 class TestGetCurrentUser:
