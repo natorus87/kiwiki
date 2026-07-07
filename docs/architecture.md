@@ -108,6 +108,8 @@ The prefix path sidesteps FTS5 column filters, which are brittle in SQLite's FTS
 
 All global helpers in `kiwiki.js` are namespaced with the `kw` prefix (`kwToast`, `kwDialog`, `kwNewNote`, `kwSearchTag`, `kwToggleSelect`, …). Legacy helpers (`loadFile`, `openEditor`, `toggleFolder`, `deleteFile`) keep their original names for backward compatibility with templates but should not be extended — prefer `kw*` for new helpers.
 
+Helpers that need to change frontmatter (tags, metadata) must go through `PATCH /api/file/frontmatter` (`storage.update_frontmatter()` server-side) instead of reconstructing the frontmatter block client-side with string/regex manipulation. `kwBatchTag()` used to rebuild the whole `---\n...\n---` block via regex directly on `fc.content` — it matched inconsistently (the `/api/file` response already strips frontmatter from `content`) and, when it did match, wiped out every other frontmatter field (`title`, `created`, `updated`). The server-side merge only touches the keys it's given.
+
 Tree state (open folders, active file, scroll position) is persisted in `localStorage` under these keys:
 
 | Key | Purpose |
