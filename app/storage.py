@@ -1,3 +1,4 @@
+import logging
 import os
 import threading
 import time
@@ -6,6 +7,8 @@ from datetime import datetime, timezone
 import frontmatter
 from .models import FileInfo, FileContent
 from .tenancy import BASE_DATA_DIR, user_root
+
+logger = logging.getLogger("kiwiki.storage")
 
 # Backwards-compat: external imports of DATA_DIR still resolve, but only point
 # at the base (shared) data directory. All storage functions below operate on
@@ -109,6 +112,7 @@ def _read_frontmatter_only(path: str) -> dict:
         post = frontmatter.loads(raw)
         metadata = post.metadata
     except Exception:
+        logger.warning("Failed to parse frontmatter for %r", path, exc_info=True)
         return {}
     with _fm_cache_lock:
         _fm_cache[cache_key] = metadata
