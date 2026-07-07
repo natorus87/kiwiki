@@ -59,6 +59,11 @@ class MoveRequest(BaseModel):
     dst: str
 
 
+class UpdateFrontmatterRequest(BaseModel):
+    path: str
+    updates: dict
+
+
 class CreateUserRequest(BaseModel):
     username: str
     key: str
