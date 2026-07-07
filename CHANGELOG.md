@@ -7,8 +7,28 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- **`PATCH /api/file/frontmatter`** — Neuer REST-Endpoint, der einzelne Frontmatter-Felder (z.B. `tags`) serverseitig mit `storage.update_frontmatter()` merged, ohne Content oder andere Metadaten anzufassen. Ersetzt das bisherige, destruktive Client-seitige Regex-Merging in `kwBatchTag()`.
+
+### Fixed
+- **`kwBatchTag()` überschrieb Frontmatter (Datenverlust)** — Batch-Tagging über die Mehrfachauswahl baute den kompletten Frontmatter-Block per Regex neu zusammen und verlor dabei `title`/`created`/`updated`. Jetzt über `PATCH /api/file/frontmatter` serverseitig gemerged.
+- **`GET /api/file` und `GET /api/files` schlugen bei jedem Aufruf fehl** — Beide Endpunkte übergaben Pydantic-Modelle (`FileContent`/`FileInfo`) direkt an `starlette.responses.JSONResponse()`, die diese nicht serialisieren kann. Jeder erfolgreiche Read endete in einem 400er „Object of type … is not JSON serializable". Beim manuellen End-to-End-Test des Frontmatter-Fixes aufgefallen — betraf auch `kwBatchTag()`, das diesen Endpoint zum Lesen bestehender Tags braucht.
+- **Frontmatter-Cache (A3) war inaktiv** — `_fm_cache` existierte seit der A3-Performance-Arbeit inklusive Lock, wurde von `_read_frontmatter_only()` aber nie gelesen oder geschrieben. Jetzt per `(Pfad, mtime)`-Schlüssel tatsächlich verdrahtet.
+- **Test-Suite brach beim Collection-Schritt ab** — Union-Return-Type-Annotationen (`HTMLResponse | RedirectResponse`) auf `/login` liessen FastAPI beim Import mit `FastAPIError: Invalid args for response field` abstürzen. Fix: `response_model=None` an den betroffenen Routen.
+- **Interne Exception-Details im UI sichtbar** — Mehrere `/ui/*`-Handler gaben `str(exc)` roh ins gerenderte HTML zurück, auch für unerwartete (nicht bewusst geworfene) Exceptions, die potenziell interne Pfade oder Tracebacks enthalten konnten. Kontrollierte Validierungsfehler (`ValueError`/`FileNotFoundError`) bleiben weiterhin sichtbar, alles andere wird geloggt und durch eine generische Meldung ersetzt.
+- Stille `except Exception`-Blöcke in den Dashboard-Panels (`/ui/recent-edited`, `/ui/recent-created`) und beim Frontmatter-Parsing (`storage._read_frontmatter_only`) loggen den Fehler jetzt, statt ihn zu verschlucken.
+
 ### Changed
+- **Session-Cookie: `SameSite=Lax` → `SameSite=Strict`** — schliesst CSRF über die zustandsändernden `/ui/*`-POST-Endpunkte (Rename, Export, Search); kiwiki hat keinen legitimen Cross-Site-Einstiegspunkt (kein Login-Link aus E-Mails o.ä.).
+- **API-Key-Vergleich zeitkonstant** — Bearer-Token- und Login-Prüfung nutzen jetzt `secrets.compare_digest()` über alle konfigurierten Keys statt eines Dict-Lookups, der auf dem ersten Hash-Bucket-Treffer kurzschliessen kann.
+- **`init_db()` prüft das FTS5-Schema nur noch einmal pro Prozess und Namespace**, statt bei jedem `search()`-/`index_file()`-/Reindex-Aufruf erneut die `sqlite_master`-Abfrage und `CREATE TABLE IF NOT EXISTS`-Statements auszuführen.
+- **Session-Persistenz gedrosselt** — Sliding-Expiration-Renewal schrieb bisher bei jedem authentifizierten Request die komplette `sessions.json` neu; jetzt nur, wenn sich `expires_at` um mehr als 60s verschoben hat.
+- **`@app.on_event("startup"/"shutdown")` → `lifespan`-Context-Manager** — behebt die DeprecationWarning bei jedem Testlauf, Verhalten unverändert.
+- Toter Code `getKey()` in `kiwiki.js` entfernt (nie aufgerufen; täuschte API-Key-Retrieval vor, machte aber nur ein `localStorage.removeItem`).
 - **Startseite Layout-Reihenfolge** — Dashboard-Panels („Zuletzt bearbeitet" / „Zuletzt erstellt") erscheinen jetzt unter dem kiwiki-Hero-Block statt darüber. Fokus liegt jetzt zuerst auf Branding/Tagline, dann auf recent activity.
+
+### Tests
+- 150 Tests grün (u.a. neue Regressionstests für Frontmatter-Merge, Frontmatter-Cache, Session-Debounce, Exception-Leakage und die JSON-Serialisierung von `GET /api/file`/`/api/files`).
 
 ## [2.5.0] - 2026-07-03
 
