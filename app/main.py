@@ -25,6 +25,7 @@ from .models import (
     CreateUserRequest,
     MoveRequest,
     SearchRequest,
+    UpdateFrontmatterRequest,
     User,
     WriteFileRequest,
 )
@@ -42,6 +43,7 @@ from .storage import (
     move_file,
     move_folder,
     read_file,
+    update_frontmatter,
     validate_content_folder_path,
     validate_markdown_content_path,
     write_file,
@@ -740,6 +742,19 @@ async def api_write_file(req: WriteFileRequest, user: User = Depends(require_rol
         result = write_file(req.path, req.content)
         index_file(req.path)
         return result
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.patch("/api/file/frontmatter")
+async def api_update_frontmatter(req: UpdateFrontmatterRequest, user: User = Depends(require_role("write"))):
+    try:
+        validate_markdown_content_path(req.path)
+        result = update_frontmatter(req.path, req.updates)
+        index_file(req.path)
+        return result
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
