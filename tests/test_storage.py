@@ -3,6 +3,8 @@
 import pytest
 
 from app.storage import (
+    _fm_cache,
+    _read_frontmatter_only,
     append_file,
     create_folder,
     delete_folder,
@@ -167,6 +169,28 @@ class TestUpdateFrontmatter:
     def test_nicht_existierend(self, active_user):
         with pytest.raises(FileNotFoundError):
             update_frontmatter("notes/da.md", {"tags": []})
+
+
+class TestReadFrontmatterOnlyCache:
+    """_read_frontmatter_only() — mtime-basierter Cache (A3)."""
+
+    def test_zweiter_read_nutzt_cache(self, tmp_file, active_user):
+        rel = tmp_file("notes/test.md")
+        cache_len_vorher = len(_fm_cache)
+        first = _read_frontmatter_only(rel)
+        cache_len_nachher = len(_fm_cache)
+        assert cache_len_nachher == cache_len_vorher + 1
+        second = _read_frontmatter_only(rel)
+        assert second == first
+        assert len(_fm_cache) == cache_len_nachher
+
+    def test_write_invalidiert_cache(self, tmp_file, active_user):
+        rel = tmp_file("notes/test.md")
+        _read_frontmatter_only(rel)
+        assert len(_fm_cache) > 0
+        write_file(rel, "---\ntitle: Neu\n---\n\nGeaendert")
+        assert len(_fm_cache) == 0
+        assert _read_frontmatter_only(rel)["title"] == "Neu"
 
 
 class TestMoveFile:
