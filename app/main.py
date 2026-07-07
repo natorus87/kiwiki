@@ -727,7 +727,7 @@ async def ui_export(request: Request) -> HTMLResponse:
 async def api_list_files(path: str = ".", user: User = Depends(get_current_user)):
     try:
         from starlette.responses import JSONResponse
-        resp = JSONResponse(list_files(path))
+        resp = JSONResponse([item.model_dump() for item in list_files(path)])
         # A7: Short cache for read-only listing
         resp.headers["Cache-Control"] = "private, max-age=5"
         return resp
@@ -739,7 +739,7 @@ async def api_list_files(path: str = ".", user: User = Depends(get_current_user)
 async def api_read_file(path: str, user: User = Depends(get_current_user)):
     try:
         from starlette.responses import JSONResponse
-        resp = JSONResponse(read_file(path))
+        resp = JSONResponse(read_file(path).model_dump())
         # A7: Short cache for read-only file content
         resp.headers["Cache-Control"] = "private, max-age=5"
         return resp
