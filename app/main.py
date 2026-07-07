@@ -246,7 +246,7 @@ async def shutdown() -> None:
 # ---------------------------------------------------------------------------
 
 @app.get("/health")
-async def health():
+async def health() -> dict:
     return {"status": "ok"}
 
 
@@ -254,16 +254,16 @@ async def health():
 # Login / Logout
 # ---------------------------------------------------------------------------
 
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+@app.get("/login", response_class=HTMLResponse, response_model=None)
+async def login_page(request: Request) -> HTMLResponse | RedirectResponse:
     # Already logged in → go home
     if _session_user(request):
         return RedirectResponse(url="/", status_code=302)
     return templates.TemplateResponse(request=request, name="login.html", context={"error": None})
 
 
-@app.post("/login", response_class=HTMLResponse)
-async def login_submit(request: Request, api_key: str = Form(...)):
+@app.post("/login", response_class=HTMLResponse, response_model=None)
+async def login_submit(request: Request, api_key: str = Form(...)) -> HTMLResponse | RedirectResponse:
     users_map = parse_users()
     if api_key not in users_map:
         return templates.TemplateResponse(
@@ -299,7 +299,7 @@ async def login_submit(request: Request, api_key: str = Form(...)):
 
 
 @app.get("/logout")
-async def logout(request: Request):
+async def logout(request: Request) -> RedirectResponse:
     # Aktuelle Session widerrufen, falls vorhanden
     token = request.cookies.get("kiwiki_session", "")
     if token:
@@ -315,13 +315,13 @@ async def logout(request: Request):
 # ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
+async def index(request: Request) -> HTMLResponse:
     user = _session_user(request)
     return templates.TemplateResponse(request=request, name="index.html", context={"user": user})
 
 
 @app.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request):
+async def settings_page(request: Request) -> HTMLResponse:
     user = _session_user(request)
     if not user or ROLE_HIERARCHY.get(user.role, -1) < ROLE_HIERARCHY["admin"]:
         raise HTTPException(status_code=403, detail="Admin role required")
@@ -333,7 +333,7 @@ async def settings_page(request: Request):
 
 
 @app.get("/editor", response_class=HTMLResponse)
-async def editor(request: Request, path: str = ""):
+async def editor(request: Request, path: str = "") -> HTMLResponse:
     user = _session_user(request)
     initial_content = ""
     load_error = ""
@@ -433,7 +433,7 @@ _SVG_CHEVRON = (
 
 
 @app.get("/ui/files", response_class=HTMLResponse)
-async def ui_files(request: Request, path: str = "."):
+async def ui_files(request: Request, path: str = ".") -> HTMLResponse:
     try:
         items = list_files(path)
         if path == ".":
@@ -468,7 +468,7 @@ async def ui_files(request: Request, path: str = "."):
 
 
 @app.get("/ui/file", response_class=HTMLResponse)
-async def ui_file(request: Request, path: str):
+async def ui_file(request: Request, path: str) -> HTMLResponse:
     user = _session_user(request)
     can_delete = user and ROLE_HIERARCHY.get(user.role, -1) >= ROLE_HIERARCHY["admin"]
     try:
@@ -511,7 +511,7 @@ async def ui_file(request: Request, path: str):
 
 
 @app.post("/ui/search", response_class=HTMLResponse)
-async def ui_search(request: Request):
+async def ui_search(request: Request) -> HTMLResponse:
     form = await request.form()
     query = form.get("query", "").strip()
     if not query:
@@ -528,7 +528,7 @@ async def ui_search(request: Request):
 
 
 @app.get("/ui/recent", response_class=HTMLResponse)
-async def ui_recent(request: Request):
+async def ui_recent(request: Request) -> HTMLResponse:
     user = _session_user(request)
     if not user:
         return HTMLResponse("")
@@ -547,7 +547,7 @@ async def ui_recent(request: Request):
 
 
 @app.get("/ui/recent-edited", response_class=HTMLResponse)
-async def ui_recent_edited(request: Request):
+async def ui_recent_edited(request: Request) -> HTMLResponse:
     """Recently edited files (sorted by frontmatter 'updated'), recursive."""
     user = _session_user(request)
     if not user:
@@ -567,7 +567,7 @@ async def ui_recent_edited(request: Request):
 
 
 @app.get("/ui/recent-created", response_class=HTMLResponse)
-async def ui_recent_created(request: Request):
+async def ui_recent_created(request: Request) -> HTMLResponse:
     """Recently created files (sorted by frontmatter 'created'), recursive."""
     user = _session_user(request)
     if not user:
@@ -588,7 +588,7 @@ async def ui_recent_created(request: Request):
 
 
 @app.get("/ui/tags", response_class=HTMLResponse)
-async def ui_tags(request: Request):
+async def ui_tags(request: Request) -> HTMLResponse:
     """E4: Global tag overview page."""
     user = _session_user(request)
     try:
@@ -617,7 +617,7 @@ async def ui_tags(request: Request):
 
 
 @app.get("/ui/search-history", response_class=HTMLResponse)
-async def ui_search_history(request: Request):
+async def ui_search_history(request: Request) -> HTMLResponse:
     """E3: Search history endpoint."""
     user = _session_user(request)
     try:
@@ -633,7 +633,7 @@ async def ui_search_history(request: Request):
 
 
 @app.get("/ui/history", response_class=HTMLResponse)
-async def ui_file_history(request: Request, path: str = ""):
+async def ui_file_history(request: Request, path: str = "") -> HTMLResponse:
     """B7: Git file history page."""
     user = _session_user(request)
     if not path:
@@ -666,7 +666,7 @@ async def ui_file_history(request: Request, path: str = ""):
 
 
 @app.post("/ui/rename", response_class=HTMLResponse)
-async def ui_rename(request: Request):
+async def ui_rename(request: Request) -> HTMLResponse:
     form = await request.form()
     old_path = form.get("old_path", "").strip()
     new_path = form.get("new_path", "").strip()
@@ -684,7 +684,7 @@ async def ui_rename(request: Request):
 
 
 @app.post("/ui/export")
-async def ui_export(request: Request):
+async def ui_export(request: Request) -> HTMLResponse:
     form = await request.form()
     paths_raw = form.get("paths", "")
     paths = [p.strip() for p in paths_raw.split(",") if p.strip()]
@@ -848,8 +848,25 @@ async def api_create_user(req: CreateUserRequest, user: User = Depends(require_r
     key = req.key.strip()
     role = req.role.strip()
 
-    # Validierung frueh (ohne Seiteneffekte), damit kein halb-angelegter
-    # Workspace zurueckgerollt werden muss.
+    _validate_create_user_input(username, key, role)
+    _check_user_collisions(username, key)
+
+    prev_ns = _init_user_workspace(username, user.username)
+    try:
+        record = _persist_new_user(username, key, role, username)
+    except Exception:
+        _rollback_workspace(username)
+        raise
+
+    return {
+        "username": record.username,
+        "role": record.role,
+        "source": record.source,
+        "status": "created",
+    }
+
+
+def _validate_create_user_input(username: str, key: str, role: str) -> None:
     from .tenancy import is_valid_username as _valid_user
     if not _valid_user(username):
         raise HTTPException(status_code=400, detail="Benutzername muss [a-zA-Z0-9_-]{1,64} entsprechen")
@@ -858,64 +875,48 @@ async def api_create_user(req: CreateUserRequest, user: User = Depends(require_r
     if role not in ROLE_HIERARCHY:
         raise HTTPException(status_code=400, detail="Unbekannte Rolle")
 
+
+def _check_user_collisions(username: str, key: str) -> None:
+    existing = user_store.users_by_key()
+    if key in existing:
+        raise HTTPException(status_code=400, detail="API-Key wird bereits verwendet")
+    if any(u.username == username for u in existing.values()):
+        raise HTTPException(status_code=400, detail="Benutzername existiert bereits")
+
+
+def _init_user_workspace(username: str, fallback_ns: str) -> str | None:
+    """Phase 1: Workspace + DB + Index aufbauen. Gibt das vorherige Namespace zurueck."""
+    from .tenancy import current_user_ns as _cur_ns
+    prev_ns = None
     try:
-        # Kollisionscheck BEVOR wir den Workspace anlegen — so vermeiden
-        # wir, bei Duplikaten einen leeren Workspace anlegen zu muessen.
-        existing = user_store.users_by_key()
-        if key in existing:
-            raise HTTPException(status_code=400, detail="API-Key wird bereits verwendet")
-        if any(u.username == username for u in existing.values()):
-            raise HTTPException(status_code=400, detail="Benutzername existiert bereits")
-
-        # Phase 1: Workspace + DB + Index aufbauen. Wenn etwas scheitert,
-        # gibt es noch keinen User-Eintrag — kein Rollback noetig.
-        prev_ns = None
-        try:
-            from .tenancy import current_user_ns as _cur_ns
-
-            prev_ns = _cur_ns()
-            set_user_ns(username)
-            ensure_user_workspace(username)
-            init_db()
-            reindex_all()
-        except Exception as exc:
-            # Phase 1 fehlgeschlagen — halb angelegten Workspace entsorgen,
-            # damit der Username wieder sauber ist.
-            try:
-                user_store.remove_workspace_for_user(username)
-            except Exception:
-                logging.exception("Failed to remove workspace after initialization failure for user %r", username)
-            raise HTTPException(status_code=400, detail=f"Workspace-Init fehlgeschlagen: {exc}")
-        finally:
-            if prev_ns is not None:
-                set_user_ns(prev_ns or user.username)
-
-        # Phase 2: User-Eintrag persistieren. Bei Fehlschlag den in
-        # Phase 1 angelegten Workspace wieder entfernen.
-        try:
-            record = user_store.create_local_user(username, key, role)
-        except Exception as exc:
-            try:
-                user_store.remove_workspace_for_user(username)
-            except Exception:
-                logging.exception("Failed to remove workspace after local user persistence failure for user %r", username)
-            raise HTTPException(status_code=400, detail=str(exc))
-
-        return {
-            "username": record.username,
-            "role": record.role,
-            "source": record.source,
-            "status": "created",
-        }
-    except HTTPException:
-        raise
+        prev_ns = _cur_ns()
+        set_user_ns(username)
+        ensure_user_workspace(username)
+        init_db()
+        reindex_all()
     except Exception as exc:
-        # Letzter Auffangnetz — bei unerwarteten Fehlern saubermachen.
-        try:
-            user_store.remove_workspace_for_user(username)
-        except Exception:
-            logging.exception("Failed to remove workspace after unexpected user creation failure for user %r", username)
+        _rollback_workspace(username)
+        raise HTTPException(status_code=400, detail=f"Workspace-Init fehlgeschlagen: {exc}")
+    finally:
+        if prev_ns is not None:
+            set_user_ns(prev_ns or fallback_ns)
+    return prev_ns
+
+
+def _persist_new_user(username: str, key: str, role: str, workspace_user: str) -> object:
+    """Phase 2: User-Eintrag persistieren. Bricht ab, wenn es scheitert."""
+    try:
+        return user_store.create_local_user(username, key, role)
+    except Exception as exc:
+        _rollback_workspace(workspace_user)
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+def _rollback_workspace(username: str) -> None:
+    try:
+        user_store.remove_workspace_for_user(username)
+    except Exception:
+        logging.exception("Failed to remove workspace for user %r", username)
 
 
 @app.delete("/api/users/{username}")
