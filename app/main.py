@@ -17,7 +17,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 
 from . import session_store, user_store
-from .auth import ROLE_HIERARCHY, get_current_user, parse_users, require_role
+from .auth import ROLE_HIERARCHY, _lookup_api_key, get_current_user, parse_users, require_role
 from .mcp_server import router as mcp_router
 from .models import (
     AppendFileRequest,
@@ -262,13 +262,14 @@ async def login_page(request: Request) -> HTMLResponse | RedirectResponse:
 @app.post("/login", response_class=HTMLResponse, response_model=None)
 async def login_submit(request: Request, api_key: str = Form(...)) -> HTMLResponse | RedirectResponse:
     users_map = parse_users()
-    if api_key not in users_map:
+    match = _lookup_api_key(users_map, api_key)
+    if match is None:
         return templates.TemplateResponse(
             request=request, name="login.html",
             context={"error": "Ungültiger API-Key"},
             status_code=401,
         )
-    username, role = users_map[api_key]
+    username, role = match
     if not is_valid_username(username):
         return templates.TemplateResponse(
             request=request, name="login.html",
