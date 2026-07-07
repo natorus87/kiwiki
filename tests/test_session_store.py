@@ -86,6 +86,37 @@ def test_expired_session_is_pruned_on_lookup():
     assert record.token not in session_store._sessions
 
 
+def test_lookup_debounces_disk_writes_on_renewal(monkeypatch):
+    """Wiederholte Lookups innerhalb des Debounce-Fensters persistieren nicht
+    bei jedem Request — nur bei spuerbarer Verschiebung von expires_at."""
+    record = session_store.create_session("alice", "write", "k")
+    calls = []
+    monkeypatch.setattr(session_store, "_save_to_disk", lambda: calls.append(1))
+
+    session_store.lookup_session(record.token)
+    session_store.lookup_session(record.token)
+    session_store.lookup_session(record.token)
+
+    assert calls == []
+    # In-memory wird trotzdem bei jedem Zugriff erneuert.
+    assert session_store._sessions[record.token].expires_at > 0
+
+
+def test_lookup_persists_after_debounce_window(monkeypatch):
+    """Nach Ablauf des Debounce-Fensters wird die naechste Renewal wieder
+    persistiert."""
+    record = session_store.create_session("alice", "write", "k")
+    calls = []
+    monkeypatch.setattr(session_store, "_save_to_disk", lambda: calls.append(1))
+
+    old_expires_at = session_store._sessions[record.token].expires_at
+    session_store._sessions[record.token].expires_at = (
+        old_expires_at - session_store._SESSION_SAVE_DEBOUNCE_SECONDS - 1
+    )
+    session_store.lookup_session(record.token)
+    assert calls == [1]
+
+
 def test_expired_session_is_pruned_by_prune_expired():
     """Direkter Test der _prune_expired-Funktion — die via active_session_count
     ohnehin schon aufgerufen wird, also verifizieren wir hier, dass
