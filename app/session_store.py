@@ -26,6 +26,11 @@ logger = logging.getLogger("kiwiki.session")
 # Default-TTL: 12 Stunden. Ueber KIWIKI_SESSION_TTL_SECONDS ueberschreibbar.
 _SESSION_TTL_SECONDS = int(os.getenv("KIWIKI_SESSION_TTL_SECONDS", str(12 * 3600)))
 
+# Sliding-Expiration-Renewal wird nur auf Disk persistiert, wenn sich
+# expires_at um mehr als diesen Wert verschiebt — sonst wuerde jeder
+# authentifizierte Request einen vollen JSON-Dump der Session-Datei ausloesen.
+_SESSION_SAVE_DEBOUNCE_SECONDS = 60
+
 # Persistenz-Datei im Datenverzeichnis
 _DATA_DIR = Path(os.getenv("KIWIKI_DATA_DIR", "/data"))
 _SESSION_FILE = _DATA_DIR / "sessions.json"
@@ -121,13 +126,18 @@ def lookup_session(token: str) -> SessionRecord | None:
         record = _sessions.get(token)
         if record is None:
             return None
-        if record.expires_at < _now():
+        now = _now()
+        if record.expires_at < now:
             del _sessions[token]
             _save_to_disk()
             return None
-        # Sliding Expiration: Ablaufzeit bei jedem Zugriff erneuern
-        record.expires_at = _now() + _SESSION_TTL_SECONDS
-        _save_to_disk()
+        # Sliding Expiration: Ablaufzeit bei jedem Zugriff erneuern, aber
+        # nur bei spuerbarer Verschiebung auch auf Disk persistieren.
+        new_expires_at = now + _SESSION_TTL_SECONDS
+        should_persist = new_expires_at - record.expires_at > _SESSION_SAVE_DEBOUNCE_SECONDS
+        record.expires_at = new_expires_at
+        if should_persist:
+            _save_to_disk()
     return record
 
 
