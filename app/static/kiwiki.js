@@ -2,10 +2,6 @@ function getCookieValue(name) {
   var m = document.cookie.match('(?:^|; )' + name.replace(/([.$?*|{}()[\]\\/+^])/g, '\\$1') + '=([^;]*)');
   return m ? decodeURIComponent(m[1]) : '';
 }
-function getKey() {
-  try { localStorage.removeItem('kiwiki_api_key'); } catch (e) {}
-  return '';
-}
 function apiHeaders(extra) {
   return Object.assign({}, extra || {});
 }
