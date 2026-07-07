@@ -62,19 +62,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
-_NH3_TAGS = {
-    "a", "abbr", "b", "blockquote", "br", "code", "div", "em", "h1", "h2", "h3",
-    "h4", "h5", "h6", "hr", "i", "li", "ol", "p", "pre", "span", "strong",
-    "table", "tbody", "td", "th", "thead", "tr", "ul",
-}
-_NH3_ATTRS = {
-    "a": {"href", "title", "rel"},
-    "code": {"class"},
-    "span": {"class"},
-    "div": {"class"},
-    "th": {"align"},
-    "td": {"align"},
-}
+from .constants import NH3_ATTRS, NH3_TAGS
 
 
 def _render_markdown_safe(content: str) -> str:
@@ -84,8 +72,8 @@ def _render_markdown_safe(content: str) -> str:
     )
     return nh3.clean(
         rendered,
-        tags=_NH3_TAGS,
-        attributes=_NH3_ATTRS,
+        tags=NH3_TAGS,
+        attributes=NH3_ATTRS,
         url_schemes={"http", "https", "mailto"},
         link_rel=None,
     )
@@ -151,6 +139,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "font-src 'self'"
+        )
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
         return response
@@ -261,6 +256,12 @@ async def login_page(request: Request) -> HTMLResponse | RedirectResponse:
 
 @app.post("/login", response_class=HTMLResponse, response_model=None)
 async def login_submit(request: Request, api_key: str = Form(...)) -> HTMLResponse | RedirectResponse:
+    if len(api_key) > 256:
+        return templates.TemplateResponse(
+            request=request, name="login.html",
+            context={"error": "API-Key zu lang"},
+            status_code=400,
+        )
     users_map = parse_users()
     match = _lookup_api_key(users_map, api_key)
     if match is None:
@@ -880,7 +881,7 @@ async def api_create_user(req: CreateUserRequest, user: User = Depends(require_r
     _validate_create_user_input(username, key, role)
     _check_user_collisions(username, key)
 
-    prev_ns = _init_user_workspace(username, user.username)
+    _init_user_workspace(username, user.username)
     try:
         record = _persist_new_user(username, key, role, username)
     except Exception:

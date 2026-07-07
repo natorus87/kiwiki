@@ -55,19 +55,7 @@ from .storage import (
 )
 from .tenancy import ensure_user_workspace, is_valid_username, set_user_ns, user_root
 
-_NH3_TAGS = {
-    "a", "abbr", "b", "blockquote", "br", "code", "div", "em", "h1", "h2", "h3",
-    "h4", "h5", "h6", "hr", "i", "li", "ol", "p", "pre", "span", "strong",
-    "table", "tbody", "td", "th", "thead", "tr", "ul",
-}
-_NH3_ATTRS = {
-    "a": {"href", "title", "rel"},
-    "code": {"class"},
-    "span": {"class"},
-    "div": {"class"},
-    "th": {"align"},
-    "td": {"align"},
-}
+from .constants import NH3_ATTRS, NH3_TAGS
 
 router = APIRouter()
 logger = logging.getLogger("kiwiki.mcp")
@@ -3494,6 +3482,10 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         _deindex_markdown(old_path)
         _index_markdown(new_path)
         links_updated = 0
+        old_name = old_path.rsplit("/", 1)[-1]
+        old_stem = old_name.replace(".md", "")
+        new_name = new_path.rsplit("/", 1)[-1]
+        new_stem = new_name.replace(".md", "")
         for md_file in _markdown_paths("."):
             rel = _rel_path(md_file)
             try:
@@ -3504,7 +3496,22 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             for _, link in _local_markdown_links(text):
                 target = _resolve_local_link(rel, link)
                 if target == old_path:
-                    new_link = link.replace(old_path.rsplit("/", 1)[-1].replace(".md", ""), new_path.rsplit("/", 1)[-1].replace(".md", ""))
+                    # Strip fragment/query for suffix matching, preserve in output
+                    suffix_start = len(link)
+                    for ch in ("#", "?"):
+                        idx = link.find(ch)
+                        if idx != -1 and idx < suffix_start:
+                            suffix_start = idx
+                    link_path = link[:suffix_start]
+                    link_suffix = link[suffix_start:]
+                    if link_path.endswith(old_name):
+                        prefix = link_path[: -len(old_name)]
+                        new_link = prefix + new_name + link_suffix
+                    elif link_path.endswith(old_stem):
+                        prefix = link_path[: -len(old_stem)]
+                        new_link = prefix + new_stem + link_suffix
+                    else:
+                        continue
                     new_text = new_text.replace(link, new_link, 1)
             if new_text != text:
                 md_file.write_text(new_text, encoding="utf-8")
@@ -3553,7 +3560,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             for f in all_files_list:
                 try:
                     fc = read_file(f["path"])
-                    rendered = nh3.clean(md_lib.markdown(fc.content, extensions=["fenced_code", "tables", "nl2br"]), tags=_NH3_TAGS, attributes=_NH3_ATTRS, url_schemes={"http", "https", "mailto"})
+                    rendered = nh3.clean(md_lib.markdown(fc.content, extensions=["fenced_code", "tables", "nl2br"]), tags=NH3_TAGS, attributes=NH3_ATTRS, url_schemes={"http", "https", "mailto"})
                     parts.append(f'<section id="{_slug(f["path"])}"><h2>{html.escape(f["title"])}</h2>{rendered}</section>')
                 except Exception:
                     continue

@@ -60,6 +60,10 @@ def _classify_path(path: str, method: str) -> str:
     """Ordne Pfad+Methode einer der drei Limits zu."""
     if path == "/login" and method == "POST":
         return "login"
+    if path.startswith("/mcp") and method in ("POST", "PUT", "DELETE", "PATCH"):
+        return "write"
+    if path.startswith("/oauth/") and method in ("POST", "PUT", "DELETE", "PATCH"):
+        return "write"
     if path.startswith("/api/") and method in ("POST", "PUT", "DELETE", "PATCH"):
         return "write"
     return "read"
