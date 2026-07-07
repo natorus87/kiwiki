@@ -112,6 +112,36 @@ def _login(users, key):
     return client
 
 
+def test_ui_file_leakt_keine_internen_exception_details(tmp_path, monkeypatch):
+    """Unerwartete Exceptions (nicht ValueError/FileNotFoundError) duerfen
+    ihre Detailmeldung nicht an den Client durchreichen — sonst koennten
+    interne Pfade/Tracebacks im gerenderten HTML landen.
+
+    Session wird direkt ueber session_store gesetzt statt per POST /login,
+    um den fuer diese Testdatei bereits knapp bemessenen, prozessweiten
+    Login-Rate-Limiter nicht zusaetzlich zu belasten."""
+    from app import session_store
+    from app.tenancy import ensure_user_workspace
+
+    monkeypatch.setenv("KIWIKI_USERS", "admin:adminkey:admin")
+    ws = ensure_user_workspace("admin")
+    (ws / "notes").mkdir(parents=True, exist_ok=True)
+    (ws / "notes" / "demo.md").write_text("---\ntitle: Demo\n---\n\nHallo", encoding="utf-8")
+
+    def _boom(path):
+        raise RuntimeError("/data/admin/notes/demo.md ist kaputt: geheime Interna")
+
+    monkeypatch.setattr("app.main.read_file", _boom)
+    record = session_store.create_session("admin", "admin", "adminkey")
+    client = TestClient(app)
+    client.cookies.set("kiwiki_session", record.token)
+    resp = client.get("/ui/file?path=notes/demo.md")
+    assert resp.status_code == 200
+    assert "geheime Interna" not in resp.text
+    assert "/data/admin" not in resp.text
+    assert "Datei konnte nicht geladen werden." in resp.text
+
+
 def test_ui_file_tags_sind_klickbare_buttons(tmp_path, monkeypatch):
     """Tags in der file_view werden als klickbare Buttons gerendert,
     die kwSearchTag('<tag>') aufrufen — nicht als passive <span>."""
