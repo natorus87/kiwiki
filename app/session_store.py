@@ -2,7 +2,7 @@
 
 Trennt das HTTP-Cookie-Token vom API-Key:
 - Login erzeugt ein zufaelliges, nicht erratbares Session-Token
-- Token wird hier gespeichert (Token -> (username, role, api_key, expires_at))
+- Persistiert wird nur SHA-256(Token) -> (username, role, expires_at)
 - Cookie enthaelt NUR das Token — bei Leak kann der Server-Admin das
   Token widerrufen, ohne den API-Key zu rotieren.
 - Tokens haben eine TTL mit Sliding Expiration (wird bei jedem Zugriff
@@ -13,12 +13,13 @@ Trennt das HTTP-Cookie-Token vom API-Key:
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
 import secrets
 import threading
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger("kiwiki.session")
@@ -44,13 +45,17 @@ class SessionRecord:
     token: str
     username: str
     role: str
-    api_key: str  # wird z.B. fuer Logout/Audit gebraucht
     expires_at: float
 
 
 # In-Memory-Cache (Quelle der Wahrheit laeuft, Datei ist Backup)
 _sessions: dict[str, SessionRecord] = {}
 _loaded = False
+
+
+def _token_hash(token: str) -> str:
+    """Nicht umkehrbarer Lookup-Key fuer Session-Tokens."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def _now() -> float:
@@ -69,10 +74,33 @@ def _load_from_disk() -> None:
         data = json.loads(_SESSION_FILE.read_text())
         now = _now()
         loaded = 0
-        for token, rec in data.items():
+        needs_migration = (_SESSION_FILE.stat().st_mode & 0o777) != 0o600
+        for stored_key, rec in data.items():
+            token = str(rec.get("token", ""))
+            stored_key_is_hash = len(stored_key) == 64 and all(
+                char in "0123456789abcdef" for char in stored_key.lower()
+            )
+            needs_migration = (
+                needs_migration
+                or bool(token)
+                or "api_key" in rec
+                or not stored_key_is_hash
+                or rec.get("expires_at", 0) <= now
+            )
             if rec.get("expires_at", 0) > now:
-                _sessions[token] = SessionRecord(**rec)
+                # Alte Dateien verwendeten das Roh-Token als Key und legten
+                # Token/API-Key nochmals im Record ab. Beim Laden werden sie
+                # unmittelbar auf das sichere Format reduziert.
+                lookup_key = stored_key if stored_key_is_hash else _token_hash(token or stored_key)
+                _sessions[lookup_key] = SessionRecord(
+                    token=token,
+                    username=str(rec["username"]),
+                    role=str(rec["role"]),
+                    expires_at=float(rec["expires_at"]),
+                )
                 loaded += 1
+        if needs_migration:
+            _save_to_disk()
         logger.info("sessions: %d active sessions loaded from disk", loaded)
     except Exception:
         logger.warning("sessions: could not load %s, starting fresh", _SESSION_FILE, exc_info=True)
@@ -80,12 +108,35 @@ def _load_from_disk() -> None:
 
 def _save_to_disk() -> None:
     """Schreibt alle aktiven Sessions in die JSON-Datei."""
+    tmp_path: Path | None = None
     try:
         _SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-        data = {t: asdict(r) for t, r in _sessions.items()}
-        _SESSION_FILE.write_text(json.dumps(data, indent=2))
+        data = {
+            token_hash: {
+                "username": record.username,
+                "role": record.role,
+                "expires_at": record.expires_at,
+            }
+            for token_hash, record in _sessions.items()
+        }
+        import tempfile
+
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=".sessions-", suffix=".json", dir=str(_SESSION_FILE.parent)
+        )
+        tmp_path = Path(tmp_name)
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(data, indent=2))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, _SESSION_FILE)
+        _SESSION_FILE.chmod(0o600)
     except Exception:
         logger.warning("sessions: could not persist to %s", _SESSION_FILE, exc_info=True)
+    finally:
+        if tmp_path is not None and tmp_path.exists():
+            tmp_path.unlink()
 
 
 def _prune_expired(now: float | None = None) -> None:
@@ -98,7 +149,7 @@ def _prune_expired(now: float | None = None) -> None:
         _save_to_disk()
 
 
-def create_session(username: str, role: str, api_key: str) -> SessionRecord:
+def create_session(username: str, role: str, _api_key: str = "") -> SessionRecord:
     """Erzeugt ein neues Session-Token und speichert es."""
     _load_from_disk()
     with _lock:
@@ -108,10 +159,9 @@ def create_session(username: str, role: str, api_key: str) -> SessionRecord:
             token=token,
             username=username,
             role=role,
-            api_key=api_key,
             expires_at=_now() + _SESSION_TTL_SECONDS,
         )
-        _sessions[token] = record
+        _sessions[_token_hash(token)] = record
         _save_to_disk()
     return record
 
@@ -123,12 +173,13 @@ def lookup_session(token: str) -> SessionRecord | None:
     if not token:
         return None
     with _lock:
-        record = _sessions.get(token)
+        lookup_key = _token_hash(token)
+        record = _sessions.get(lookup_key)
         if record is None:
             return None
         now = _now()
         if record.expires_at < now:
-            del _sessions[token]
+            del _sessions[lookup_key]
             _save_to_disk()
             return None
         # Sliding Expiration: Ablaufzeit bei jedem Zugriff erneuern, aber
@@ -145,8 +196,9 @@ def revoke_session(token: str) -> bool:
     """Loescht eine Session (Logout)."""
     _load_from_disk()
     with _lock:
-        if token in _sessions:
-            del _sessions[token]
+        lookup_key = _token_hash(token)
+        if lookup_key in _sessions:
+            del _sessions[lookup_key]
             _save_to_disk()
             return True
         return False

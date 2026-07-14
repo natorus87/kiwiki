@@ -7,10 +7,23 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-07-14
+
+### Migration
+- **Kubernetes secrets are no longer accepted from the ConfigMap values block.** Move `KIWIKI_USERS` and `KIWIKI_OAUTH_TOKEN_SECRET` to a pre-created Secret referenced through `existingSecret`, or use `secretEnv` for non-production installs. Keep the existing OAuth signing secret to preserve issued connector tokens.
+- **Docker Compose requires explicit secrets.** Set both `KIWIKI_USERS` and `KIWIKI_OAUTH_TOKEN_SECRET` in `.env` before starting the stack.
+
 ### Added
+- **Production health and observability** — `/livez`, dependency-aware `/readyz`, Docker/Compose/Helm health checks, request correlation IDs, latency logs and release version reporting.
+- **Real browser regression gate** — Chromium smoke test for mobile zoom, sidebar focus/inert state, note deep links, dynamic titles, responsive settings and horizontal overflow.
+- **Capacity controls** — request, tenant file/byte, list, JSON-RPC batch, SSE session/queue, OAuth state and staged-upload limits.
 - **`PATCH /api/file/frontmatter`** — Neuer REST-Endpoint, der einzelne Frontmatter-Felder (z.B. `tags`) serverseitig mit `storage.update_frontmatter()` merged, ohne Content oder andere Metadaten anzufassen. Ersetzt das bisherige, destruktive Client-seitige Regex-Merging in `kwBatchTag()`.
 
 ### Fixed
+- **Security and data integrity review** — UI role checks, API-key-free hashed sessions, session revocation, central storage policy, transactional user-workspace rollback, atomic conflict-aware writes, search deindexing and thread-local SQLite connections.
+- **MCP/OAuth hardening** — PKCE token binding, authenticated SSE message sessions, bounded in-memory state, redacted `0600` audit logs, safe Git arguments/timeouts and working asynchronous grep polling.
+- **Mobile and accessibility regressions** — editor overlap, hidden-sidebar tab stops, focus visibility, pinch zoom, settings grid, incomplete ARIA tree pattern, unnamed editor controls and broken tags/search-history navigation.
+- **Persistent breadcrumb XSS and external CDN exposure** — file paths no longer enter inline JavaScript; htmx, Toast UI and fonts are vendored locally and CSP is self-hosted only.
 - **`kwBatchTag()` überschrieb Frontmatter (Datenverlust)** — Batch-Tagging über die Mehrfachauswahl baute den kompletten Frontmatter-Block per Regex neu zusammen und verlor dabei `title`/`created`/`updated`. Jetzt über `PATCH /api/file/frontmatter` serverseitig gemerged.
 - **`GET /api/file` und `GET /api/files` schlugen bei jedem Aufruf fehl** — Beide Endpunkte übergaben Pydantic-Modelle (`FileContent`/`FileInfo`) direkt an `starlette.responses.JSONResponse()`, die diese nicht serialisieren kann. Jeder erfolgreiche Read endete in einem 400er „Object of type … is not JSON serializable". Beim manuellen End-to-End-Test des Frontmatter-Fixes aufgefallen — betraf auch `kwBatchTag()`, das diesen Endpoint zum Lesen bestehender Tags braucht.
 - **Frontmatter-Cache (A3) war inaktiv** — `_fm_cache` existierte seit der A3-Performance-Arbeit inklusive Lock, wurde von `_read_frontmatter_only()` aber nie gelesen oder geschrieben. Jetzt per `(Pfad, mtime)`-Schlüssel tatsächlich verdrahtet.
@@ -19,6 +32,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Stille `except Exception`-Blöcke in den Dashboard-Panels (`/ui/recent-edited`, `/ui/recent-created`) und beim Frontmatter-Parsing (`storage._read_frontmatter_only`) loggen den Fehler jetzt, statt ihn zu verschlucken.
 
 ### Changed
+- **Deployment defaults hardened** — Compose binds loopback and requires secrets; Helm supports existing Secrets/PVCs, enforces one replica, uses read-only root filesystem/seccomp and disables broad CORS defaults.
+- **Reproducible delivery** — exact direct dependency pins, digest-pinned base images, unified version `3.0.0`, CI coverage/security/browser gates, and release SBOM/provenance.
 - **Session-Cookie: `SameSite=Lax` → `SameSite=Strict`** — schliesst CSRF über die zustandsändernden `/ui/*`-POST-Endpunkte (Rename, Export, Search); kiwiki hat keinen legitimen Cross-Site-Einstiegspunkt (kein Login-Link aus E-Mails o.ä.).
 - **API-Key-Vergleich zeitkonstant** — Bearer-Token- und Login-Prüfung nutzen jetzt `secrets.compare_digest()` über alle konfigurierten Keys statt eines Dict-Lookups, der auf dem ersten Hash-Bucket-Treffer kurzschliessen kann.
 - **`init_db()` prüft das FTS5-Schema nur noch einmal pro Prozess und Namespace**, statt bei jedem `search()`-/`index_file()`-/Reindex-Aufruf erneut die `sqlite_master`-Abfrage und `CREATE TABLE IF NOT EXISTS`-Statements auszuführen.
@@ -28,7 +43,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **Startseite Layout-Reihenfolge** — Dashboard-Panels („Zuletzt bearbeitet" / „Zuletzt erstellt") erscheinen jetzt unter dem kiwiki-Hero-Block statt darüber. Fokus liegt jetzt zuerst auf Branding/Tagline, dann auf recent activity.
 
 ### Tests
-- 150 Tests grün (u.a. neue Regressionstests für Frontmatter-Merge, Frontmatter-Cache, Session-Debounce, Exception-Leakage und die JSON-Serialisierung von `GET /api/file`/`/api/files`).
+- 221 tests pass with 64% branch coverage, including new regression tests for auth/session revocation, quotas, atomic writes, OAuth/MCP limits, browser accessibility, deployment configuration and health probes.
+
+## [2.6.0] - 2026-07-06
+
+### Added
+- Collapsible desktop sidebar with an animated menu button and a draggable, locally persisted width.
+
+### Fixed
+- Removed the unintended green menu-button glow, cleared stale inline widths after resizing and limited the backdrop to mobile layouts.
 
 ## [2.5.0] - 2026-07-03
 
@@ -238,7 +261,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **Container:** Docker + docker-compose
 - **Orchestration:** Helm charts for Kubernetes
 
-[Unreleased]: https://github.com/natorus87/kiwiki/compare/v2.0.2...HEAD
+[Unreleased]: https://github.com/natorus87/kiwiki/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/natorus87/kiwiki/compare/v2.6.0...v3.0.0
+[2.6.0]: https://github.com/natorus87/kiwiki/compare/v2.5.0...v2.6.0
+[2.5.0]: https://github.com/natorus87/kiwiki/compare/v2.4.1...v2.5.0
+[2.2.0]: https://github.com/natorus87/kiwiki/compare/v2.1.1...v2.2.0
+[2.1.1]: https://github.com/natorus87/kiwiki/compare/v2.1.0...v2.1.1
+[2.1.0]: https://github.com/natorus87/kiwiki/compare/v2.0.2...v2.1.0
 [2.0.2]: https://github.com/natorus87/kiwiki/releases/tag/v2.0.2
 [2.0.1]: https://github.com/natorus87/kiwiki/releases/tag/v2.0.1
 [2.0.0]: https://github.com/natorus87/kiwiki/releases/tag/v2.0.0

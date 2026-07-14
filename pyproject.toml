@@ -1,6 +1,6 @@
 [project]
 name = "kiwiki"
-version = "0.1.0"
+version = "3.0.0"
 description = "KI-gestütztes Wiki mit MCP-Server"
 requires-python = ">=3.12"
 license = {text = "MIT"}
@@ -16,3 +16,11 @@ ignore = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+
+[tool.coverage.report]
+fail_under = 60
+show_missing = true

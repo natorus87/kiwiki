@@ -2,6 +2,8 @@ import html
 import logging
 import os
 import re
+import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,15 +12,23 @@ import nh3
 import yaml
 from fastapi import FastAPI, Depends, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 
 from . import session_store, user_store
-from .auth import ROLE_HIERARCHY, _lookup_api_key, get_current_user, parse_users, require_role
+from .auth import (
+    ROLE_HIERARCHY,
+    _lookup_api_key,
+    current_role_for_username,
+    get_current_user,
+    parse_users,
+    require_role,
+)
 from .mcp_server import router as mcp_router
+from .constants import APP_VERSION, NH3_ATTRS, NH3_TAGS
 from .models import (
     AppendFileRequest,
     CreateFolderRequest,
@@ -29,6 +39,7 @@ from .models import (
     UpdateFrontmatterRequest,
     User,
     WriteFileRequest,
+    MAX_CONTENT_LENGTH,
 )
 from .rate_limiter import RateLimitMiddleware
 from .search import deindex_file, index_file, init_db, reindex_all, reindex_changed, search as search_files
@@ -50,6 +61,8 @@ from .storage import (
     write_file,
 )
 from .tenancy import (
+    CURRENT_USER_NS,
+    base_data_dir,
     ensure_user_workspace,
     is_valid_username,
     migrate_legacy_data_dir,
@@ -61,9 +74,6 @@ logging.basicConfig(
     level=os.getenv("KIWIKI_LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
-
-from .constants import NH3_ATTRS, NH3_TAGS
-
 
 def _render_markdown_safe(content: str) -> str:
     rendered = md_lib.markdown(
@@ -112,12 +122,12 @@ async def _lifespan(app: FastAPI):
     close_pool()
 
 
-app = FastAPI(title="kiwiki", version="0.1.0", lifespan=_lifespan)
+app = FastAPI(title="kiwiki", version=APP_VERSION, lifespan=_lifespan)
 app.include_router(mcp_router)
 
 # ---------------------------------------------------------------------------
 # CORS — optional: KIWIKI_CORS_ORIGINS = "https://wiki.example,https://api.example"
-# Default "*" mit WARNS-LOG — in Produktivumgebung auf erlaubte Origins setzen
+# Default leer: Cross-Origin-Zugriff bleibt deaktiviert, bis Origins explizit gesetzt sind.
 # ---------------------------------------------------------------------------
 _cors_origins_raw = os.getenv("KIWIKI_CORS_ORIGINS", "")
 if not _cors_origins_raw:
@@ -139,12 +149,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; "
-            "font-src 'self'"
+            "font-src 'self'; "
+            "object-src 'none'; base-uri 'self'; form-action 'self'"
         )
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
@@ -152,6 +165,65 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+class RequestContextMiddleware(BaseHTTPMiddleware):
+    """Korrelations-ID und kompakte Latenzlogs fuer jeden HTTP-Request."""
+
+    async def dispatch(self, request: StarletteRequest, call_next):
+        supplied = request.headers.get("X-Request-ID", "")
+        request_id = supplied if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", supplied) else uuid.uuid4().hex
+        started = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - started) * 1000
+        response.headers["X-Request-ID"] = request_id
+        logging.getLogger("kiwiki.request").info(
+            "%s %s status=%d duration_ms=%.2f request_id=%s",
+            request.method,
+            request.url.path,
+            response.status_code,
+            duration_ms,
+            request_id,
+        )
+        return response
+
+
+app.add_middleware(RequestContextMiddleware)
+
+
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Uebergrosse HTTP-Bodies vor JSON-/Form-Parsing ablehnen."""
+
+    max_body_bytes = MAX_CONTENT_LENGTH + 64 * 1024
+
+    async def dispatch(self, request: StarletteRequest, call_next):
+        raw_length = request.headers.get("content-length")
+        if raw_length:
+            try:
+                if int(raw_length) > self.max_body_bytes:
+                    return JSONResponse(
+                        {"detail": "Request body too large"},
+                        status_code=413,
+                    )
+            except ValueError:
+                return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
+        elif request.method in {"POST", "PUT", "PATCH"}:
+            chunks: list[bytes] = []
+            received = 0
+            async for chunk in request.stream():
+                received += len(chunk)
+                if received > self.max_body_bytes:
+                    return JSONResponse(
+                        {"detail": "Request body too large"},
+                        status_code=413,
+                    )
+                chunks.append(chunk)
+            # Starlette nutzt den Cache bei der nachfolgenden Modell-/Form-Auswertung.
+            request._body = b"".join(chunks)
+        return await call_next(request)
+
+
+app.add_middleware(RequestSizeLimitMiddleware)
 
 # ---------------------------------------------------------------------------
 # Rate Limiting — Login: 5/min, Write: 30/min, Read: 60/min pro IP
@@ -176,6 +248,8 @@ _OPEN_PREFIXES = (
     "/login",
     "/logout",
     "/health",
+    "/livez",
+    "/readyz",
     "/static/",
     "/api/",
     "/mcp",
@@ -212,6 +286,10 @@ class WebAuthMiddleware(BaseHTTPMiddleware):
 
         if not is_valid_username(record.username):
             return RedirectResponse(url="/logout", status_code=302)
+        current_role = current_role_for_username(record.username)
+        if current_role is None or current_role != record.role:
+            session_store.revoke_session(token)
+            return RedirectResponse(url="/login", status_code=302)
         set_user_ns(record.username)
         return await call_next(request)
 
@@ -229,8 +307,12 @@ def _session_user(request: Request) -> User | None:
         return None
     if not is_valid_username(record.username):
         return None
+    current_role = current_role_for_username(record.username)
+    if current_role is None or current_role != record.role:
+        session_store.revoke_session(token)
+        return None
     set_user_ns(record.username)
-    return User(username=record.username, role=record.role)
+    return User(username=record.username, role=current_role)
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +322,52 @@ def _session_user(request: Request) -> User | None:
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/livez")
+async def livez() -> dict:
+    """Reiner Prozess-Liveness-Check ohne externe Abhaengigkeiten."""
+    return {"status": "alive"}
+
+
+@app.get("/readyz", response_model=None)
+def readyz() -> dict | JSONResponse:
+    """Prueft User-Konfiguration, Datenverzeichnis und per-User-SQLite."""
+    probe_path: Path | None = None
+    try:
+        users = parse_users()
+        if not users:
+            raise RuntimeError("No valid users configured")
+
+        data_dir = base_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        import tempfile
+
+        fd, probe_name = tempfile.mkstemp(prefix=".kiwiki-ready-", dir=str(data_dir))
+        os.close(fd)
+        probe_path = Path(probe_name)
+
+        from .search import get_db
+
+        for username, _role in users.values():
+            namespace_token = CURRENT_USER_NS.set(username)
+            try:
+                ensure_user_workspace(username)
+                init_db()
+                with get_db() as conn:
+                    conn.execute("SELECT 1").fetchone()
+            finally:
+                CURRENT_USER_NS.reset(namespace_token)
+        return {"status": "ready", "version": app.version, "users": len(users)}
+    except Exception:
+        logging.getLogger("kiwiki.readiness").exception("Readiness check failed")
+        return JSONResponse({"status": "not ready"}, status_code=503)
+    finally:
+        if probe_path is not None:
+            try:
+                probe_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -680,7 +808,10 @@ async def ui_file_history(request: Request, path: str = "") -> HTMLResponse:
 
 
 @app.post("/ui/rename", response_class=HTMLResponse)
-async def ui_rename(request: Request) -> HTMLResponse:
+async def ui_rename(
+    request: Request,
+    user: User = Depends(require_role("write")),
+) -> HTMLResponse:
     form = await request.form()
     old_path = form.get("old_path", "").strip()
     new_path = form.get("new_path", "").strip()
@@ -724,6 +855,13 @@ async def ui_export(request: Request) -> HTMLResponse:
 # REST API (Bearer token auth)
 # ---------------------------------------------------------------------------
 
+def _api_bad_request(exc: Exception) -> HTTPException:
+    """Nur kontrollierte Validierungsfehler an API-Clients weitergeben."""
+    if isinstance(exc, ValueError):
+        return HTTPException(status_code=400, detail=str(exc)[:300])
+    logging.getLogger("kiwiki.api").exception("Unexpected API request failure")
+    return HTTPException(status_code=400, detail="Request could not be processed")
+
 @app.get("/api/files")
 async def api_list_files(path: str = ".", user: User = Depends(get_current_user)):
     try:
@@ -733,7 +871,7 @@ async def api_list_files(path: str = ".", user: User = Depends(get_current_user)
         resp.headers["Cache-Control"] = "private, max-age=5"
         return resp
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)
 
 
 @app.get("/api/file")
@@ -747,18 +885,18 @@ async def api_read_file(path: str, user: User = Depends(get_current_user)):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)
 
 
 @app.put("/api/file")
 async def api_write_file(req: WriteFileRequest, user: User = Depends(require_role("write"))):
     try:
         validate_markdown_content_path(req.path)
-        result = write_file(req.path, req.content)
+        result = write_file(req.path, req.content, expected_revision=req.expected_revision)
         index_file(req.path)
         return result
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)
 
 
 @app.patch("/api/file/frontmatter")
@@ -771,7 +909,7 @@ async def api_update_frontmatter(req: UpdateFrontmatterRequest, user: User = Dep
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)
 
 
 @app.post("/api/file/append")
@@ -784,7 +922,7 @@ async def api_append_file(req: AppendFileRequest, user: User = Depends(require_r
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)
 
 
 @app.post("/api/folder")
@@ -794,7 +932,7 @@ async def api_create_folder(req: CreateFolderRequest, user: User = Depends(requi
         create_folder(req.path)
         return {"path": req.path, "status": "created"}
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)
 
 
 @app.post("/api/move")
@@ -817,7 +955,7 @@ async def api_move(req: MoveRequest, user: User = Depends(require_role("write"))
             index_file(req.dst)
         return {"src": req.src, "dst": req.dst, "status": "moved"}
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)
 
 
 @app.post("/api/search")
@@ -825,7 +963,7 @@ async def api_search(req: SearchRequest, user: User = Depends(get_current_user))
     try:
         return search_files(req.query)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)
 
 
 @app.post("/api/note")
@@ -835,7 +973,7 @@ async def api_create_note(req: CreateNoteRequest, user: User = Depends(require_r
         index_file(path)
         return {"path": path, "status": "created"}
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)
 
 
 @app.post("/api/reindex")
@@ -844,7 +982,7 @@ async def api_reindex(user: User = Depends(require_role("admin"))):
         count = reindex_all()
         return {"status": "reindexed", "count": count}
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)
 
 
 @app.get("/api/users")
@@ -865,7 +1003,7 @@ async def api_generate_user_key(user: User = Depends(require_role("admin"))):
     try:
         return {"key": user_store.generate_api_key()}
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)
 
 
 @app.post("/api/users")
@@ -881,11 +1019,12 @@ async def api_create_user(req: CreateUserRequest, user: User = Depends(require_r
     _validate_create_user_input(username, key, role)
     _check_user_collisions(username, key)
 
-    _init_user_workspace(username, user.username)
+    workspace_created = _init_user_workspace(username, user.username)
     try:
-        record = _persist_new_user(username, key, role, username)
+        record = _persist_new_user(username, key, role)
     except Exception:
-        _rollback_workspace(username)
+        if workspace_created:
+            _rollback_workspace(username)
         raise
 
     return {
@@ -914,9 +1053,12 @@ def _check_user_collisions(username: str, key: str) -> None:
         raise HTTPException(status_code=400, detail="Benutzername existiert bereits")
 
 
-def _init_user_workspace(username: str, fallback_ns: str) -> str | None:
-    """Phase 1: Workspace + DB + Index aufbauen. Gibt das vorherige Namespace zurueck."""
+def _init_user_workspace(username: str, fallback_ns: str) -> bool:
+    """Phase 1 aufbauen; liefert True nur fuer neu erzeugte Workspaces."""
     from .tenancy import current_user_ns as _cur_ns
+    from .tenancy import base_data_dir
+
+    workspace_created = not (base_data_dir() / username).exists()
     prev_ns = None
     try:
         prev_ns = _cur_ns()
@@ -925,21 +1067,21 @@ def _init_user_workspace(username: str, fallback_ns: str) -> str | None:
         init_db()
         reindex_all()
     except Exception as exc:
-        _rollback_workspace(username)
-        raise HTTPException(status_code=400, detail=f"Workspace-Init fehlgeschlagen: {exc}")
+        if workspace_created:
+            _rollback_workspace(username)
+        raise _api_bad_request(exc)
     finally:
         if prev_ns is not None:
             set_user_ns(prev_ns or fallback_ns)
-    return prev_ns
+    return workspace_created
 
 
-def _persist_new_user(username: str, key: str, role: str, workspace_user: str) -> object:
+def _persist_new_user(username: str, key: str, role: str) -> object:
     """Phase 2: User-Eintrag persistieren. Bricht ab, wenn es scheitert."""
     try:
         return user_store.create_local_user(username, key, role)
     except Exception as exc:
-        _rollback_workspace(workspace_user)
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)
 
 
 def _rollback_workspace(username: str) -> None:
@@ -955,9 +1097,10 @@ async def api_delete_user(username: str, user: User = Depends(require_role("admi
         raise HTTPException(status_code=400, detail="Der aktuell angemeldete Benutzer kann nicht gelöscht werden")
     try:
         user_store.delete_local_user(username)
+        session_store.revoke_all_for_user(username)
         return {"username": username, "status": "deleted"}
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="User not found")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -966,12 +1109,21 @@ async def api_delete_user(username: str, user: User = Depends(require_role("admi
 async def api_delete_folder(path: str, user: User = Depends(require_role("admin"))):
     try:
         validate_content_folder_path(path)
+        from .storage import safe_path
+
+        folder_path = safe_path(path)
+        indexed_paths = [
+            str(item.relative_to(user_root()))
+            for item in folder_path.rglob("*.md")
+        ] if folder_path.exists() else []
         delete_folder(path)
+        for indexed_path in indexed_paths:
+            deindex_file(indexed_path)
         return {"path": path, "status": "deleted"}
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Folder not found")
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)
 
 
 @app.delete("/api/file")
@@ -984,4 +1136,4 @@ async def api_delete_file(path: str, user: User = Depends(require_role("admin"))
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise _api_bad_request(exc)

@@ -1,6 +1,18 @@
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+MAX_PATH_LENGTH = 1024
+MAX_CONTENT_LENGTH = 2 * 1024 * 1024
+MAX_QUERY_LENGTH = 512
+MAX_TITLE_LENGTH = 200
+MAX_TAGS = 50
+MAX_TAG_LENGTH = 100
+
+PathValue = Annotated[str, Field(min_length=1, max_length=MAX_PATH_LENGTH)]
+ContentValue = Annotated[str, Field(max_length=MAX_CONTENT_LENGTH)]
+TagValue = Annotated[str, Field(min_length=1, max_length=MAX_TAG_LENGTH)]
 
 
 class User(BaseModel):
@@ -20,7 +32,8 @@ class FileInfo(BaseModel):
 class FileContent(BaseModel):
     path: str
     content: str
-    frontmatter: dict = {}
+    frontmatter: dict = Field(default_factory=dict)
+    revision: Optional[int] = None
 
 
 class SearchResult(BaseModel):
@@ -31,37 +44,38 @@ class SearchResult(BaseModel):
 
 
 class WriteFileRequest(BaseModel):
-    path: str
-    content: str
+    path: PathValue
+    content: ContentValue
+    expected_revision: Optional[int] = Field(default=None, ge=0)
 
 
 class AppendFileRequest(BaseModel):
-    path: str
-    content: str
+    path: PathValue
+    content: ContentValue
 
 
 class CreateFolderRequest(BaseModel):
-    path: str
+    path: PathValue
 
 
 class SearchRequest(BaseModel):
-    query: str
+    query: Annotated[str, Field(max_length=MAX_QUERY_LENGTH)]
 
 
 class CreateNoteRequest(BaseModel):
-    title: str
-    content: str
-    tags: list[str] = []
+    title: Annotated[str, Field(min_length=1, max_length=MAX_TITLE_LENGTH)]
+    content: ContentValue
+    tags: list[TagValue] = Field(default_factory=list, max_length=MAX_TAGS)
 
 
 class MoveRequest(BaseModel):
-    src: str
-    dst: str
+    src: PathValue
+    dst: PathValue
 
 
 class UpdateFrontmatterRequest(BaseModel):
-    path: str
-    updates: dict
+    path: PathValue
+    updates: dict = Field(max_length=100)
 
 
 class CreateUserRequest(BaseModel):

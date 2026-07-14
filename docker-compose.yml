@@ -3,15 +3,21 @@ services:
     build: .
     container_name: kiwiki
     ports:
-      - "8082:8080"
+      - "127.0.0.1:8082:8080"
     environment:
       KIWIKI_DATA_DIR: "/data"
-      KIWIKI_USERS: "admin:<your-secure-api-key>:admin"
+      KIWIKI_USERS: "${KIWIKI_USERS:?KIWIKI_USERS must be set}"
       KIWIKI_BASE_URL: "http://localhost:8082"
       KIWIKI_TRUST_PROXY: "false"  # auf "true" setzen hinter Reverse-Proxy/TLS-Terminierung
       KIWIKI_CORS_ORIGINS: ""      # leer oder Komma-getrennte Origins; "*" mit WARNS-LOG (Default)
       KIWIKI_RATE_LIMIT_ENABLED: "true"  # Rate Limiting aktivieren (empfohlen)
-      KIWIKI_OAUTH_TOKEN_SECRET: ""
+      KIWIKI_OAUTH_TOKEN_SECRET: "${KIWIKI_OAUTH_TOKEN_SECRET:?KIWIKI_OAUTH_TOKEN_SECRET must be set}"
     volumes:
       - ./data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/livez', timeout=2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped

@@ -1,13 +1,13 @@
 <div class="content-inner file-content-inner">
   <nav class="breadcrumb" aria-label="Pfadnavigation">
-    <button type="button" class="breadcrumb-item" onclick="htmx.ajax('GET','/ui/files?path=.',{target:'#main-content',swap:'innerHTML'})">Wiki</button>
+    <button type="button" class="breadcrumb-item breadcrumb-root">Wiki</button>
     {% set parts = path.split('/') %}
     {% set ns = namespace(accum='') %}
     {% for part in parts %}
       {% set ns.accum = ns.accum + '/' + part if ns.accum else part %}
       {% if not loop.last %}
         <span class="breadcrumb-sep" aria-hidden="true">/</span>
-        <button type="button" class="breadcrumb-item" onclick="toggleFolderByName('{{ ns.accum }}')">{{ part }}</button>
+        <button type="button" class="breadcrumb-item breadcrumb-folder" data-folder-path="{{ ns.accum }}">{{ part }}</button>
       {% else %}
         <span class="breadcrumb-sep" aria-hidden="true">/</span>
         <span class="breadcrumb-item current" aria-current="page">{{ part }}</span>

@@ -10,6 +10,12 @@ function kwIsMobileSidebar() {
   return window.matchMedia && window.matchMedia('(max-width: 1024px)').matches;
 }
 
+function kwSetSidebarAccessibility(s, isClosed) {
+  if (!s) return;
+  s.setAttribute('aria-hidden', isClosed ? 'true' : 'false');
+  s.inert = isClosed;
+}
+
 // openSidebar/closeSidebar:
 // - Desktop: toggelt .collapsed (Sidebar schiebt Content)
 // - Mobile: toggelt .open + Transform (Sidebar überlagert)
@@ -36,6 +42,7 @@ function openSidebar() {
     }
   }
   if (btn) btn.setAttribute('aria-expanded', 'true');
+  kwSetSidebarAccessibility(s, false);
   if (s && kwIsMobileSidebar()) {
     var first = s.querySelector('.file-item, .sidebar-btn, .btn, input, a, button');
     if (first) first.focus();
@@ -58,6 +65,7 @@ function closeSidebar() {
     }
   }
   if (btn) btn.setAttribute('aria-expanded', 'false');
+  kwSetSidebarAccessibility(s, true);
   if (s && s.contains(document.activeElement) && btn) btn.focus();
 }
 function toggleSidebar() {
@@ -67,16 +75,23 @@ function toggleSidebar() {
     : s && s.classList.contains('collapsed');
   if (isClosed) openSidebar();
   else closeSidebar();
-  var btn = document.querySelector('.hamburger');
-  if (btn) btn.blur();
 }
-function loadFile(path, el) {
+function loadFile(path, el, options) {
+  options = options || {};
+  var fileUrl = '/?file=' + encodeURIComponent(path);
+  if (window.location.pathname !== '/') {
+    window.location.href = fileUrl;
+    return;
+  }
   document.querySelectorAll('.file-item').forEach(function(item) { item.classList.remove('active'); });
   if (el) el.classList.add('active');
   kwSetActiveFile(path);
   var results = document.getElementById('search-results');
   if (results) results.innerHTML = '';
   htmx.ajax('GET', '/ui/file?path=' + encodeURIComponent(path), { target: '#main-content', swap: 'innerHTML' });
+  if (options.history !== false && window.location.pathname + window.location.search !== fileUrl) {
+    window.history.pushState({ file: path }, '', fileUrl);
+  }
   if (window.innerWidth <= 1024) closeSidebar();
 }
 
@@ -117,8 +132,10 @@ function kwSyncSidebarForViewport() {
   if (!s) return;
   if (kwIsMobileSidebar()) {
     s.style.transform = s.classList.contains('open') ? 'translateX(0)' : 'translateX(-100%)';
+    kwSetSidebarAccessibility(s, !s.classList.contains('open'));
   } else {
     s.style.transform = '';
+    kwSetSidebarAccessibility(s, s.classList.contains('collapsed'));
   }
 }
 
@@ -232,6 +249,10 @@ async function kwRestoreTreeState() {
 // Hook: nach jedem Top-Level-Tree-Swap (initial Load + nach Create/Move/Delete).
 document.addEventListener('htmx:afterSwap', function(e) {
   if (e.target && e.target.id === 'file-tree') kwRestoreTreeState();
+  if (e.target && e.target.id === 'main-content') {
+    var title = e.target.querySelector('.file-title');
+    document.title = title ? title.textContent.trim() + ' – kiwiki' : 'kiwiki';
+  }
 });
 
 // Scroll-Position laufend speichern (debounced).
@@ -254,11 +275,28 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   var initialDoc = new URLSearchParams(window.location.search).get('file');
   if (initialDoc && window.location.pathname === '/') {
-    loadFile(initialDoc);
-    try {
-      window.history.replaceState(null, '', '/');
-    } catch (_err) {}
+    loadFile(initialDoc, null, { history: false });
   }
+  var initialSearch = new URLSearchParams(window.location.search).get('search');
+  if (initialSearch && window.location.pathname === '/') {
+    var searchInput = document.querySelector('.search-input');
+    if (searchInput) {
+      searchInput.value = initialSearch;
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+  var initialView = new URLSearchParams(window.location.search).get('view');
+  var viewEndpoints = { tags: '/ui/tags', 'search-history': '/ui/search-history' };
+  if (initialView && viewEndpoints[initialView] && window.location.pathname === '/') {
+    htmx.ajax('GET', viewEndpoints[initialView], { target: '#main-content', swap: 'innerHTML' });
+  }
+});
+
+window.addEventListener('popstate', function() {
+  if (window.location.pathname !== '/') return;
+  var path = new URLSearchParams(window.location.search).get('file');
+  if (path) loadFile(path, null, { history: false });
+  else window.location.reload();
 });
 
 /* ── Drag & Drop ───────────────────────────────────────────────────── */
@@ -673,9 +711,12 @@ async function kwNewNote() {
 // klickbaren Tag-Chips in file_view.html aufgerufen. Prefix "tag:" wird in
 // app/search.py als LIKE-Suche auf die FTS5-`tags`-Spalte aufgelöst.
 function kwSearchTag(tag) {
+  kwRunSearch('tag:' + tag);
+}
+function kwRunSearch(query) {
   var input = document.querySelector('.search-input');
   if (input) {
-    input.value = 'tag:' + tag;
+    input.value = query;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.focus();
   }
@@ -999,6 +1040,35 @@ if (document.readyState === 'loading') {
 }
 
 document.addEventListener('click', function(e) {
+  var fileLink = e.target.closest && e.target.closest('.kw-file-link');
+  if (fileLink) {
+    e.preventDefault();
+    loadFile(fileLink.dataset.filePath, fileLink);
+    return;
+  }
+  var searchLink = e.target.closest && e.target.closest('.kw-search-link');
+  if (searchLink) {
+    e.preventDefault();
+    kwRunSearch(searchLink.dataset.searchQuery);
+    return;
+  }
+  var viewLink = e.target.closest && e.target.closest('.kw-view-link');
+  if (viewLink) {
+    e.preventDefault();
+    htmx.ajax('GET', viewLink.dataset.viewEndpoint, { target: '#main-content', swap: 'innerHTML' });
+    window.history.pushState({ view: viewLink.dataset.viewEndpoint }, '', viewLink.href);
+    return;
+  }
+  var rootCrumb = e.target.closest && e.target.closest('.breadcrumb-root');
+  if (rootCrumb) {
+    window.location.href = '/';
+    return;
+  }
+  var folderCrumb = e.target.closest && e.target.closest('.breadcrumb-folder');
+  if (folderCrumb) {
+    toggleFolderByName(folderCrumb.dataset.folderPath);
+    return;
+  }
   var results = document.getElementById('search-results');
   if (results && !results.closest('form').contains(e.target)) {
     results.innerHTML = '';

@@ -168,6 +168,12 @@
     .settings-head { align-items: flex-start; flex-direction: column; }
     .settings-head .btn { width: 100%; justify-content: center; }
     .settings-form { grid-template-columns: 1fr; }
+    .settings-form > * { grid-column: 1 / -1; }
+    .settings-form > .settings-field,
+    .settings-form > .btn-primary {
+      grid-column: 1 / -1;
+      justify-self: stretch;
+    }
     .key-field-row { flex-direction: column; }
     .settings-form .btn { justify-content: center; }
     .user-table {

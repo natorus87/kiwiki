@@ -1,6 +1,11 @@
 """Tests fuer app/storage.py: safe_path(), CRUD-Operationen, Path-Traversal-Schutz."""
 
+import threading
+import time
+
 import pytest
+
+import app.storage as storage_mod
 
 from app.storage import (
     _fm_cache,
@@ -81,6 +86,109 @@ class TestWriteFile:
         write_file("notes/python/asyncio.md", "---\ntitle: AsyncIO\n---\n\nCode")
         assert (tmp_path / "notes/python/asyncio.md").exists()
 
+    def test_schreiben_in_systempfad_wird_zentral_abgelehnt(self, active_user):
+        with pytest.raises(ValueError, match=".kiwiki"):
+            write_file("notes/../.kiwiki/users.md", "secret")
+
+    def test_datei_wird_atomar_ersetzt(self, monkeypatch, active_user):
+        calls = []
+        real_replace = storage_mod.os.replace
+
+        def tracked_replace(src, dst):
+            calls.append((src, dst))
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(storage_mod.os, "replace", tracked_replace)
+        write_file("notes/atomic.md", "Body")
+        assert len(calls) == 1
+
+    def test_veraltete_revision_verhindert_stilles_ueberschreiben(self, tmp_path, active_user):
+        write_file("notes/conflict.md", "Version eins")
+        revision = (tmp_path / "notes/conflict.md").stat().st_mtime_ns
+        write_file("notes/conflict.md", "Version zwei")
+
+        with pytest.raises(ValueError, match="conflict"):
+            write_file("notes/conflict.md", "Veralteter Agent", expected_revision=revision)
+
+    def test_parallele_appends_verlieren_keine_aenderung(self, monkeypatch, active_user):
+        write_file("notes/concurrent.md", "Start")
+        real_load = storage_mod.frontmatter.load
+
+        def slow_load(*args, **kwargs):
+            post = real_load(*args, **kwargs)
+            time.sleep(0.02)
+            return post
+
+        monkeypatch.setattr(storage_mod.frontmatter, "load", slow_load)
+        start = threading.Barrier(8)
+        errors = []
+
+        def append(index):
+            from app.tenancy import set_user_ns
+
+            try:
+                set_user_ns("alice")
+                start.wait()
+                edit_file("notes/concurrent.md", f"Agent-{index}")
+            except Exception as exc:  # pragma: no cover - assertion below reports it
+                errors.append(exc)
+
+        threads = [threading.Thread(target=append, args=(index,)) for index in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+
+        assert not errors
+        content = read_file("notes/concurrent.md").content
+        assert all(f"Agent-{index}" in content for index in range(8))
+
+    def test_tenant_dateianzahl_ist_begrenzt(self, monkeypatch, active_user):
+        # Zwei Seed-Dateien (AGENTS.md/index.md) gehoeren bereits zum Workspace.
+        monkeypatch.setattr(storage_mod, "_MAX_TENANT_FILES", 3, raising=False)
+        write_file("notes/first.md", "Erste Datei")
+
+        with pytest.raises(ValueError, match="file quota"):
+            write_file("notes/second.md", "Zweite Datei")
+
+    def test_tenant_speicherplatz_ist_begrenzt(self, monkeypatch, active_user):
+        monkeypatch.setattr(storage_mod, "_MAX_TENANT_BYTES", 128, raising=False)
+
+        with pytest.raises(ValueError, match="storage quota"):
+            write_file("notes/large.md", "x" * 1024)
+
+    def test_tenant_quota_gilt_auch_bei_parallelen_writes(self, monkeypatch, active_user):
+        monkeypatch.setattr(storage_mod, "_MAX_TENANT_FILES", 3)
+        real_replace = storage_mod.os.replace
+
+        def slow_replace(*args, **kwargs):
+            time.sleep(0.03)
+            return real_replace(*args, **kwargs)
+
+        monkeypatch.setattr(storage_mod.os, "replace", slow_replace)
+        start = threading.Barrier(2)
+        results = []
+
+        def write(name):
+            from app.tenancy import set_user_ns
+
+            set_user_ns("alice")
+            start.wait()
+            try:
+                write_file(f"notes/{name}.md", name)
+                results.append("ok")
+            except ValueError as exc:
+                results.append(str(exc))
+
+        threads = [threading.Thread(target=write, args=(name,)) for name in ("one", "two")]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+
+        assert results.count("ok") == 1
+        assert sum("file quota" in result for result in results) == 1
+
 
 class TestAppendFile:
     """append_file() — Inhalt an bestehende Datei anhengen."""
@@ -133,6 +241,41 @@ class TestCreateNote:
         create_note("Test Notiz", "Erste", [], "testuser")
         path2 = create_note("Test Notiz", "Zweite", [], "testuser")
         assert path2 == "notes/test-notiz-2.md"
+
+    def test_leerer_slug_wird_abgelehnt(self, active_user):
+        with pytest.raises(ValueError, match="slug"):
+            create_note("!!!", "Inhalt", [], "testuser")
+
+    def test_systemordner_wird_abgelehnt(self, active_user):
+        with pytest.raises(ValueError, match=".kiwiki"):
+            create_note("Geheim", "Inhalt", [], "testuser", ".kiwiki")
+
+    def test_parallele_notizen_erhalten_eindeutige_pfade(self, monkeypatch, active_user):
+        real_atomic_write = storage_mod._atomic_write_text
+
+        def slow_atomic_write(*args, **kwargs):
+            time.sleep(0.02)
+            return real_atomic_write(*args, **kwargs)
+
+        monkeypatch.setattr(storage_mod, "_atomic_write_text", slow_atomic_write)
+        start = threading.Barrier(6)
+        paths = []
+
+        def create(index):
+            from app.tenancy import set_user_ns
+
+            set_user_ns("alice")
+            start.wait()
+            paths.append(create_note("Parallel", f"Agent {index}", [], "alice"))
+
+        threads = [threading.Thread(target=create, args=(index,)) for index in range(6)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+
+        assert len(paths) == 6
+        assert len(set(paths)) == 6
 
 
 class TestEditFile:
@@ -228,6 +371,14 @@ class TestListFiles:
         names = [r.name for r in result]
         assert "projects" in names
 
+    def test_liste_ist_begrenzt(self, monkeypatch, tmp_file, active_user):
+        monkeypatch.setattr(storage_mod, "_MAX_LIST_ITEMS", 2, raising=False)
+        tmp_file("notes/a.md")
+        tmp_file("notes/b.md")
+        tmp_file("notes/c.md")
+
+        assert len(list_files("notes")) == 2
+
 
 class TestListAllFiles:
     """list_all_files() — Rekursiv alle Markdown-Dateien."""
@@ -249,6 +400,10 @@ class TestFolderOps:
     def test_folder_erstellen(self, tmp_path, active_user):
         create_folder("notes/python")
         assert (tmp_path / "notes/python").is_dir()
+
+    def test_systemfolder_erstellen_wird_zentral_abgelehnt(self, active_user):
+        with pytest.raises(ValueError, match=".kiwiki"):
+            create_folder(".kiwiki/import")
 
     def test_folder_loeschen(self, tmp_file, active_user, tmp_path):
         (tmp_path / "notes/python").mkdir(parents=True, exist_ok=True)

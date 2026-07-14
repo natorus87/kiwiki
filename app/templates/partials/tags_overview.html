@@ -4,7 +4,7 @@
   <div class="tag-cloud">
     {% for t in tags %}
     <div class="tag-item">
-      <a href="/ui/search?query=tag:{{ t.tag }}" class="tag-chip" hx-post="/ui/search" hx-vals='{"query":"tag:{{ t.tag }}"}' hx-target="#content" hx-swap="innerHTML">
+      <a href="/?search={{ ('tag:' ~ t.tag)|urlencode }}" class="tag-chip kw-search-link" data-search-query="tag:{{ t.tag }}">
         {{ t.tag }}
         <span class="tag-count">{{ t.count }}</span>
       </a>
@@ -12,7 +12,7 @@
         <summary>{{ t.count }} Datei{{ 'en' if t.count != 1 else '' }}</summary>
         <ul>
           {% for f in t.files %}
-          <li><a href="#" hx-get="/ui/file?path={{ f }}" hx-target="#content" hx-swap="innerHTML">{{ f }}</a></li>
+          <li><a href="/?file={{ f|urlencode }}" class="kw-file-link" data-file-path="{{ f }}">{{ f }}</a></li>
           {% endfor %}
         </ul>
       </details>

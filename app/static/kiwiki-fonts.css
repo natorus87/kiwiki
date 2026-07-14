@@ -1,0 +1,15 @@
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  font-style: normal;
+  font-weight: 500 800;
+  font-display: swap;
+  src: url('/static/vendor/bricolage-grotesque-latin-v9.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('/static/vendor/jetbrains-mono-latin-v24.woff2') format('woff2');
+}

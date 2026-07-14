@@ -7,13 +7,14 @@ kiwiki is a FastAPI application with a server-rendered Jinja2 front end. There i
 ```
 Browser ──HTTP──► FastAPI (app/main.py)
                     │
-                    ├── Middleware: rate limiter, security headers, CORS
+                    ├── Middleware: request limits/IDs, rate limiter, security headers, CORS
                     ├── Auth: cookie session OR Bearer API key  (app/auth.py)
                     ├── Tenancy: ContextVar sets per-user namespace (app/tenancy.py)
                     │
                     ├── UI routes (/ui/*) → Jinja2 templates  (app/templates/)
                     ├── REST routes (/api/*) → JSON
                     ├── MCP routes (/mcp, /mcp/sse, /oauth/*)  (app/mcp_server.py)
+                    ├── MCP Git sandbox helpers                (app/mcp_git.py)
                     └── Static files (/static/*)              (app/static/)
 ```
 
@@ -87,6 +88,8 @@ Partials must be self-contained — they cannot rely on `<script>` tags or exter
 | `app/static/kiwiki.css` | Single stylesheet, one `:root` token source, mobile breakpoints |
 | `app/static/kiwiki.js` | All UI logic: sidebar, tree state, dialogs, toasts, swipe, FAB |
 | `app/static/kiwiki-motion.bundle.js` | Built by `npm run build:motion` (Animate API entrance animations) |
+| `app/static/kiwiki-fonts.css` | Local font-face declarations |
+| `app/static/vendor/` | Vendored htmx, Toast UI, fonts and upstream license notices |
 
 The cache-busting query strings in `layout.html` (`?v=20260701-a11y`) must be bumped whenever `kiwiki.css` or `kiwiki.js` change semantically. Otherwise users still get the old version from cache and report "works after hard refresh" bugs.
 
@@ -135,11 +138,12 @@ If any layer is skipped, users see UI they cannot use (or vice versa). The `user
 |---|---|---|
 | Auth, storage, search, MCP | `tests/test_*.py` (per module) | `pytest` |
 | UI rendering regression | `tests/test_ui_file.py` | `pytest` (uses `TestClient`) |
+| Browser/responsive regression | `tests/browser_smoke.py` | Playwright Chromium |
 | Lint | All `app/` and `tests/` | `ruff check app tests` |
 | Frontend bundle | `frontend/motion/` | `npm run build:motion` |
 | Container | `Dockerfile` | `docker build -t kiwiki:test .` |
 
-UI regression tests render a partial with a logged-in `TestClient` and assert on substrings in the HTML (`openEditor(`, `kwSearchTag(`, `<main`, …). They don't yet drive a browser — add Playwright coverage if you need DOM-level guarantees.
+UI regression tests combine fast template assertions with a real Chromium smoke path. The browser gate covers mobile sidebar focus/inert behavior, zoom, stable note deep links and titles, responsive settings, and overflow. Add browser assertions whenever behavior depends on layout, focus, history, or JavaScript timing.
 
 ## Adding a New Helper
 

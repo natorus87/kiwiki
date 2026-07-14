@@ -2,19 +2,14 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>{% block title %}kiwiki{% endblock %}</title>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="icon" type="image/png" href="/static/kiwiki-icon.png">
+  <link rel="stylesheet" href="/static/kiwiki-fonts.css?v=20260713">
+  <link rel="icon" sizes="512x512" href="/static/kiwiki-icon.png">
   <link rel="apple-touch-icon" href="/static/kiwiki-icon.png">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.0/dist/fonts/geist-sans/style.css">
-  <link rel="stylesheet" href="https://uicdn.toast.com/editor/3.2.2/toastui-editor.min.css">
-  <link rel="stylesheet" href="https://uicdn.toast.com/editor/3.2.2/theme/toastui-editor-dark.css">
-  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
-  <script src="https://uicdn.toast.com/editor/3.2.2/toastui-editor-all.min.js"></script>
+  <script src="/static/vendor/htmx-1.9.12.min.js" defer></script>
+  {% block page_assets %}{% endblock %}
 
   <script>
     window.KIWIKI = {
@@ -29,7 +24,7 @@
   {% block extra_styles %}{% endblock %}
 </head>
 <body class="role-{{ user.role if user else 'none' }}">
-<script src="/static/kiwiki.js?v=20260707-tagfix"></script>
+<script src="/static/kiwiki.js?v=20260713-a11y" defer></script>
 
 <a href="#main-content" class="skip-link sr-only">Zum Inhalt springen</a>
 

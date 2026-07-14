@@ -14,12 +14,31 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
+def _clear_process_local_state() -> None:
+    """Prozesslokale Middleware-/MCP-Speicher zwischen Tests isolieren."""
+    main_mod = sys.modules.get("app.main")
+    if main_mod is not None:
+        from app.rate_limiter import RateLimitMiddleware
+
+        middleware = getattr(main_mod.app, "middleware_stack", None)
+        while middleware is not None:
+            if isinstance(middleware, RateLimitMiddleware):
+                middleware._windows.clear()
+            middleware = getattr(middleware, "app", None)
+
+    mcp_mod = sys.modules.get("app.mcp_server")
+    if mcp_mod is not None:
+        for name in ("_sse_sessions", "_oauth_clients", "_oauth_codes", "_grep_jobs", "_chunked_writes"):
+            getattr(mcp_mod, name).clear()
+
+
 @pytest.fixture(autouse=True)
 def _isolated_data_dir(monkeypatch, tmp_path: Path):
     """Setzt KIWIKI_DATA_DIR auf ein temporaeeres Verzeichnis pro Test.
 
     Wird automatisch vor jedem Test ausgefuehrt (autouse=True).
     """
+    _clear_process_local_state()
     monkeypatch.setenv("KIWIKI_DATA_DIR", str(tmp_path))
     from app.tenancy import CURRENT_USER_NS
 
@@ -39,6 +58,7 @@ def _isolated_data_dir(monkeypatch, tmp_path: Path):
     _invalidate_fm_cache()
     _invalidate_list_cache()
     yield tmp_path
+    _clear_process_local_state()
 
 
 @pytest.fixture

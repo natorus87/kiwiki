@@ -14,15 +14,14 @@ kiwiki targets **WCAG 2.2 AA** for the web UI across desktop, tablet, and mobile
 
 The header and `<aside class="sidebar">` are the only other top-level landmarks. The previously empty `<div class="header-right" aria-hidden="true">` placeholder was removed in v2.2.
 
-## File Tree (ARIA)
+## File Navigation
 
-`app/templates/partials/file_tree.html` renders a WAI-ARIA tree:
+`app/templates/partials/file_tree.html` uses native navigation, link, button and list semantics. It intentionally does not claim the WAI-ARIA tree pattern: the earlier implementation exposed `treeitem`/`group` roles without the required arrow-key, Home/End and roving-tabindex behavior.
 
-- Whole tree: `role="tree"` on `#file-tree`
-- Each row: `role="treeitem"` with `aria-level` derived from the path depth
-- Each folder row additionally carries `aria-expanded`, kept in sync by `toggleFolder()` in `kiwiki.js` (updates both the row and the inner `<button>`)
-- Child container: `role="group"` on `.subtree`
-- `#file-tree` itself has no `tabindex="0"` — only inner `<button>`s are focusable. This avoids the double Tab-stop that previously confused keyboard users.
+- Files are real `/?file=…` links and remain bookmarkable without JavaScript.
+- Folder controls retain `aria-expanded`, kept in sync by `toggleFolder()`.
+- Only actionable links, buttons and inputs enter the Tab order.
+- Enter/Space activate the focused native control; browser history is synchronized through `pushState`/`popstate`.
 
 ## Dialogs (Focus Trap)
 
@@ -37,17 +36,18 @@ The header and `<aside class="sidebar">` are the only other top-level landmarks.
 
 ## Mobile Sidebar
 
-On viewports ≤ 768 px the sidebar slides in from the left:
+On viewports ≤ 1024 px the sidebar slides in from the left:
 
 - Opening: focus jumps to the first focusable item in the sidebar
 - `Esc` closes the sidebar (in addition to backdrop tap and hamburger toggle)
 - On close, focus returns to the hamburger button
+- While closed it is `inert` and `aria-hidden="true"`, so hidden controls cannot receive keyboard or assistive-technology focus
 - Long-press on a tree item triggers the action sheet (`kwOpenMobileActionSheet`)
-- Swiping right anywhere on the content area opens the sidebar; swiping left anywhere on the open sidebar closes it (touch gestures handler in `kiwiki.js`). The handler is always bound at page load; `kwIsMobileSidebar()` gates actual tracking to viewports ≤ 768 px. Minimum swipe distance: 60 px.
+- Swiping right anywhere on the content area opens the sidebar; swiping left anywhere on the open sidebar closes it (touch gestures handler in `kiwiki.js`). The handler is always bound at page load; `kwIsMobileSidebar()` gates actual tracking to viewports ≤ 1024 px. Minimum swipe distance: 60 px.
 
 ## Touch Targets & iOS-Zoom Prevention
 
-All interactive elements on mobile must keep ≥ 44 × 44 px and ≥ 16 px font size to prevent iOS auto-zoom on focus. The mobile media query (`@media (max-width: 768px)`) in `kiwiki.css` enforces this for:
+All interactive elements on mobile must keep ≥ 44 × 44 px and form inputs use ≥ 16 px font size to prevent iOS auto-zoom on focus. Pinch zoom remains enabled. The mobile media queries in `kiwiki.css` enforce this for:
 
 | Element | Before | After |
 |---|---|---|
@@ -82,7 +82,7 @@ A single `@media (prefers-reduced-motion: reduce)` block at the top of `kiwiki.c
 
 ## Settings Responsive Grid
 
-`settings.html` defines a 4-column user-management form for > 1024 px screens. A new `@media (max-width: 1024px)` rule collapses to 2 columns and lets the submit action span the full width — fixing the cramped tablet layout.
+`settings.html` defines a 4-column user-management form for > 1024 px screens, two columns on tablets, and exactly one explicit column below 760 px. Every child resets to the full grid width so no implicit second column can appear.
 
 ## CSS Tokens
 
@@ -91,14 +91,14 @@ A single `@media (prefers-reduced-motion: reduce)` block at the top of `kiwiki.c
 ## Verification Checklist for UI Pull Requests
 
 - [ ] Keyboard-only pass: Can you reach every action? Is the visible focus order logical?
-- [ ] Screen reader pass (VoiceOver/NVDA): Are landmarks, tree roles, and toasts announced?
+- [ ] Screen reader pass (VoiceOver/NVDA): Are landmarks, navigation controls, and toasts announced?
 - [ ] Mobile viewport (375 px): No horizontal scroll, no sub-44 px touch targets, no iOS focus zoom
 - [ ] Reduced motion: Animations stop when `prefers-reduced-motion` is set
 - [ ] Contrast: All text ≥ 4.5 : 1 (use `--md-on-surface-v` for muted text, not `--md-outline`)
 - [ ] Skip-Link: Visible on first Tab, jumps focus to main content
 - [ ] New dialog: Focus trap works, Esc closes, focus returns to trigger
 - [ ] New loader: `role="status"` set, content announced when swapped
-- [ ] `pytest`, `ruff check app tests`, and `npm run build:motion` are green
+- [ ] `pytest`, `ruff check app tests`, `python tests/browser_smoke.py`, and `npm run build:motion` are green
 
 ## Related Files
 
@@ -110,7 +110,7 @@ A single `@media (prefers-reduced-motion: reduce)` block at the top of `kiwiki.c
 | `app/templates/settings.html` | User management, responsive grid |
 | `app/templates/login.html` | Standalone login (self-contained CSS) |
 | `app/templates/partials/file_view.html` | Note view: breadcrumb, tags, actions |
-| `app/templates/partials/file_tree.html` | ARIA tree rendering |
+| `app/templates/partials/file_tree.html` | Native hierarchical file navigation |
 | `app/templates/partials/search_results.html` | Search result list, empty state |
 | `app/static/kiwiki.css` | Styles, single `:root`, breakpoints |
 | `app/static/kiwiki.js` | Sidebar, dialogs, toasts, tree state, focus trap |

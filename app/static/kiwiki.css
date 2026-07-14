@@ -318,7 +318,10 @@ header::before {
 }
 .hamburger:hover { background: none; color: var(--md-on-surface-v); }
 .hamburger:focus { background: none; color: var(--md-on-surface-v); outline: none; }
-.hamburger:focus-visible { outline: none; }
+.hamburger:focus-visible {
+  outline: 3px solid rgba(184, 223, 120, 0.58);
+  outline-offset: -4px;
+}
 .hamburger svg { width: 23px; height: 23px; }
 
 /* Hamburger → X Animation */
@@ -429,6 +432,7 @@ header::before {
   user-select: none; border-radius: var(--radius-sm);
   transition: color var(--t), background var(--t);
   position: relative;
+  text-decoration: none;
 }
 .tree-row:hover .file-item { color: var(--md-on-surface); }
 
@@ -661,6 +665,7 @@ body.role-read  .needs-write { display: none !important; }
   font-family: var(--font-body);
   text-align: left;
   transition: background var(--t);
+  text-decoration: none;
 }
 .search-result:last-child { border-bottom: none; }
 .search-result:hover,
@@ -1371,7 +1376,7 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
   /* Editor: bessere Mobile-Leiste */
   .editor-bar {
     position: sticky;
-    top: 58px;
+    top: 0;
     z-index: 50;
   }
 
@@ -2230,6 +2235,7 @@ a.breadcrumb-item:hover { color: var(--md-primary); background: var(--md-primary
   cursor: pointer;
   text-align: left;
   transition: background var(--t), color var(--t);
+  text-decoration: none;
 }
 .recent-item:hover { background: var(--md-surface-c); color: var(--md-on-surface); }
 .recent-item svg { color: var(--md-outline); flex-shrink: 0; }

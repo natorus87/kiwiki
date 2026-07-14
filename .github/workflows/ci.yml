@@ -28,11 +28,16 @@ jobs:
       - name: Run ruff
         run: ruff check app tests
 
-      - name: Run pytest
-        run: pytest -q
+      - name: Run pytest with coverage
+        run: |
+          coverage run -m pytest -q
+          coverage report --fail-under=60
+
+      - name: Audit Python dependencies
+        run: pip-audit -r requirements.txt
 
   frontend:
-    name: Frontend build
+    name: Frontend build and browser checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -44,11 +49,29 @@ jobs:
           node-version: "22"
           cache: "npm"
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements-dev.txt
+
       - name: Install dependencies
         run: npm ci
 
       - name: Build motion bundle
         run: npm run build:motion
+
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run browser smoke tests
+        run: python tests/browser_smoke.py
 
   docker:
     name: Docker build
@@ -64,5 +87,25 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          load: true
           push: false
           tags: kiwiki:test
+
+      - name: Verify container health
+        run: |
+          docker run -d --name kiwiki-test -p 127.0.0.1:8080:8080 \
+            -e KIWIKI_USERS=admin:ci-test-key-1234567890:admin \
+            -e KIWIKI_OAUTH_TOKEN_SECRET=ci-test-oauth-secret-1234567890 \
+            kiwiki:test
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/readyz; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs kiwiki-test
+          exit 1
+
+      - name: Stop test container
+        if: always()
+        run: docker rm -f kiwiki-test || true

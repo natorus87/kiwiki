@@ -34,8 +34,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 import markdown as md_lib
 import nh3
 
-from .auth import ROLE_HIERARCHY, parse_users
+from .auth import ROLE_HIERARCHY, _lookup_api_key, parse_users
 from .models import User
+from .mcp_git import run_git as _run_git
+from .mcp_git import validate_git_path as _validate_git_path
+from .mcp_git import validate_git_revision as _validate_git_revision
 from .search import deindex_file, get_db, index_file, init_db, reindex_all, search as fts_search
 from .storage import (
     _read_frontmatter_only,
@@ -55,7 +58,7 @@ from .storage import (
 )
 from .tenancy import ensure_user_workspace, is_valid_username, set_user_ns, user_root
 
-from .constants import NH3_ATTRS, NH3_TAGS
+from .constants import APP_VERSION, NH3_ATTRS, NH3_TAGS
 
 router = APIRouter()
 logger = logging.getLogger("kiwiki.mcp")
@@ -70,6 +73,8 @@ _BASE_URL = os.getenv("KIWIKI_BASE_URL", "").rstrip("/")
 # In-memory sessions for HTTP+SSE transport: session_id -> (queue, user)
 # User is captured at GET /mcp/sse so POST /mcp/messages works without re-sending auth.
 _sse_sessions: dict[str, tuple[asyncio.Queue, "User | None"]] = {}
+_SSE_MAX_SESSIONS = int(os.getenv("KIWIKI_MCP_MAX_SSE_SESSIONS", "128"))
+_SSE_QUEUE_MAX_MESSAGES = int(os.getenv("KIWIKI_MCP_SSE_QUEUE_MAX_MESSAGES", "100"))
 
 # Minimal dynamic client registration and authorization-code storage.
 # This keeps the legacy API-key-as-bearer-token behavior, but no longer exposes
@@ -77,7 +82,7 @@ _sse_sessions: dict[str, tuple[asyncio.Queue, "User | None"]] = {}
 _oauth_clients: dict[str, dict] = {}
 _oauth_codes: dict[str, dict] = {}
 _OAUTH_CODE_TTL_SECONDS = 300
-_oauth_tokens: dict[str, dict] = {}
+_OAUTH_MAX_CODES = int(os.getenv("KIWIKI_OAUTH_MAX_CODES", "256"))
 _OAUTH_TOKEN_TTL_SECONDS = int(os.getenv("KIWIKI_OAUTH_TOKEN_TTL_SECONDS", "86400"))
 _OAUTH_REFRESH_TOKEN_TTL_SECONDS = int(os.getenv("KIWIKI_OAUTH_REFRESH_TOKEN_TTL_SECONDS", "2592000"))
 _OAUTH_FORMAT_PREFIX = "kiwiki1"
@@ -98,18 +103,26 @@ _INITIALIZE_CACHE_TTL = 60  # seconds
 _MCP_UPLOAD_TTL_SECONDS = int(os.getenv("KIWIKI_MCP_UPLOAD_TTL_SECONDS", "3600"))
 _MCP_MAX_UPLOAD_BYTES = int(os.getenv("KIWIKI_MCP_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 _MCP_MAX_UPLOAD_CHUNKS = int(os.getenv("KIWIKI_MCP_MAX_UPLOAD_CHUNKS", "1000"))
+_MCP_MAX_STAGED_UPLOADS = int(os.getenv("KIWIKI_MCP_MAX_STAGED_UPLOADS", "32"))
+_MCP_MAX_STAGED_BYTES = int(os.getenv("KIWIKI_MCP_MAX_STAGED_BYTES", str(50 * 1024 * 1024)))
 _chunked_writes: dict[str, dict] = {}
 
 # B6: Agent tracker — logs MCP tool calls to a JSONL file per namespace.
 _agent_log_lock = threading.Lock()
 _AGENT_LOG_MAX_BYTES = 5 * 1024 * 1024  # 5 MB max, then rotate
 _AGENT_LOG_FILE = ".kiwiki/agent_log.jsonl"
+_AGENT_LOG_SAFE_ARG_KEYS = {
+    "path", "paths", "src", "dst", "folder", "scope", "mode", "format",
+    "limit", "offset", "chunk_index", "total_chunks", "finalize", "template_type",
+}
 
 # E2: Async grep jobs — background grep with polling.
 _grep_jobs: dict[str, dict] = {}
 _grep_job_counter = 0
 _GREP_JOBS_MAX = 50
 _GREP_JOB_TTL = 600  # 10 minutes
+_MCP_MAX_JSONRPC_BATCH = 25
+_MCP_MAX_LIST_ITEMS = 50
 
 
 def _prune_grep_jobs() -> None:
@@ -141,7 +154,9 @@ def _log_agent_call(user: "User | None", tool: str, args: dict, success: bool, e
             "ts": time.time(),
             "user": ns,
             "tool": tool,
-            "args": {k: v for k, v in args.items() if k != "content"},  # skip large content
+            # Audit only structural metadata. Wiki/search/replacement content can
+            # contain credentials or personal information and must not be copied.
+            "args": {k: v for k, v in args.items() if k in _AGENT_LOG_SAFE_ARG_KEYS},
             "success": success,
         }
         if error:
@@ -153,7 +168,10 @@ def _log_agent_call(user: "User | None", tool: str, args: dict, success: bool, e
                 if rotated.exists():
                     rotated.unlink()
                 log_path.rename(rotated)
-            with open(log_path, "a", encoding="utf-8") as f:
+                rotated.chmod(0o600)
+            fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            os.chmod(log_path, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception:
         pass
@@ -211,6 +229,11 @@ def _make_oauth_token(api_key: str, token_type: str, ttl_seconds: int, client_id
 
 
 def _api_key_from_signed_token(token: str, expected_type: str = "access") -> str | None:
+    record = _signed_token_record(token, expected_type)
+    return record[0] if record is not None else None
+
+
+def _signed_token_record(token: str, expected_type: str) -> tuple[str, dict] | None:
     try:
         prefix, payload_b64, signature = token.split(".", 2)
         if prefix != _OAUTH_FORMAT_PREFIX:
@@ -228,8 +251,11 @@ def _api_key_from_signed_token(token: str, expected_type: str = "access") -> str
             continue
         expected_sig = _sign_token(payload_b64, api_key)
         if hmac.compare_digest(signature, expected_sig):
-            return api_key
+            return api_key, payload
     return None
+
+
+_OAUTH_NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
 
 def _unauthorized(request: Request):
@@ -329,6 +355,13 @@ def _prune_oauth_clients() -> None:
         _oauth_clients.pop(client_id, None)
 
 
+def _prune_oauth_codes() -> None:
+    now = time.time()
+    expired = [code for code, record in _oauth_codes.items() if record.get("expires_at", 0) < now]
+    for code in expired:
+        _oauth_codes.pop(code, None)
+
+
 def _pkce_s256(verifier: str) -> str:
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
@@ -375,6 +408,10 @@ async def oauth_authorize(request: Request):
     if resource and resource != f"{_base_url(request)}/mcp":
         return JSONResponse({"error": "invalid_target", "error_description": "Unknown resource"}, status_code=400)
 
+    registered_client = _oauth_clients.get(client_id, {})
+    consent_client = str(registered_client.get("client_name") or client_id or "Unbekannter MCP-Client")
+    consent_resource = resource or f"{_base_url(request)}/mcp"
+
     return HTMLResponse(
         f"""<!DOCTYPE html>
 <html lang="de">
@@ -391,11 +428,15 @@ async def oauth_authorize(request: Request):
     button {{ margin-top: 1rem; width: 100%; padding: 0.7rem; background: #1a1a1a; color: #fff; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }}
     button:hover {{ background: #333; }}
     .error {{ color: #c00; font-size: 0.85rem; margin-top: 0.5rem; }}
+    .consent {{ background: #f4f4f4; border-radius: 6px; padding: 0.75rem; overflow-wrap: anywhere; }}
   </style>
 </head>
 <body>
   <h1>kiwiki</h1>
   <p>Gib deinen API-Key ein, um den MCP-Zugriff zu autorisieren.</p>
+  <p class="consent"><strong>{html.escape(consent_client)}</strong> erhält Zugriff auf
+    <code>{html.escape(consent_resource)}</code> und darf dein Wiki lesen und entsprechend deiner Rolle ändern.
+    Mit „Autorisieren“ stimmst du diesem Zugriff zu.</p>
   {"<p class='error'>Ungültiger API-Key. Bitte erneut versuchen.</p>" if error else ""}
   <form method="POST" action="/oauth/authorize">
     <input type="hidden" name="redirect_uri" value="{html.escape(redirect_uri, quote=True)}">
@@ -426,7 +467,7 @@ async def oauth_authorize_submit(request: Request):
     resource = form.get("resource", "")
 
     users_map = parse_users()
-    if not apikey or apikey not in users_map:
+    if not apikey or _lookup_api_key(users_map, apikey) is None:
         # Redirect back to form with error
         params = urlencode({
             "redirect_uri": redirect_uri,
@@ -449,6 +490,13 @@ async def oauth_authorize_submit(request: Request):
     if resource and resource != f"{_base_url(request)}/mcp":
         return JSONResponse({"error": "invalid_target", "error_description": "Unknown resource"}, status_code=400)
 
+    _prune_oauth_codes()
+    if len(_oauth_codes) >= _OAUTH_MAX_CODES:
+        return JSONResponse(
+            {"error": "temporarily_unavailable", "error_description": "Too many pending authorization requests"},
+            status_code=503,
+            headers=_OAUTH_NO_STORE_HEADERS,
+        )
     code = secrets.token_urlsafe(32)
     _oauth_codes[code] = {
         "api_key": apikey,
@@ -491,40 +539,53 @@ async def oauth_token(request: Request):
         refresh_token = body.get("refresh_token", "")
 
     if grant_type == "refresh_token":
-        api_key = _api_key_from_signed_token(refresh_token, expected_type="refresh")
-        if not api_key:
-            return JSONResponse({"error": "invalid_grant"}, status_code=400)
-        access_token = _make_oauth_token(api_key, "access", _OAUTH_TOKEN_TTL_SECONDS, client_id=client_id, resource=resource)
+        token_record = _signed_token_record(refresh_token, expected_type="refresh")
+        if token_record is None:
+            return JSONResponse({"error": "invalid_grant"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
+        api_key, token_payload = token_record
+        bound_client = str(token_payload.get("cid", ""))
+        bound_resource = str(token_payload.get("res", ""))
+        if bound_client and client_id != bound_client:
+            return JSONResponse({"error": "invalid_grant"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
+        if bound_resource and resource != bound_resource:
+            return JSONResponse({"error": "invalid_target"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
+        access_token = _make_oauth_token(
+            api_key,
+            "access",
+            _OAUTH_TOKEN_TTL_SECONDS,
+            client_id=bound_client,
+            resource=bound_resource,
+        )
         return JSONResponse({
             "access_token": access_token,
             "token_type": _OAUTH_BEARER_VALUE,
             "expires_in": _OAUTH_TOKEN_TTL_SECONDS,
             "scope": "mcp",
-        })
+        }, headers=_OAUTH_NO_STORE_HEADERS)
 
     if grant_type != "authorization_code":
-        return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
+        return JSONResponse({"error": "unsupported_grant_type"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
 
     record = _oauth_codes.pop(code, None) if code else None
     if not record or record["expires_at"] < time.time():
-        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+        return JSONResponse({"error": "invalid_grant"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
 
     if record["client_id"] and client_id and client_id != record["client_id"]:
-        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+        return JSONResponse({"error": "invalid_grant"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
     if redirect_uri and redirect_uri != record["redirect_uri"]:
-        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+        return JSONResponse({"error": "invalid_grant"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
     if resource and record.get("resource") and resource != record["resource"]:
-        return JSONResponse({"error": "invalid_target"}, status_code=400)
+        return JSONResponse({"error": "invalid_target"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
 
     code_challenge = record.get("code_challenge", "")
     if record.get("code_challenge_method") != "S256" or not code_challenge or not code_verifier:
-        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+        return JSONResponse({"error": "invalid_grant"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
     if not secrets.compare_digest(_pkce_s256(code_verifier), code_challenge):
-        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+        return JSONResponse({"error": "invalid_grant"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
 
     api_key = record["api_key"]
     if api_key not in parse_users():
-        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+        return JSONResponse({"error": "invalid_grant"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
 
     token_resource = resource or record.get("resource", "")
     access_token = _make_oauth_token(api_key, "access", _OAUTH_TOKEN_TTL_SECONDS, client_id=client_id, resource=token_resource)
@@ -535,7 +596,7 @@ async def oauth_token(request: Request):
         "token_type": _OAUTH_BEARER_VALUE,
         "expires_in": _OAUTH_TOKEN_TTL_SECONDS,
         "scope": "mcp",
-    })
+    }, headers=_OAUTH_NO_STORE_HEADERS)
 
 
 @router.post("/oauth/register")
@@ -871,6 +932,7 @@ TOOLS = [
                 "context_lines":  {"type": "integer", "description": "Lines of context before/after each match (default: 2)"},
                 "case_sensitive": {"type": "boolean", "description": "Case-sensitive matching (default: false)"},
                 "max_results":    {"type": "integer", "description": "Maximum number of matches to return (default: 100)"},
+                "background":     {"type": "boolean", "description": "Run asynchronously and return a job_id (default: false)"},
             },
             "required": ["pattern"],
         },
@@ -1914,18 +1976,12 @@ def _user_from_request(request: Request) -> User | None:
     if not auth.startswith("Bearer "):
         return None
     bearer = auth[7:]
-    token_record = _oauth_tokens.get(bearer)
-    if token_record:
-        if token_record["expires_at"] < time.time():
-            _oauth_tokens.pop(bearer, None)
-            return None
-        api_key = token_record["api_key"]
-    else:
-        api_key = _api_key_from_signed_token(bearer, expected_type="access") or bearer
+    api_key = _api_key_from_signed_token(bearer, expected_type="access") or bearer
     users_map = parse_users()
-    if api_key not in users_map:
+    match = _lookup_api_key(users_map, api_key)
+    if match is None:
         return None
-    username, role = users_map[api_key]
+    username, role = match
     return User(username=username, role=role)
 
 
@@ -1981,7 +2037,7 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
                 "resources": {"listChanged": False},  # B1
                 "prompts": {},  # B5
             },
-            "serverInfo": {"name": "kiwiki", "version": "0.1.0"},
+            "serverInfo": {"name": "kiwiki", "version": APP_VERSION},
             "instructions": (
                 "This is kiwiki — a Markdown-based personal wiki. "
                 "Follow these rules strictly:\n"
@@ -2226,20 +2282,20 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
                 "structuredContent": json.loads(text),
             })
         except PermissionError as exc:
-            _log_agent_call(user, tool_name, arguments, success=False, error=str(exc))
+            _log_agent_call(user, tool_name, arguments, success=False, error=type(exc).__name__)
             return _rpc_ok(req_id, {
                 "content": [{"type": "text", "text": f"Permission denied: {exc}"}],
                 "isError": True,
             })
         except (FileNotFoundError, ValueError) as exc:
-            _log_agent_call(user, tool_name, arguments, success=False, error=str(exc))
+            _log_agent_call(user, tool_name, arguments, success=False, error=type(exc).__name__)
             return _rpc_ok(req_id, {
                 "content": [{"type": "text", "text": str(exc)}],
                 "isError": True,
             })
         except Exception as exc:
             logger.exception("MCP tool call failed: %s", tool_name)
-            _log_agent_call(user, tool_name, arguments, success=False, error=str(exc)[:200])
+            _log_agent_call(user, tool_name, arguments, success=False, error=type(exc).__name__)
             return _rpc_ok(req_id, {
                 "content": [{"type": "text", "text": "Internal error. Check server logs for details."}],
                 "isError": True,
@@ -2253,6 +2309,8 @@ async def _handle_payload(body, user: User | None) -> dict | list | None:
     if isinstance(body, list):
         if not body:
             return _rpc_err(None, -32600, "Invalid Request")
+        if len(body) > _MCP_MAX_JSONRPC_BATCH:
+            return _rpc_err(None, -32600, f"JSON-RPC batch exceeds {_MCP_MAX_JSONRPC_BATCH} messages")
         responses = []
         for item in body:
             if not isinstance(item, dict):
@@ -2350,8 +2408,10 @@ async def mcp_sse(request: Request):
     if user is None:
         return _unauthorized(request)
 
+    if len(_sse_sessions) >= _SSE_MAX_SESSIONS:
+        return JSONResponse({"error": "Too many active SSE sessions"}, status_code=503)
     session_id = str(uuid.uuid4())
-    queue: asyncio.Queue = asyncio.Queue()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=_SSE_QUEUE_MAX_MESSAGES)
     _sse_sessions[session_id] = (queue, user)
 
     base_url = _BASE_URL or str(request.base_url).rstrip("/")
@@ -2399,11 +2459,17 @@ async def mcp_messages(request: Request, sessionId: str) -> JSONResponse:
     except Exception:
         return JSONResponse({"error": "Parse error"}, status_code=400)
 
-    # Prefer auth from POST header; fall back to user captured at SSE handshake
-    user = _user_from_request(request) or session_user
+    user = _user_from_request(request)
+    if user is None:
+        return _unauthorized(request)
+    if session_user is None or user.username != session_user.username:
+        return JSONResponse({"error": "Session user mismatch"}, status_code=403)
     response = await _handle_payload(body, user)
     if response is not None:
-        await queue.put(response)
+        try:
+            queue.put_nowait(response)
+        except asyncio.QueueFull:
+            return JSONResponse({"error": "SSE response queue is full"}, status_code=429)
 
     return JSONResponse({}, status_code=202)
 
@@ -2567,6 +2633,8 @@ def _stage_chunked_write(args: dict, user: User | None) -> dict:
 
     _prune_chunked_writes()
     key = _chunk_key(user, str(upload_id))
+    if key not in _chunked_writes and len(_chunked_writes) >= _MCP_MAX_STAGED_UPLOADS:
+        raise ValueError(f"Too many staged uploads (max {_MCP_MAX_STAGED_UPLOADS})")
     now = time.time()
     state = _chunked_writes.setdefault(
         key,
@@ -2599,6 +2667,14 @@ def _stage_chunked_write(args: dict, user: User | None) -> dict:
     if received_bytes > _MCP_MAX_UPLOAD_BYTES:
         _chunked_writes.pop(key, None)
         raise ValueError(f"Staged upload exceeds max size {_MCP_MAX_UPLOAD_BYTES} bytes")
+    total_staged_bytes = sum(
+        len(part.encode("utf-8"))
+        for upload in _chunked_writes.values()
+        for part in upload.get("chunks", {}).values()
+    )
+    if total_staged_bytes > _MCP_MAX_STAGED_BYTES:
+        _chunked_writes.pop(key, None)
+        raise ValueError(f"Total staged uploads exceed max size {_MCP_MAX_STAGED_BYTES} bytes")
 
     expected_total = state.get("total_chunks")
     if bool(args.get("finalize")):
@@ -2680,6 +2756,14 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         if ROLE_HIERARCHY.get(user.role, -1) < ROLE_HIERARCHY["admin"]:
             raise PermissionError("Admin permission required")
 
+    def _bounded_list(key: str, *, required: bool = False) -> list:
+        value = args.get(key, [])
+        if not isinstance(value, list) or (required and not value):
+            raise ValueError(f"Missing required argument: {key}")
+        if len(value) > _MCP_MAX_LIST_ITEMS:
+            raise ValueError(f"Too many {key} (max {_MCP_MAX_LIST_ITEMS})")
+        return value
+
     if name == "read_index":
         _need_read()
         out = {}
@@ -2724,9 +2808,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
 
     if name == "write_many":
         _need_write()
-        files = args.get("files", [])
-        if not isinstance(files, list) or not files:
-            raise ValueError("Missing required argument: files")
+        files = _bounded_list("files", required=True)
         results = []
         for item in files:
             path = str(item.get("path", ""))
@@ -2797,7 +2879,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
     if name == "read_many":
         _need_read()
         result = {}
-        for path in args.get("paths", []):
+        for path in _bounded_list("paths", required=True):
             try:
                 fc = read_file(path)
                 result[path] = {"frontmatter": fc.frontmatter, "content": fc.content}
@@ -2859,7 +2941,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
     if name == "sort":
         _need_write()
         results = []
-        for m in args.get("moves", []):
+        for m in _bounded_list("moves", required=True):
             src, dst = m["src"], m["dst"]
             try:
                 move_file(src, dst)
@@ -2881,6 +2963,10 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         scope = args.get("path", ".")
         context_n = int(args.get("context_lines", 2))
         max_results = int(args.get("max_results", 100))
+        if not 0 <= context_n <= 20:
+            raise ValueError("context_lines must be between 0 and 20")
+        if not 1 <= max_results <= 1000:
+            raise ValueError("max_results must be between 1 and 1000")
         flags = 0 if args.get("case_sensitive", False) else re.IGNORECASE
 
         # --- ReDoS-Hardening ---------------------------------------------
@@ -2969,22 +3055,38 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                         return out[:max_results]
             return out
 
-        try:
-            matches = await asyncio.wait_for(_scan_all(), timeout=GREP_TIMEOUT_S)
-        except asyncio.TimeoutError:
-            return json.dumps(
-                {"error": "Grep aborted: exceeded global timeout", "truncated": True},
-                ensure_ascii=False, indent=2,
-            )
+        async def _run_scan() -> dict:
+            try:
+                matches = await asyncio.wait_for(_scan_all(), timeout=GREP_TIMEOUT_S)
+                return {
+                    "matches": matches,
+                    "truncated": len(matches) >= max_results,
+                    "total_shown": len(matches),
+                }
+            except asyncio.TimeoutError:
+                return {"error": "Grep aborted: exceeded global timeout", "truncated": True}
 
-        return json.dumps(
-            {
-                "matches": matches,
-                "truncated": len(matches) >= max_results,
-                "total_shown": len(matches),
-            },
-            ensure_ascii=False, indent=2,
-        )
+        if args.get("background", False):
+            _prune_grep_jobs()
+            if len(_grep_jobs) >= _GREP_JOBS_MAX:
+                raise ValueError("Too many grep jobs; retry after completed jobs expire")
+            job_id = secrets.token_urlsafe(12)
+            _grep_jobs[job_id] = {"status": "running", "created_at": time.time(), "result": None}
+
+            async def _finish_background_scan() -> None:
+                try:
+                    _grep_jobs[job_id]["result"] = await _run_scan()
+                    _grep_jobs[job_id]["status"] = "completed"
+                except Exception as exc:
+                    logger.exception("Background grep job %s failed", job_id)
+                    _grep_jobs[job_id]["result"] = {"error": type(exc).__name__}
+                    _grep_jobs[job_id]["status"] = "completed"
+
+            asyncio.create_task(_finish_background_scan())
+            return json.dumps({"status": "running", "job_id": job_id}, ensure_ascii=False)
+
+        result = await _run_scan()
+        return json.dumps(result, ensure_ascii=False, indent=2)
 
     if name == "find":
         _need_read()
@@ -3112,9 +3214,9 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         paths = args.get("paths") or ([args["path"]] if args.get("path") else [])
         if not paths:
             raise ValueError("Missing required argument: path or paths")
-        replacements = args.get("replacements", [])
-        if not replacements:
-            raise ValueError("Missing required argument: replacements")
+        if not isinstance(paths, list) or len(paths) > _MCP_MAX_LIST_ITEMS:
+            raise ValueError(f"Too many paths (max {_MCP_MAX_LIST_ITEMS})")
+        replacements = _bounded_list("replacements", required=True)
         results = []
         total = 0
         for rel in paths:
@@ -3123,6 +3225,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                 raise FileNotFoundError(f"File not found: {rel!r}")
             if not filepath.is_file() or not rel.endswith(".md"):
                 raise ValueError(f"Not a markdown file: {rel!r}")
+            expected_revision = filepath.stat().st_mtime_ns
             text = filepath.read_text(encoding="utf-8")
             changed = text
             count = 0
@@ -3134,7 +3237,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                     changed = changed.replace(old_str, new_str)
                     count += occurrences
             if changed != text:
-                filepath.write_text(changed, encoding="utf-8")
+                write_file(rel, changed, expected_revision=expected_revision)
                 _index_markdown(rel)
             total += count
             results.append({"path": rel, "replacements": count, "changed": changed != text})
@@ -3260,38 +3363,39 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         init_db()
         with get_db() as conn:
             indexed_count = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
-            database = conn.execute("PRAGMA database_list").fetchone()[2]
-        return json.dumps({"markdown_files": markdown_count, "indexed_files": indexed_count, "database": database}, ensure_ascii=False, indent=2)
+        return json.dumps({"markdown_files": markdown_count, "indexed_files": indexed_count, "database": ".kiwiki/index.sqlite"}, ensure_ascii=False, indent=2)
 
     if name == "whoami":
         _need_read()
-        return json.dumps({"username": user.username, "role": user.role, "workspace": str(user_root())}, ensure_ascii=False, indent=2)
+        return json.dumps({"username": user.username, "role": user.role, "workspace": user.username}, ensure_ascii=False, indent=2)
 
     if name == "git_commit":
         _need_write()
-        import subprocess
-        message = args["message"]
+        message = str(args["message"]).strip()
+        if not message or len(message) > 256 or "\n" in message or "\r" in message:
+            raise ValueError("Commit message must be one line with 1-256 characters")
         root = user_root()
-        subprocess.run(["git", "add", "-A"], cwd=root, capture_output=True, check=True)
-        result = subprocess.run(["git", "commit", "-m", message], cwd=root, capture_output=True, text=True)
-        if result.returncode != 0 and "nothing to commit" in result.stdout:
+        # Only wiki source files belong in history. Internal SQLite/audit files
+        # under .kiwiki must never be staged by this tool.
+        _run_git(root, ["add", "-A", "--", "*.md"])
+        result = _run_git(root, ["commit", "-m", message], check=False)
+        combined = f"{result.stdout}\n{result.stderr}".lower()
+        if result.returncode != 0 and ("nothing to commit" in combined or "no changes added" in combined):
             return json.dumps({"commit_hash": "", "message": "No changes to commit", "files_changed": 0}, ensure_ascii=False)
-        hash_result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise ValueError((result.stderr or result.stdout or "git commit failed").strip()[:300])
+        hash_result = _run_git(root, ["rev-parse", "HEAD"])
         commit_hash = hash_result.stdout.strip()
-        diff_result = subprocess.run(["git", "diff", "--stat", "HEAD~1..HEAD"], cwd=root, capture_output=True, text=True)
-        files_changed = len(diff_result.stdout.strip().splitlines()) if diff_result.stdout.strip() else 0
+        diff_result = _run_git(root, ["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", "HEAD"])
+        files_changed = len([line for line in diff_result.stdout.splitlines() if line.strip()])
         return json.dumps({"commit_hash": commit_hash, "message": message, "files_changed": files_changed}, ensure_ascii=False)
 
     if name == "file_history":
         _need_read()
-        import subprocess
-        path = args["path"]
-        limit = int(args.get("limit", 10))
+        path = _validate_git_path(args["path"])
+        limit = max(1, min(int(args.get("limit", 10)), 100))
         root = user_root()
-        result = subprocess.run(
-            ["git", "log", f"-{limit}", "--pretty=format:%H|%aI|%an|%s", "--", path],
-            cwd=root, capture_output=True, text=True,
-        )
+        result = _run_git(root, ["log", f"-{limit}", "--pretty=format:%H|%aI|%an|%s", "--", path])
         history = []
         for line in result.stdout.strip().splitlines():
             if "|" in line:
@@ -3302,19 +3406,18 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
 
     if name == "diff":
         _need_read()
-        import subprocess
-        path = args.get("path")
-        from_commit = args.get("from_commit", "HEAD~1")
-        to_commit = args.get("to_commit", "HEAD")
+        path = _validate_git_path(args["path"]) if args.get("path") else None
+        from_commit = _validate_git_revision(args.get("from_commit", "HEAD~1"))
+        to_commit = _validate_git_revision(args.get("to_commit", "HEAD"))
         root = user_root()
         cmd = ["git", "diff", f"{from_commit}..{to_commit}"]
         if path:
-            cmd.append(path)
-        result = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
-        stat_result = subprocess.run(
-            ["git", "diff", "--stat", f"{from_commit}..{to_commit}"] + ([path] if path else []),
-            cwd=root, capture_output=True, text=True,
-        )
+            cmd.extend(["--", path])
+        result = _run_git(root, cmd[1:])
+        stat_args = ["diff", "--stat", f"{from_commit}..{to_commit}"]
+        if path:
+            stat_args.extend(["--", path])
+        stat_result = _run_git(root, stat_args)
         files_changed = len(stat_result.stdout.strip().splitlines()) if stat_result.stdout.strip() else 0
         return json.dumps({"diff": result.stdout, "files_changed": files_changed}, ensure_ascii=False, indent=2)
 
@@ -3489,6 +3592,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         for md_file in _markdown_paths("."):
             rel = _rel_path(md_file)
             try:
+                expected_revision = md_file.stat().st_mtime_ns
                 text = md_file.read_text(encoding="utf-8")
             except Exception:
                 continue
@@ -3514,15 +3618,15 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                         continue
                     new_text = new_text.replace(link, new_link, 1)
             if new_text != text:
-                md_file.write_text(new_text, encoding="utf-8")
+                write_file(rel, new_text, expected_revision=expected_revision)
                 _index_markdown(rel)
                 links_updated += 1
         return json.dumps({"old_path": old_path, "new_path": new_path, "links_updated": links_updated, "status": "renamed"}, ensure_ascii=False)
 
     if name == "batch_tag":
         _need_write()
-        files = args["files"]
-        tags = args["tags"]
+        files = _bounded_list("files", required=True)
+        tags = _bounded_list("tags", required=True)
         mode = args.get("mode", "merge")
         updated = []
         for path in files:
@@ -3666,6 +3770,7 @@ nav{{margin-bottom:2rem}}section{{margin-bottom:3rem;border-bottom:1px solid #ee
     # ── E2: Grep Status ──────────────────────────────────────────────────────
     if name == "grep_status":
         _need_read()
+        _prune_grep_jobs()
         job_id = args.get("job_id", "")
         job = _grep_jobs.get(job_id)
         if job is None:

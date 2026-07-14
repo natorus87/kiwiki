@@ -1,8 +1,8 @@
 # Image Konfiguration
 image:
   repository: natorus87/kiwiki
-  pullPolicy: Always
-  tag: "latest"
+  pullPolicy: IfNotPresent
+  tag: "3.0.0"
 
 # Deployment
 replicaCount: 1
@@ -29,10 +29,9 @@ traefikRoute:
     entrypoint: websecure
     hosts:
       - kiwiki.local
-  # CORS-Middleware — Pflicht für MCP-Clients (ChatGPT, Claude Desktop, etc.)
+  # CORS-Middleware — nur für Browser-Clients mit abweichender Origin nötig
   cors:
-    allowOrigins:
-      - "*"
+    allowOrigins: []
   # SSE-Einstellungen für /mcp/sse (MCP-Stream-Transport)
   sse:
     # -1 = sofortiges Flushen jedes Chunks (Pflicht für SSE)
@@ -47,8 +46,8 @@ ingress:
   annotations: {}
   # CORS + SSE-Einstellungen — werden als nginx-Annotations gerendert
   cors:
-    enabled: true
-    allowOrigin: "*"
+    enabled: false
+    allowOrigin: ""
     allowMethods: "GET, POST, OPTIONS"
     allowHeaders: "Authorization, Content-Type, Cache-Control"
     maxAge: "86400"
@@ -76,10 +75,12 @@ podSecurityContext:
   runAsUser: 1000
   runAsGroup: 1000
   fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
 
 containerSecurityContext:
   allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: false
+  readOnlyRootFilesystem: true
   capabilities:
     drop:
       - ALL
@@ -90,20 +91,22 @@ persistence:
   size: 1Gi
   accessMode: ReadWriteOnce
   storageClass: ""
-  # existingClaim: ""  # Bestehenden PVC verwenden
+  existingClaim: ""
 
 # Umgebungsvariablen
 env:
   KIWIKI_DATA_DIR: "/data"
   KIWIKI_BASE_URL: "https://kiwiki.example.com"  # Pflicht: auf öffentliche URL setzen
   KIWIKI_TRUST_PROXY: "true"  # auf "false" fuer lokale Entwicklung ohne Proxy
-  KIWIKI_CORS_ORIGINS: "https://kiwiki.example.com"  # "" = Default Warnung; "*", explizite Origins empfohlen
+  KIWIKI_CORS_ORIGINS: ""  # Leer deaktiviert CORS; sonst explizite Origins kommagetrennt setzen
   KIWIKI_RATE_LIMIT_ENABLED: "true"  # Rate Limiting aktivieren (empfohlen)
+
+existingSecret: ""
 
 secretEnv:
   # Builtin-Benutzer. Diese Accounts werden in der Web-UI angezeigt, gelten als
   # geschützt und können nur durch Helm geändert werden.
-  KIWIKI_USERS: "admin:<deinen-api-key>:admin"  # Pflicht: mit starkem Key setzen
+  KIWIKI_USERS: ""
   # In Produktion durch einen starken Zufallswert ersetzen.
   KIWIKI_OAUTH_TOKEN_SECRET: ""
 
@@ -111,7 +114,7 @@ secretEnv:
 livenessProbe:
   enabled: true
   httpGet:
-    path: /
+    path: /livez
     port: 8080
   initialDelaySeconds: 10
   periodSeconds: 30
@@ -119,7 +122,7 @@ livenessProbe:
 readinessProbe:
   enabled: true
   httpGet:
-    path: /
+    path: /readyz
     port: 8080
   initialDelaySeconds: 5
   periodSeconds: 10

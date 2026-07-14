@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.rate_limiter import RateLimitMiddleware
+from app.rate_limiter import RateLimitMiddleware, _classify_path, _get_client_ip
 
 
 class _FakeRequest:
@@ -81,3 +81,37 @@ async def test_login_keys_pruned_in_prune_stale():
     mw._windows[key] = [time.monotonic() - 10_000]  # weit in der Vergangenheit
     mw._prune_stale(now=time.monotonic())
     assert key not in mw._windows
+
+
+def test_prune_stale_preserves_key_with_recent_request():
+    mw = RateLimitMiddleware(app=None)
+    key = ("10.0.0.5", "login")
+    mw._windows[key] = [100.0, 199.0]
+
+    mw._prune_stale(now=200.0)
+
+    assert key in mw._windows
+    assert mw._windows[key] == [199.0]
+
+
+def test_forwarded_for_is_only_used_from_configured_proxy(monkeypatch):
+    from app import rate_limiter
+
+    request = _FakeRequest("/login", "POST", client_host="10.0.0.10")
+    request.headers = {"X-Forwarded-For": "198.51.100.20, 10.0.0.9"}
+    monkeypatch.setattr(rate_limiter, "_TRUST_PROXY", True)
+    monkeypatch.setattr(rate_limiter, "_TRUSTED_PROXY_NETWORKS", ())
+    assert _get_client_ip(request) == "10.0.0.10"
+
+    monkeypatch.setattr(
+        rate_limiter,
+        "_TRUSTED_PROXY_NETWORKS",
+        rate_limiter._parse_trusted_proxy_networks("10.0.0.0/24"),
+    )
+    assert _get_client_ip(request) == "198.51.100.20"
+
+
+def test_oauth_credentials_use_bruteforce_tier():
+    assert _classify_path("/oauth/token", "POST") == "login"
+    assert _classify_path("/oauth/authorize", "POST") == "login"
+    assert _classify_path("/oauth/register", "POST") == "login"

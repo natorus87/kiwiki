@@ -10,6 +10,9 @@ CLAUDE.local.template.md
 .agents/
 skills-lock.json
 
+# Lokaler Agent-/Scheduler-Zustand
+.mimocode/
+
 # Local planning notes
 PLAN.md
 

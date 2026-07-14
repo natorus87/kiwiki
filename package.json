@@ -3,6 +3,6 @@
     "build:motion": "esbuild frontend/kiwiki-motion.js --bundle --format=iife --global-name=KiwikiMotionBundle --outfile=app/static/kiwiki-motion.bundle.js"
   },
   "devDependencies": {
-    "esbuild": "^0.28.1"
+    "esbuild": "0.28.1"
   }
 }

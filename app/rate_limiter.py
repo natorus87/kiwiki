@@ -1,7 +1,7 @@
 """
-Einfache, zustandslose Rate-Limiting-Middleware.
+Einfache, prozesslokale Rate-Limiting-Middleware.
 
-Zwei Tier-Grenzen pro Client-IP:
+Drei Tier-Grenzen pro Client-IP:
   - login       : 5 Versuche / Minute  (Brute-Force-Schutz)
   - write       : 30 Anfragen / Minute (Schreiboperationen)
   - alles andere: 60 Anfragen / Minute (Lesen / UI / MCP)
@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+import ipaddress
 from collections import defaultdict
 from typing import Callable
 
@@ -30,6 +31,22 @@ logger = logging.getLogger("kiwiki.rate_limiter")
 _ENABLED: bool = os.getenv("KIWIKI_RATE_LIMIT_ENABLED", "true").lower() != "false"
 _TRUST_PROXY: bool = os.getenv("KIWIKI_TRUST_PROXY", "false").lower() == "true"
 
+
+def _parse_trusted_proxy_networks(raw: str) -> tuple:
+    networks = []
+    for value in raw.split(","):
+        value = value.strip()
+        if not value:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(value, strict=False))
+        except ValueError:
+            logger.warning("Ignoring invalid KIWIKI_TRUSTED_PROXY_CIDRS entry: %s", value)
+    return tuple(networks)
+
+
+_TRUSTED_PROXY_NETWORKS = _parse_trusted_proxy_networks(os.getenv("KIWIKI_TRUSTED_PROXY_CIDRS", ""))
+
 _LOGIN_LIMIT: int = int(os.getenv("KIWIKI_LOGIN_LIMIT", "5"))
 _LOGIN_WINDOW: int = 60  # Sekunden
 
@@ -42,6 +59,8 @@ _READ_WINDOW: int = 60
 # Statische Pfade werden nie gedrosselt
 _STATIC_PATHS: set[str] = {
     "/health",
+    "/livez",
+    "/readyz",
     "/docs",
     "/openapi.json",
     "/redoc",
@@ -49,16 +68,35 @@ _STATIC_PATHS: set[str] = {
 
 
 def _get_client_ip(request: Request) -> str:
-    """Ermittle die Client-IP — respektiere X-Forwarded-Header hinter Proxy."""
-    forwarded = request.headers.get("X-Forwarded-For", "") if _TRUST_PROXY else ""
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    """Ermittle die Client-IP nur über explizit vertrauenswürdige Proxies."""
+    peer = request.client.host if request.client else "unknown"
+    if not _TRUST_PROXY or not _TRUSTED_PROXY_NETWORKS:
+        return peer
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return peer
+    if not any(peer_ip in network for network in _TRUSTED_PROXY_NETWORKS):
+        return peer
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if not forwarded:
+        return peer
+    chain = [value.strip() for value in forwarded.split(",") if value.strip()] + [peer]
+    for value in reversed(chain):
+        try:
+            address = ipaddress.ip_address(value)
+        except ValueError:
+            return peer
+        if not any(address in network for network in _TRUSTED_PROXY_NETWORKS):
+            return value
+    return chain[0]
 
 
 def _classify_path(path: str, method: str) -> str:
     """Ordne Pfad+Methode einer der drei Limits zu."""
     if path == "/login" and method == "POST":
+        return "login"
+    if path in {"/oauth/token", "/oauth/authorize", "/oauth/register"} and method == "POST":
         return "login"
     if path.startswith("/mcp") and method in ("POST", "PUT", "DELETE", "PATCH"):
         return "write"
@@ -151,9 +189,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         cutoff = now - max(w for _, w in self._limits.values())
         # Auch Login-Keys werden geprunt: ein Angreifer, der von vielen
         # IPs /login bombardiert, soll das Dict nicht endlos aufblaehen.
-        stale_keys = [
-            k for k in self._windows
-            if not self._windows[k] or min(self._windows[k]) < cutoff
-        ]
-        for k in stale_keys:
-            del self._windows[k]
+        for key in list(self._windows):
+            recent = [timestamp for timestamp in self._windows[key] if timestamp > cutoff]
+            if recent:
+                self._windows[key] = recent
+            else:
+                del self._windows[key]

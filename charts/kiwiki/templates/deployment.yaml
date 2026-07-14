@@ -20,6 +20,7 @@ spec:
       labels:
         {{- include "kiwiki.selectorLabels" . | nindent 8 }}
     spec:
+      automountServiceAccountToken: false
       restartPolicy: {{ .Values.restartPolicy }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -45,7 +46,7 @@ spec:
             - configMapRef:
                 name: {{ include "kiwiki.fullname" . }}-config
             - secretRef:
-                name: {{ include "kiwiki.fullname" . }}-secret
+                name: {{ .Values.existingSecret | default (printf "%s-secret" (include "kiwiki.fullname" .)) }}
           ports:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
@@ -71,11 +72,15 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: data
           {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "kiwiki.fullname" . }}-data
+            claimName: {{ .Values.persistence.existingClaim | default (printf "%s-data" (include "kiwiki.fullname" .)) }}
           {{- else }}
           emptyDir: {}
           {{- end }}
+        - name: tmp
+          emptyDir: {}

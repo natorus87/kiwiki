@@ -65,3 +65,16 @@ def test_get_api_files_returns_list_of_dicts(monkeypatch, tmp_path):
     assert isinstance(body, list)
     assert body[0]["path"] == "notes/demo.md"
     assert body[0]["is_dir"] is False
+
+
+def test_unexpected_api_errors_do_not_expose_server_details(monkeypatch):
+    import app.main as main_mod
+
+    client = _client_with_user(monkeypatch, "reader", "readkey", "read")
+    monkeypatch.setattr(main_mod, "list_files", lambda _path: (_ for _ in ()).throw(RuntimeError("/srv/private")))
+
+    response = client.get("/api/files", headers={"Authorization": "Bearer readkey"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Request could not be processed"
+    assert "/srv/private" not in response.text

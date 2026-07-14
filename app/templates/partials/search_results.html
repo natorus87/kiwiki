@@ -2,10 +2,10 @@
   <p class="no-results" role="status">Keine Treffer für „{{ query }}“.</p>
 {% else %}
   {% for result in results %}
-    <button type="button" class="search-result" onclick="loadFile({{ result.path|tojson|forceescape }})">
+    <a href="/?file={{ result.path|urlencode }}" class="search-result kw-file-link" data-file-path="{{ result.path }}">
       <span class="result-path">{{ result.path }}</span>
       <span class="result-title">{{ result.title }}</span>
       <span class="result-snippet">{{ result.snippet }}</span>
-    </button>
+    </a>
   {% endfor %}
 {% endif %}

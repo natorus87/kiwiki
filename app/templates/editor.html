@@ -2,6 +2,12 @@
 
 {% block title %}Editor – kiwiki{% endblock %}
 
+{% block page_assets %}
+<link rel="stylesheet" href="/static/vendor/toastui-editor-3.2.2.min.css">
+<link rel="stylesheet" href="/static/vendor/toastui-editor-dark-3.2.2.css">
+<script src="/static/vendor/toastui-editor-3.2.2.min.js" defer></script>
+{% endblock %}
+
 {% block extra_styles %}
 <style>
   .content-area {
@@ -35,6 +41,9 @@
   @media (max-width: 768px) {
     .editor-bar {
       display: flex;
+      position: relative;
+      top: auto;
+      z-index: 2;
       flex-wrap: wrap;
       gap: 0.4rem;
       padding: 0.5rem 0.6rem;
@@ -76,14 +85,14 @@
   }
   .fab-save:active { transform: scale(0.92); }
 
-  #tui-editor-wrap { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  #tui-editor-wrap { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
   #tui-editor-wrap .toastui-editor-defaultUI { height: 100% !important; }
   #tui-editor-wrap .toastui-editor-main      { height: calc(100% - 50px) !important; }
 </style>
 {% endblock %}
 
 {% block sidebar %}
-<aside class="sidebar collapsed" aria-label="Dateien">
+<aside class="sidebar collapsed" aria-label="Dateien" aria-hidden="true" inert>
 
   <!-- Mobile-only: Kopfleiste mit Logo + Schließen-Button -->
   <div class="mobile-sidebar-header">
@@ -99,12 +108,11 @@
       Zurück
     </button>
   </div>
-  <div class="file-tree" id="file-tree"
-       role="tree"
-       aria-label="Dateibaum. Rechtsklick oder langes Drücken öffnet Aktionen."
+  <nav class="file-tree" id="file-tree"
+       aria-label="Dateien. Rechtsklick oder langes Drücken öffnet Aktionen."
        hx-get="/ui/files?path=." hx-trigger="load" hx-swap="innerHTML">
     <div class="tree-loading" role="status" aria-live="polite">Lade…</div>
-  </div>
+  </nav>
   {% include "partials/sidebar_account.html" %}
 </aside>
 {% endblock %}
@@ -154,53 +162,80 @@
 <script>
   const pathInput = document.getElementById('file-path');
   const initialMarkdown = {{ initial_content|tojson }};
-
-  const editor = new toastui.Editor({
-    el: document.getElementById('tui-editor-wrap'),
-    height: '100%',
-    initialValue: initialMarkdown,
-    initialEditType: 'markdown',
-    previewStyle: window.matchMedia('(max-width: 768px)').matches ? 'tab' : 'vertical',
-    theme: 'dark',
-    usageStatistics: false,
-    placeholder: 'Schreibe Markdown hier…',
-    toolbarItems: [
-      ['heading', 'bold', 'italic', 'strike'],
-      ['hr', 'quote'],
-      ['ul', 'ol', 'task', 'indent', 'outdent'],
-      ['table', 'link'],
-      ['code', 'codeblock'],
-    ],
-  });
-  window.editor = editor;
-
   const initialPath = pathInput.value.trim();
-  if (initialPath) {
-    kwSetActiveFile(initialPath);
-    var parts = initialPath.split('/');
-    for (var i = 1; i < parts.length; i++) {
-      kwAddOpenFolder(parts.slice(0, i).join('/'));
+  let editor = null;
+  let __lastSavedMarkdown = initialMarkdown;
+  let __pathChanged = false;
+
+  function labelEditorControls() {
+    const labels = {
+      heading: 'Überschrift', bold: 'Fett', italic: 'Kursiv', strike: 'Durchgestrichen',
+      hr: 'Trennlinie', quote: 'Zitat', ul: 'Unsortierte Liste', ol: 'Sortierte Liste',
+      task: 'Aufgabenliste', indent: 'Einrücken', outdent: 'Ausrücken', table: 'Tabelle',
+      link: 'Link', code: 'Inline-Code', codeblock: 'Codeblock',
+    };
+    document.querySelectorAll('#tui-editor-wrap button').forEach(function(button) {
+      if (button.getAttribute('aria-label') || button.textContent.trim()) return;
+      const key = Array.from(button.classList).find(function(name) { return labels[name]; });
+      const label = button.getAttribute('title') || (key && labels[key]) || 'Editor-Aktion';
+      button.setAttribute('aria-label', label);
+    });
+  }
+
+  function initKiwikiEditor() {
+    const editorWrap = document.getElementById('tui-editor-wrap');
+    if (!window.toastui || !window.toastui.Editor) {
+      editorWrap.innerHTML = '<div class="error editor-load-error" role="alert">Editor konnte nicht geladen werden.</div>';
+      return;
+    }
+    editor = new toastui.Editor({
+      el: editorWrap,
+      height: '100%',
+      initialValue: initialMarkdown,
+      initialEditType: 'markdown',
+      previewStyle: window.matchMedia('(max-width: 768px)').matches ? 'tab' : 'vertical',
+      theme: 'dark',
+      usageStatistics: false,
+      placeholder: 'Schreibe Markdown hier…',
+      toolbarItems: [
+        ['heading', 'bold', 'italic', 'strike'],
+        ['hr', 'quote'],
+        ['ul', 'ol', 'task', 'indent', 'outdent'],
+        ['table', 'link'],
+        ['code', 'codeblock'],
+      ],
+    });
+    window.editor = editor;
+    labelEditorControls();
+    new MutationObserver(labelEditorControls).observe(editorWrap, { childList: true, subtree: true });
+
+    if (initialPath) {
+      kwSetActiveFile(initialPath);
+      var parts = initialPath.split('/');
+      for (var i = 1; i < parts.length; i++) kwAddOpenFolder(parts.slice(0, i).join('/'));
+    }
+    pathInput.addEventListener('input', function() { __pathChanged = true; });
+
+    // Der Browser zeigt bei ungespeicherten Änderungen seine native Warnung.
+    window.addEventListener('beforeunload', function(e) {
+      const dirty = (pathInput.value.trim() !== initialPath) || (editor.getMarkdown() !== __lastSavedMarkdown);
+      if (dirty) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    });
+
+    if (!window.__kiwikiEditorShortcutBound) {
+      window.__kiwikiEditorShortcutBound = true;
+      document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveFile(); }
+      });
     }
   }
 
-  let __lastSavedMarkdown = initialMarkdown;
-  let __pathChanged = false;
-  pathInput.addEventListener('input', function() { __pathChanged = true; });
-
-  // beforeunload-Warnung (v2.2 P0): der Browser zeigt seine native "Verlassen?"-Box,
-  // sobald der Nutzer weg-navigiert und entweder der Inhalt seit dem letzten Save oder
-  // der Dateipfad sich geändert hat. Nach erfolgreichem saveFile() wird __lastSavedMarkdown
-  // aktualisiert, so dass Ctrl+S+Back direkt nach dem Speichern KEINE false Warnung auslöst.
-  window.addEventListener('beforeunload', function(e) {
-    const dirty = (pathInput.value.trim() !== initialPath) || (editor.getMarkdown() !== __lastSavedMarkdown);
-    if (dirty) {
-      e.preventDefault();
-      e.returnValue = '';
-      return '';
-    }
-  });
-
   function saveFile() {
+    if (!editor) { kwToast('Editor ist noch nicht bereit.', { type: 'error' }); return; }
     const path = pathInput.value.trim() || 'notes/untitled.md';
     fetch('/api/file', {
       method: 'PUT',
@@ -220,6 +255,7 @@
   }
 
   function cancelEdit() {
+    if (!editor) { window.location.href = initialPath ? '/editor?path=' + encodeURIComponent(initialPath) : '/'; return; }
     const dirty = (pathInput.value.trim() !== initialPath) || (editor.getMarkdown() !== __lastSavedMarkdown);
     if (dirty && !confirm('Ungespeicherte Änderungen verwerfen?')) return;
     if (initialPath) {
@@ -235,11 +271,7 @@
     if (typeof deleteFile === 'function') deleteFile(path);
   }
 
-  if (!window.__kiwikiEditorShortcutBound) {
-    window.__kiwikiEditorShortcutBound = true;
-    document.addEventListener('keydown', function(e) {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveFile(); }
-    });
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initKiwikiEditor);
+  else initKiwikiEditor();
 </script>
 {% endblock %}

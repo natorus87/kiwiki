@@ -1,14 +1,19 @@
 """Tests fuer app/search.py: FTS5-Initialisierung, Indexierung, Suche."""
 
+import threading
+
 from app.search import (
     _db_file,
     _sanitize_fts,
+    _get_pooled_conn,
+    close_pool,
     deindex_file,
     get_db,
     index_file,
     init_db,
     search,
     reindex_all,
+    reindex_changed,
 )
 
 
@@ -94,6 +99,18 @@ class TestSearch:
         results = search("irgendwas")
         assert results == []
 
+    def test_leere_suche_gibt_leere_liste(self, active_user):
+        assert search("   ") == []
+
+    def test_tag_suche_trifft_nur_exakten_tag(self, tmp_file, active_user):
+        tmp_file("notes/python.md", "---\ntitle: Python\ntags: [python]\n---\n\nA")
+        tmp_file("notes/pythonista.md", "---\ntitle: Pythonista\ntags: [pythonista]\n---\n\nB")
+        init_db()
+        index_file("notes/python.md")
+        index_file("notes/pythonista.md")
+
+        assert [result.path for result in search("tag:python")] == ["notes/python.md"]
+
 
 class TestSanitizeFts:
     """_sanitize_fts() — Query-Normalisierung."""
@@ -128,3 +145,36 @@ class TestReindexAll:
         init_db()
         count = reindex_all()
         assert count == 0
+
+    def test_reindex_changed_entfernt_geloeschte_dateien(self, tmp_file, active_user):
+        rel = tmp_file("notes/ghost.md", "---\ntitle: Ghost\n---\n\nEinzigartigerGeist")
+        init_db()
+        reindex_changed()
+        from app.storage import safe_path
+
+        safe_path(rel).unlink()
+        reindex_changed()
+
+        assert search("EinzigartigerGeist") == []
+
+
+def test_connection_pool_verwendet_pro_thread_eigene_connection(tmp_path, active_user):
+    db_path = str(_db_file())
+    barrier = threading.Barrier(2)
+    connections = []
+
+    def get_connection():
+        barrier.wait()
+        connections.append(_get_pooled_conn(db_path))
+
+    threads = [threading.Thread(target=get_connection) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    try:
+        assert len(connections) == 2
+        assert connections[0] is not connections[1]
+    finally:
+        close_pool()

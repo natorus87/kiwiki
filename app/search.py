@@ -1,4 +1,3 @@
-import json
 import logging
 import re
 import sqlite3
@@ -26,12 +25,12 @@ def _db_file() -> Path:
 # thread, avoiding the overhead of connect()/close() on every call.
 
 _pool_lock = threading.Lock()
-_pool: dict[str, sqlite3.Connection] = {}
+_pool: dict[tuple[str, int], sqlite3.Connection] = {}
 
 
 def _get_pooled_conn(db_path: str) -> sqlite3.Connection:
     """Return a persistent connection for the given database path."""
-    key = db_path
+    key = (db_path, threading.get_ident())
     with _pool_lock:
         conn = _pool.get(key)
         if conn is not None:
@@ -138,10 +137,10 @@ def index_file(file_path: str) -> None:
         if not full_path.exists() or not full_path.is_file():
             return
         content = read_file(file_path)
-        title = content.frontmatter.get("title", full_path.stem)
-        tags = ",".join(content.frontmatter.get("tags", []))
-        updated_at = content.frontmatter.get("updated", "")
-        owner = content.frontmatter.get("owner", "")
+        title = str(content.frontmatter.get("title", full_path.stem))
+        tags = ",".join(str(tag) for tag in content.frontmatter.get("tags", []))
+        updated_at = str(content.frontmatter.get("updated", "") or "")
+        owner = str(content.frontmatter.get("owner", "") or "")
         with get_db() as conn:
             conn.execute("DELETE FROM files WHERE path = ?", (file_path,))
             conn.execute(
@@ -217,6 +216,8 @@ def search(query: str) -> list[SearchResult]:
     column (FTS5 column filters are brittle, so we sidestep them here).
     Records search in history (E3).
     """
+    if not query.strip():
+        return []
     init_db()
     with get_db() as conn:
         tag_match = re.match(r'^\s*tag:(.+?)\s*$', query, re.IGNORECASE)
@@ -224,8 +225,9 @@ def search(query: str) -> list[SearchResult]:
             tag_term = tag_match.group(1).strip()
             rows = conn.execute(
                 "SELECT path, title, content, 0 AS rank FROM files "
-                "WHERE ',' || tags || ',' LIKE ? ORDER BY title LIMIT 50",
-                ("%" + tag_term + "%",),
+                "WHERE instr(',' || lower(tags) || ',', ',' || lower(?) || ',') > 0 "
+                "ORDER BY title LIMIT 50",
+                (tag_term,),
             ).fetchall()
             return _to_results(rows)
 
@@ -268,6 +270,7 @@ def reindex_all() -> int:
     Reindex all markdown files in the current user's namespace.
     Returns count of indexed files.
     """
+    init_db()
     with get_db() as conn:
         conn.execute("DELETE FROM files")
         conn.commit()
@@ -288,8 +291,7 @@ def reindex_changed() -> int:
     last index timestamp. Falls back to full reindex if no timestamp exists.
     Returns count of (re)indexed files.
     """
-    from .storage import safe_path
-
+    init_db()
     db_dir = user_root() / ".kiwiki"
     db_dir.mkdir(parents=True, exist_ok=True)
     timestamp_file = db_dir / ".last_reindex"
@@ -304,12 +306,23 @@ def reindex_changed() -> int:
     root = user_root()
     count = 0
 
+    current_paths = {
+        str(md_file.relative_to(root))
+        for md_file in root.rglob("*.md")
+        if str(md_file.relative_to(root)) not in {"AGENTS.md", "index.md"}
+        and ".kiwiki" not in md_file.relative_to(root).parts
+    }
+    with get_db() as conn:
+        indexed_paths = {row[0] for row in conn.execute("SELECT path FROM files").fetchall()}
+        deleted_paths = indexed_paths - current_paths
+        if deleted_paths:
+            conn.executemany("DELETE FROM files WHERE path = ?", [(path,) for path in deleted_paths])
+            conn.commit()
+
     if last_reindex > 0:
         # Incremental: only reindex files modified since last reindex
-        for md_file in root.rglob("*.md"):
-            rel_path = str(md_file.relative_to(root))
-            if rel_path in {"AGENTS.md", "index.md"}:
-                continue
+        for rel_path in sorted(current_paths):
+            md_file = root / rel_path
             try:
                 if md_file.stat().st_mtime > last_reindex:
                     index_file(rel_path)

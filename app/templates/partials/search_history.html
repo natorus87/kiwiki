@@ -4,7 +4,7 @@
   <ul class="search-history-list">
     {% for h in history %}
     <li class="search-history-item">
-      <a href="#" hx-post="/ui/search" hx-vals='{"query":"{{ h.query }}"}' hx-target="#content" hx-swap="innerHTML">
+      <a href="/?search={{ h.query|urlencode }}" class="kw-search-link" data-search-query="{{ h.query }}">
         {{ h.query }}
       </a>
       <span class="search-history-meta">{{ h.result_count }} Treffer</span>

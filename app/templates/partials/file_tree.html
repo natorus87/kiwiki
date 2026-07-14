@@ -1,6 +1,6 @@
 {% for item in items %}
   {% if item.is_dir %}
-    <div class="tree-row" role="treeitem" aria-level="{{ item.path.split('/')|length }}" aria-expanded="false"
+    <div class="tree-row"
          data-path="{{ item.path }}" data-kind="dir" draggable="true">
       {% if user and user.role in ['write', 'admin'] %}
       <input type="checkbox" class="tree-checkbox" data-path="{{ item.path }}" data-kind="dir"
@@ -16,18 +16,18 @@
         {{ svg_folder|safe }}<span class="item-name">{{ item.name }}</span>
       </button>
     </div>
-    <div id="{{ item.tree_id }}" class="subtree" role="group" data-parent="{{ item.path }}"></div>
+    <div id="{{ item.tree_id }}" class="subtree" data-parent="{{ item.path }}"></div>
   {% else %}
-    <div class="tree-row" role="treeitem" aria-level="{{ item.path.split('/')|length }}"
+    <div class="tree-row"
          data-path="{{ item.path }}" data-kind="file" draggable="true">
       {% if user and user.role in ['write', 'admin'] %}
       <input type="checkbox" class="tree-checkbox" data-path="{{ item.path }}" data-kind="file"
              onclick="event.stopPropagation(); kwToggleSelect(this)" aria-label="{{ item.name }} auswählen">
       {% endif %}
-      <button type="button" class="file-item" data-path="{{ item.path }}"
-              onclick="loadFile({{ item.path|tojson|forceescape }}, this)">
+      <a href="/?file={{ item.path|urlencode }}" class="file-item kw-file-link"
+         data-path="{{ item.path }}" data-file-path="{{ item.path }}">
         {{ svg_file|safe }}<span class="item-name">{{ item.name }}</span>
-      </button>
+      </a>
     </div>
   {% endif %}
 {% endfor %}

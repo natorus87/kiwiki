@@ -1,5 +1,6 @@
 import logging
 import secrets
+from collections.abc import Mapping
 from fastapi import HTTPException, status
 from fastapi.requests import Request
 from .models import User
@@ -36,6 +37,14 @@ def _lookup_api_key(users_map: dict[str, tuple[str, str]], candidate: str) -> tu
         if secrets.compare_digest(candidate.encode("utf-8"), key.encode("utf-8")):
             found = value
     return found
+
+
+def current_role_for_username(username: str) -> str | None:
+    """Aktuelle Rolle eines weiterhin konfigurierten Users liefern."""
+    for configured_username, role in parse_users().values():
+        if configured_username == username:
+            return role
+    return None
 
 
 async def get_current_user(request: Request) -> User:
@@ -84,7 +93,8 @@ async def get_current_user(request: Request) -> User:
         return User(username=username, role=role)
 
     # Cookie-basierte Auth: zuerst Session-Token pruefen
-    cookie_val = request.cookies.get("kiwiki_session", "")
+    cookies = request.cookies
+    cookie_val = cookies.get("kiwiki_session", "") if isinstance(cookies, Mapping) else ""
     if cookie_val:
         record = session_store.lookup_session(cookie_val)
         if record is not None:
@@ -93,8 +103,16 @@ async def get_current_user(request: Request) -> User:
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Username contains characters not allowed as namespace",
                 )
+            current_role = current_role_for_username(record.username)
+            if current_role is None or current_role != record.role:
+                session_store.revoke_session(cookie_val)
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Session user or role changed",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             set_user_ns(record.username)
-            return User(username=record.username, role=record.role)
+            return User(username=record.username, role=current_role)
         # Kein Session-Token-Treffer — Backwards-Compat: vielleicht ist
         # der Cookie-Wert der API-Key (fuer direkte API-Clients, die den
         # API-Key ins Cookie legen).

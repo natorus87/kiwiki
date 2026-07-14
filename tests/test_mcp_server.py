@@ -1,8 +1,11 @@
 """Tests fuer app/mcp_server.py — Tool-Dispatch, Auth, JSON-RPC."""
 
 import base64
+import asyncio
 import hashlib
 import json
+import os
+import subprocess
 from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlparse
 
@@ -11,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from app.mcp_server import (
     _handle_message,
+    _handle_payload,
     _user_from_request,
     _api_key_from_signed_token,
     _make_oauth_token,
@@ -21,6 +25,7 @@ from app.mcp_server import (
     TOOLS,
     _READ_ONLY_TOOLS,
     _DESTRUCTIVE_TOOLS,
+    _dispatch,
 )
 from app.models import User
 
@@ -189,6 +194,71 @@ class TestOAuthFlow:
         assert refreshed.status_code == 200
         assert refreshed.json()["access_token"].startswith("kiwiki1.")
 
+        assert token.headers["cache-control"] == "no-store"
+        assert token.headers["pragma"] == "no-cache"
+        assert refreshed.headers["cache-control"] == "no-store"
+
+    def test_refresh_token_cannot_change_client_or_resource(self, users_map):
+        users_map(("alice", "tok1", "admin"))
+        from app.main import app
+
+        client = TestClient(app)
+        refresh = _make_oauth_token(
+            "tok1",
+            "refresh",
+            3600,
+            client_id="expected-client",
+            resource="http://testserver/mcp",
+        )
+
+        wrong_client = client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh,
+                "client_id": "other-client",
+                "resource": "http://testserver/mcp",
+            },
+        )
+        wrong_resource = client.post(
+            "/oauth/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh,
+                "client_id": "expected-client",
+                "resource": "https://other.example/mcp",
+            },
+        )
+
+        assert wrong_client.status_code == 400
+        assert wrong_client.json()["error"] == "invalid_grant"
+        assert wrong_client.headers["cache-control"] == "no-store"
+        assert wrong_resource.status_code == 400
+        assert wrong_resource.json()["error"] == "invalid_target"
+        assert wrong_resource.headers["cache-control"] == "no-store"
+
+    def test_authorization_page_names_client_resource_and_scope(self, users_map):
+        users_map(("alice", "tok1", "admin"))
+        from app.main import app
+
+        client_id = "https://chatgpt.com/oauth/kiwiki/client.json"
+        resource = "http://testserver/mcp"
+        response = TestClient(app).get(
+            "/oauth/authorize",
+            params={
+                "redirect_uri": "https://chatgpt.com/connector/oauth/test-callback",
+                "client_id": client_id,
+                "code_challenge": "challenge",
+                "code_challenge_method": "S256",
+                "resource": resource,
+            },
+        )
+
+        assert response.status_code == 200
+        assert client_id in response.text
+        assert resource in response.text
+        assert "lesen und entsprechend deiner Rolle ändern" in response.text
+
     def test_authorize_rejects_unregistered_arbitrary_https_redirect(self, users_map):
         users_map(("alice", "tok1", "admin"))
         from app.main import app
@@ -253,6 +323,31 @@ class TestOAuthFlow:
             follow_redirects=False,
         )
         assert accepted.status_code == 302
+
+    def test_authorization_code_store_is_bounded(self, users_map, monkeypatch):
+        users_map(("alice", "tok1", "admin"))
+        from app import mcp_server
+        from app.main import app
+
+        mcp_server._oauth_codes.clear()
+        monkeypatch.setattr(mcp_server, "_OAUTH_MAX_CODES", 1)
+        verifier = "a" * 64
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+        payload = {
+            "apikey": "tok1",
+            "redirect_uri": "https://chatgpt.com/connector/oauth/test-callback",
+            "client_id": "https://chatgpt.com/oauth/kiwiki/client.json",
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "resource": "http://testserver/mcp",
+        }
+        client = TestClient(app)
+
+        assert client.post("/oauth/authorize", data=payload, follow_redirects=False).status_code == 302
+        rejected = client.post("/oauth/authorize", data=payload, follow_redirects=False)
+
+        assert rejected.status_code == 503
+        assert rejected.json()["error"] == "temporarily_unavailable"
 
 
 class TestToolDefinitions:
@@ -323,6 +418,7 @@ class TestHandleMessage:
         body = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
         result = await _handle_message(body, User(username="alice", role="admin"))
         assert result["result"]["protocolVersion"] == "2025-03-26"
+        assert result["result"]["serverInfo"]["version"] == "3.0.0"
         assert "tools" in result["result"]["capabilities"]
 
     async def test_tools_list(self, _setup_auth):
@@ -644,6 +740,127 @@ class TestToolDispatch:
         finally:
             mcp_server.parse_users = original_parse
 
+    async def test_diff_rejects_git_option_in_path(self, active_user, _setup_users, tmp_path):
+        subprocess.run(["git", "init", "-q"], cwd=active_user, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=active_user, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=active_user, check=True)
+        note = active_user / "notes" / "git.md"
+        note.write_text("one", encoding="utf-8")
+        subprocess.run(["git", "add", "notes/git.md"], cwd=active_user, check=True)
+        subprocess.run(["git", "commit", "-qm", "one"], cwd=active_user, check=True)
+        note.write_text("two", encoding="utf-8")
+        subprocess.run(["git", "commit", "-qam", "two"], cwd=active_user, check=True)
+        output = tmp_path / "written-by-git"
+
+        with pytest.raises(ValueError, match="git path"):
+            await _dispatch(
+                "diff",
+                {"path": f"--output={output}", "from_commit": "HEAD~1", "to_commit": "HEAD"},
+                User(username="alice", role="read"),
+            )
+
+        assert not output.exists()
+
+    async def test_diff_rejects_option_like_revision(self, active_user, _setup_users):
+        with pytest.raises(ValueError, match="revision"):
+            await _dispatch(
+                "diff",
+                {"from_commit": "--no-index", "to_commit": "HEAD"},
+                User(username="alice", role="read"),
+            )
+
+    async def test_git_commit_supports_first_commit(self, active_user, _setup_users):
+        subprocess.run(["git", "init", "-q"], cwd=active_user, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=active_user, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=active_user, check=True)
+        note = active_user / "notes" / "first.md"
+        note.write_text("first", encoding="utf-8")
+
+        result = json.loads(
+            await _dispatch(
+                "git_commit",
+                {"message": "first commit"},
+                User(username="alice", role="write"),
+            )
+        )
+
+        assert result["commit_hash"]
+        assert result["files_changed"] >= 1
+
+    async def test_status_tools_do_not_leak_host_paths(self, active_user, _setup_users):
+        status = json.loads(
+            await _dispatch("search_status", {}, User(username="alice", role="read"))
+        )
+        identity = json.loads(
+            await _dispatch("whoami", {}, User(username="alice", role="read"))
+        )
+
+        assert status["database"] == ".kiwiki/index.sqlite"
+        assert identity["workspace"] == "alice"
+        assert str(active_user) not in json.dumps({"status": status, "identity": identity})
+
+    def test_chunked_upload_store_is_bounded(self, active_user, monkeypatch):
+        from app import mcp_server
+
+        mcp_server._chunked_writes.clear()
+        monkeypatch.setattr(mcp_server, "_MCP_MAX_STAGED_UPLOADS", 1)
+        user = User(username="alice", role="write")
+        mcp_server._stage_chunked_write(
+            {"path": "notes/a.md", "upload_id": "a", "chunk": "a", "chunk_index": 0},
+            user,
+        )
+
+        with pytest.raises(ValueError, match="staged uploads"):
+            mcp_server._stage_chunked_write(
+                {"path": "notes/b.md", "upload_id": "b", "chunk": "b", "chunk_index": 0},
+                user,
+            )
+
+    def test_message_post_requires_bearer_and_same_user(self, users_map):
+        users_map(("alice", "alice-key", "read"), ("bob", "bob-key", "read"))
+        from app import mcp_server
+        from app.main import app
+
+        mcp_server._sse_sessions.clear()
+        queue = asyncio.Queue()
+        mcp_server._sse_sessions["session-1"] = (queue, User(username="alice", role="read"))
+        client = TestClient(app)
+        body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+
+        missing = client.post("/mcp/messages?sessionId=session-1", json=body)
+        wrong = client.post(
+            "/mcp/messages?sessionId=session-1",
+            json=body,
+            headers={"Authorization": "Bearer bob-key"},
+        )
+        accepted = client.post(
+            "/mcp/messages?sessionId=session-1",
+            json=body,
+            headers={"Authorization": "Bearer alice-key"},
+        )
+
+        assert missing.status_code == 401
+        assert wrong.status_code == 403
+        assert accepted.status_code == 202
+
+    def test_agent_audit_redacts_content_and_uses_private_permissions(self, active_user):
+        from app import mcp_server
+
+        mcp_server._log_agent_call(
+            User(username="alice", role="write"),
+            "edit",
+            {"path": "notes/a.md", "old_str": "top-secret", "new_str": "replacement-secret"},
+            success=True,
+        )
+        log_path = active_user / ".kiwiki" / "agent_log.jsonl"
+        raw = log_path.read_text(encoding="utf-8")
+        entry = json.loads(raw.splitlines()[-1])
+
+        assert entry["args"] == {"path": "notes/a.md"}
+        assert "top-secret" not in raw
+        assert "replacement-secret" not in raw
+        assert os.stat(log_path).st_mode & 0o077 == 0
+
     async def test_unauth_access(self):
         """Kein User → isError im Result (MCP-konform)."""
         body = {
@@ -782,3 +999,51 @@ class TestGrepRedosHardening:
         assert "result" in result
         text = result["result"]["content"][0]["text"]
         assert "matches" in text
+
+
+class TestMcpCapacityLimits:
+    async def test_jsonrpc_batch_is_bounded(self):
+        body = [{"jsonrpc": "2.0", "id": index, "method": "ping"} for index in range(26)]
+
+        response = await _handle_payload(body, User(username="alice", role="read"))
+
+        assert response["error"]["code"] == -32600
+        assert "batch" in response["error"]["message"].lower()
+
+    async def test_read_many_is_bounded(self, active_user):
+        with pytest.raises(ValueError, match="Too many paths"):
+            await _dispatch(
+                "read_many",
+                {"paths": [f"notes/{index}.md" for index in range(51)]},
+                User(username="alice", role="read"),
+            )
+
+    async def test_background_grep_can_be_polled(self, active_user):
+        note = active_user / "notes" / "background.md"
+        note.parent.mkdir(parents=True, exist_ok=True)
+        note.write_text("needle\n", encoding="utf-8")
+
+        started = json.loads(
+            await _dispatch(
+                "grep",
+                {"pattern": "needle", "path": ".", "background": True},
+                User(username="alice", role="read"),
+            )
+        )
+        assert started["status"] == "running"
+
+        completed = None
+        for _ in range(50):
+            completed = json.loads(
+                await _dispatch(
+                    "grep_status",
+                    {"job_id": started["job_id"]},
+                    User(username="alice", role="read"),
+                )
+            )
+            if completed["status"] == "completed":
+                break
+            await asyncio.sleep(0.01)
+
+        assert completed["status"] == "completed"
+        assert completed["result"]["total_shown"] == 1

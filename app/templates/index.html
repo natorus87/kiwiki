@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
 {% block sidebar %}
-<aside class="sidebar collapsed" aria-label="Dateien">
+<aside class="sidebar collapsed" aria-label="Dateien" aria-hidden="true" inert>
 
   <!-- Mobile-only: Kopfleiste mit Logo + Schließen-Button -->
   <div class="mobile-sidebar-header">
@@ -23,12 +23,11 @@
   </div>
   {% endif %}
 
-  <div class="file-tree" id="file-tree"
-       role="tree"
-       aria-label="Dateibaum. Rechtsklick oder langes Drücken öffnet Aktionen."
+  <nav class="file-tree" id="file-tree"
+       aria-label="Dateien. Rechtsklick oder langes Drücken öffnet Aktionen."
        hx-get="/ui/files?path=." hx-trigger="load" hx-swap="innerHTML">
     <div class="tree-loading" role="status" aria-live="polite">Lade…</div>
-  </div>
+  </nav>
 
   <div class="tree-selection-bar" id="selection-bar" hidden>
     <span class="selection-count" id="selection-count">0 ausgewählt</span>
@@ -333,6 +332,8 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
           Neue Notiz
         </button>
+        <a class="btn btn-ghost kw-view-link" href="/?view=tags" data-view-endpoint="/ui/tags">Tags</a>
+        <a class="btn btn-ghost kw-view-link" href="/?view=search-history" data-view-endpoint="/ui/search-history">Suchverlauf</a>
       </div>
     </div>
     <div class="hero-panel" aria-label="Arbeitsstatus">
