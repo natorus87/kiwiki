@@ -35,6 +35,7 @@ import markdown as md_lib
 import nh3
 
 from .auth import ROLE_HIERARCHY, _lookup_api_key, parse_users
+from .constants import CSP_BASE_DIRECTIVES
 from .models import User
 from .mcp_git import run_git as _run_git
 from .mcp_git import validate_git_path as _validate_git_path
@@ -309,6 +310,21 @@ def _is_valid_redirect_uri(redirect_uri: str) -> bool:
     return False
 
 
+def _authorize_page_csp(redirect_uri: str) -> str:
+    """CSP fuer die Consent-Seite: form-action muss die konkrete, bereits
+    validierte redirect_uri-Origin zulassen, sonst blockt der Browser den
+    Redirect nach dem Submit (form-action wirkt auch auf den Redirect-Ziel-
+    Origin, nicht nur auf das initiale Submit-Ziel). Nur diese eine Origin,
+    nie ein pauschales Whitelist-Statement — die konkrete redirect_uri wurde
+    bereits gegen _is_registered_redirect geprueft."""
+    form_action = "'self'"
+    if redirect_uri:
+        parsed = urlparse(redirect_uri)
+        if parsed.scheme and parsed.netloc:
+            form_action = f"'self' {parsed.scheme}://{parsed.netloc}"
+    return f"{CSP_BASE_DIRECTIVES}; form-action {form_action}"
+
+
 def _allowed_redirect_hosts() -> set[str]:
     raw = os.getenv("KIWIKI_OAUTH_ALLOWED_REDIRECT_HOSTS", _DEFAULT_ALLOWED_REDIRECT_HOSTS)
     return {host.strip().lower() for host in raw.split(",") if host.strip()}
@@ -417,7 +433,8 @@ async def oauth_authorize(request: Request):
     consent_resource = resource or f"{_base_url(request)}/mcp"
 
     return HTMLResponse(
-        f"""<!DOCTYPE html>
+        headers={"Content-Security-Policy": _authorize_page_csp(redirect_uri)},
+        content=f"""<!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="utf-8">
