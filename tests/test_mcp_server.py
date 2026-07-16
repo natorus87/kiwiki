@@ -324,6 +324,86 @@ class TestOAuthFlow:
         )
         assert accepted.status_code == 302
 
+    def test_unknown_dcr_client_falls_back_to_redirect_whitelist(self, users_map):
+        """Regression: Nach Container-Neustart/TTL-Ablauf ist die DCR-Registrierung weg,
+        ChatGPT nutzt aber seine alte client_id weiter. Whitelist-Hosts müssen den
+        Auth-Flow trotzdem abschließen können (vorher: invalid_redirect_uri)."""
+        users_map(("alice", "tok1", "admin"))
+        from app.main import app
+
+        verifier = "a" * 64
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+        client = TestClient(app)
+
+        authorize = client.post(
+            "/oauth/authorize",
+            data={
+                "apikey": "tok1",
+                "redirect_uri": "https://chatgpt.com/connector_platform_oauth_redirect",
+                "client_id": "dcr-id-lost-after-restart",
+                "state": "state-1",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": "http://testserver/mcp",
+            },
+            follow_redirects=False,
+        )
+
+        assert authorize.status_code == 302
+        assert authorize.headers["location"].startswith("https://chatgpt.com/connector_platform_oauth_redirect")
+
+    def test_expired_dcr_client_falls_back_to_redirect_whitelist(self, users_map, monkeypatch):
+        users_map(("alice", "tok1", "admin"))
+        from app import mcp_server
+        from app.main import app
+
+        verifier = "a" * 64
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+        client = TestClient(app)
+
+        registration = client.post("/oauth/register", json={"redirect_uris": ["https://chatgpt.com/connector_platform_oauth_redirect"]})
+        assert registration.status_code == 201
+        client_id = registration.json()["client_id"]
+        mcp_server._oauth_clients[client_id]["expires_at"] = 0
+
+        authorize = client.post(
+            "/oauth/authorize",
+            data={
+                "apikey": "tok1",
+                "redirect_uri": "https://chatgpt.com/connector_platform_oauth_redirect",
+                "client_id": client_id,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": "http://testserver/mcp",
+            },
+            follow_redirects=False,
+        )
+
+        assert authorize.status_code == 302
+
+    def test_unknown_dcr_client_with_non_whitelisted_redirect_is_rejected(self, users_map):
+        users_map(("alice", "tok1", "admin"))
+        from app.main import app
+
+        verifier = "a" * 64
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+
+        authorize = TestClient(app).post(
+            "/oauth/authorize",
+            data={
+                "apikey": "tok1",
+                "redirect_uri": "https://attacker.example/callback",
+                "client_id": "dcr-id-lost-after-restart",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": "http://testserver/mcp",
+            },
+            follow_redirects=False,
+        )
+
+        assert authorize.status_code == 400
+        assert authorize.json()["error"] == "invalid_redirect_uri"
+
     def test_authorization_code_store_is_bounded(self, users_map, monkeypatch):
         users_map(("alice", "tok1", "admin"))
         from app import mcp_server
