@@ -259,6 +259,40 @@ class TestOAuthFlow:
         assert resource in response.text
         assert "lesen und entsprechend deiner Rolle ändern" in response.text
 
+    def test_authorize_page_csp_allows_form_action_to_redirect_origin(self, users_map):
+        """Regression: form-action 'self' blockte den Browser-Redirect nach dem
+        Consent-Submit zu chatgpt.com (form-action gilt auch fuers Redirect-Ziel,
+        nicht nur fuers initiale Submit-Ziel) — Klick auf 'Autorisieren' wirkte
+        wie 'nichts passiert'. Die Authorize-Seite muss form-action gezielt fuer
+        die bereits validierte redirect_uri-Origin oeffnen."""
+        users_map(("alice", "tok1", "admin"))
+        from app.main import app
+
+        response = TestClient(app).get(
+            "/oauth/authorize",
+            params={
+                "redirect_uri": "https://chatgpt.com/connector_platform_oauth_redirect",
+                "client_id": "some-client",
+                "code_challenge": "challenge",
+                "code_challenge_method": "S256",
+                "resource": "http://testserver/mcp",
+            },
+        )
+
+        assert response.status_code == 200
+        csp = response.headers["content-security-policy"]
+        assert "form-action 'self' https://chatgpt.com" in csp
+        assert "default-src 'self'" in csp
+
+    def test_authorize_page_csp_defaults_to_self_without_redirect_uri(self, users_map):
+        users_map(("alice", "tok1", "admin"))
+        from app.main import app
+
+        response = TestClient(app).get("/oauth/authorize", params={"client_id": "some-client"})
+
+        assert response.status_code == 200
+        assert response.headers["content-security-policy"].endswith("form-action 'self'")
+
     def test_authorize_rejects_unregistered_arbitrary_https_redirect(self, users_map):
         users_map(("alice", "tok1", "admin"))
         from app.main import app
