@@ -340,11 +340,15 @@ def _is_registered_redirect(client_id: str, redirect_uri: str) -> bool:
         # an HTTPS metadata URL instead of a DCR-generated local identifier.
         return _redirect_host_is_allowed(redirect_uri)
     client = _oauth_clients.get(client_id)
-    if not client:
-        return False
-    if client.get("expires_at", 0) < time.time():
+    if client and client.get("expires_at", 0) < time.time():
         _oauth_clients.pop(client_id, None)
-        return False
+        client = None
+    if not client:
+        # DCR-Registrierungen leben nur im RAM: Nach einem Neustart oder TTL-Ablauf
+        # nutzen Connectors (z. B. ChatGPT) ihre alte client_id weiter. Für Hosts
+        # auf der Redirect-Whitelist bleibt der Flow deshalb auch ohne bekannte
+        # Registrierung gültig — sonst endet jeder Re-Auth in invalid_redirect_uri.
+        return _redirect_host_is_allowed(redirect_uri)
     return redirect_uri in client.get("redirect_uris", [])
 
 
