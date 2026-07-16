@@ -28,7 +28,7 @@ from .auth import (
     require_role,
 )
 from .mcp_server import router as mcp_router
-from .constants import APP_VERSION, NH3_ATTRS, NH3_TAGS
+from .constants import APP_VERSION, CSP_BASE_DIRECTIVES, NH3_ATTRS, NH3_TAGS
 from .models import (
     AppendFileRequest,
     CreateFolderRequest,
@@ -151,14 +151,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; "
-            "font-src 'self'; "
-            "object-src 'none'; base-uri 'self'; form-action 'self'"
-        )
+        # /oauth/authorize setzt eine engere, request-spezifische CSP mit
+        # zusaetzlicher form-action-Ausnahme fuer die validierte redirect_uri
+        # (OAuth-Consent muss cross-origin zu chatgpt.com/... weiterleiten
+        # koennen) — die soll hier nicht ueberschrieben werden.
+        if "content-security-policy" not in response.headers:
+            response.headers["Content-Security-Policy"] = f"{CSP_BASE_DIRECTIVES}; form-action 'self'"
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
         return response
