@@ -10,6 +10,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Fixed
 - **MCP OAuth redirect fallback** — Unknown or expired DCR client registrations (the in-memory registry doesn't survive restarts or its 24h TTL) now fall back to the redirect-host whitelist instead of hard-rejecting with `invalid_redirect_uri`, matching the existing CIMD-client behavior. Fixes ChatGPT connector re-authorization breaking after a container restart.
 - **OAuth handshake rate-limit tier** — `/oauth/authorize`, `/oauth/token` and `/oauth/register` now share their own `oauth` tier (`KIWIKI_OAUTH_LIMIT`, default 20/min) instead of the 5/min `/login` brute-force tier. A single connector setup (form submit, retry, token exchange, refresh) could previously exhaust the shared login limit and silently 429 with no visible feedback on the plain HTML authorize form; that form now also gets a readable HTML error page instead of a raw JSON body when rate-limited.
+- **OAuth consent form CSP form-action** — `form-action 'self'` in the global CSP also governs the redirect target after a form submission, not just the initial submit URL. This silently blocked the browser from following the 302 to `chatgpt.com` after submitting the `/oauth/authorize` consent form — clicking "Autorisieren" appeared to do nothing, with the actual block only visible in the browser console. The authorize page now sets its own CSP with a `form-action` exception scoped to the one, already-validated `redirect_uri` origin.
 
 ## [3.0.0] - 2026-07-14
 
