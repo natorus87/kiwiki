@@ -1,16 +1,24 @@
 """
 Einfache, prozesslokale Rate-Limiting-Middleware.
 
-Drei Tier-Grenzen pro Client-IP:
-  - login       : 5 Versuche / Minute  (Brute-Force-Schutz)
+Vier Tier-Grenzen pro Client-IP:
+  - login       : 5 Versuche / Minute  (Brute-Force-Schutz für /login)
+  - oauth       : 20 Anfragen / Minute (MCP-OAuth-Handshake: authorize/token/register)
   - write       : 30 Anfragen / Minute (Schreiboperationen)
   - alles andere: 60 Anfragen / Minute (Lesen / UI / MCP)
+
+Der OAuth-Handshake braucht ein eigenes, grosszuegigeres Tier: Ein einzelner
+Connector-Aufbau (Authorize-Formular, ggf. Tippfehler-Retry, Token-Exchange,
+spaetere Refreshes) verbraucht schnell mehr als die 5 Versuche, die fuer
+Passwort-Brute-Force am /login-Formular gedacht sind — sonst landen legitime
+Nutzer im selben 429 wie ein Angreifer.
 
 Schaltung über KIWIKI_RATE_LIMIT_ENABLED (default "true").
 """
 
 from __future__ import annotations
 
+import html
 import logging
 import os
 import time
@@ -20,7 +28,7 @@ from typing import Callable
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse
 
 logger = logging.getLogger("kiwiki.rate_limiter")
 
@@ -49,6 +57,9 @@ _TRUSTED_PROXY_NETWORKS = _parse_trusted_proxy_networks(os.getenv("KIWIKI_TRUSTE
 
 _LOGIN_LIMIT: int = int(os.getenv("KIWIKI_LOGIN_LIMIT", "5"))
 _LOGIN_WINDOW: int = 60  # Sekunden
+
+_OAUTH_LIMIT: int = int(os.getenv("KIWIKI_OAUTH_LIMIT", "20"))
+_OAUTH_WINDOW: int = 60
 
 _WRITE_LIMIT: int = int(os.getenv("KIWIKI_WRITE_LIMIT", "30"))
 _WRITE_WINDOW: int = 60
@@ -93,11 +104,11 @@ def _get_client_ip(request: Request) -> str:
 
 
 def _classify_path(path: str, method: str) -> str:
-    """Ordne Pfad+Methode einer der drei Limits zu."""
+    """Ordne Pfad+Methode einer der vier Limits zu."""
     if path == "/login" and method == "POST":
         return "login"
     if path in {"/oauth/token", "/oauth/authorize", "/oauth/register"} and method == "POST":
-        return "login"
+        return "oauth"
     if path.startswith("/mcp") and method in ("POST", "PUT", "DELETE", "PATCH"):
         return "write"
     if path.startswith("/oauth/") and method in ("POST", "PUT", "DELETE", "PATCH"):
@@ -105,6 +116,44 @@ def _classify_path(path: str, method: str) -> str:
     if path.startswith("/api/") and method in ("POST", "PUT", "DELETE", "PATCH"):
         return "write"
     return "read"
+
+
+def _build_rate_limit_response(request: Request, retry_after: int) -> Response:
+    """429-Antwort passend zum Client: HTML fuer das browser-native
+    /oauth/authorize-Formular (sonst landet dort ein unstyled JSON-Blob
+    auf sonst leerer Seite und wirkt wie 'nichts passiert'), JSON fuer
+    alle anderen (programmatischen) Aufrufer."""
+    detail = "Zu viele Anfragen. Bitte später erneut versuchen."
+    headers = {"Retry-After": str(retry_after)}
+
+    is_authorize_form = (
+        request.url.path == "/oauth/authorize"
+        and request.method == "POST"
+        and "text/html" in request.headers.get("accept", "")
+    )
+    if is_authorize_form:
+        return HTMLResponse(
+            status_code=429,
+            headers=headers,
+            content=f"""<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>kiwiki – Zu viele Anfragen</title>
+  <style>
+    body {{ font-family: system-ui, sans-serif; max-width: 400px; margin: 80px auto; padding: 0 1rem; }}
+    h1 {{ font-size: 1.4rem; margin-bottom: 0.25rem; }}
+    p {{ color: #555; font-size: 0.9rem; }}
+  </style>
+</head>
+<body>
+  <h1>Zu viele Anfragen</h1>
+  <p>{html.escape(detail)} (in ca. {retry_after} Sekunden erneut versuchen.)</p>
+</body>
+</html>""",
+        )
+    return JSONResponse(status_code=429, content={"detail": detail, "retry_after": retry_after}, headers=headers)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -118,6 +167,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._limits: dict[str, tuple[int, int]] = defaults or {
             "login": (_LOGIN_LIMIT, _LOGIN_WINDOW),
+            "oauth": (_OAUTH_LIMIT, _OAUTH_WINDOW),
             "write": (_WRITE_LIMIT, _WRITE_WINDOW),
             "read":  (_READ_LIMIT,  _READ_WINDOW),
         }
@@ -164,15 +214,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 if self._windows.get(key)
                 else now + window
             )
-            response = JSONResponse(
-                status_code=429,
-                content={
-                    "detail": "Zu viele Anfragen. Bitte später erneut versuchen.",
-                    "retry_after": max(0, int(reset_at - now)),
-                },
-                headers={"Retry-After": str(max(0, int(reset_at - now)))},
-            )
-            return response  # type: ignore[return-value]
+            return _build_rate_limit_response(request, max(0, int(reset_at - now)))
 
         # Zaehler erhohen
         self._windows.setdefault(key, []).append(now)
