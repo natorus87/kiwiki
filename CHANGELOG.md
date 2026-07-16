@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- **MCP OAuth redirect fallback** — Unknown or expired DCR client registrations (the in-memory registry doesn't survive restarts or its 24h TTL) now fall back to the redirect-host whitelist instead of hard-rejecting with `invalid_redirect_uri`, matching the existing CIMD-client behavior. Fixes ChatGPT connector re-authorization breaking after a container restart.
+- **OAuth handshake rate-limit tier** — `/oauth/authorize`, `/oauth/token` and `/oauth/register` now share their own `oauth` tier (`KIWIKI_OAUTH_LIMIT`, default 20/min) instead of the 5/min `/login` brute-force tier. A single connector setup (form submit, retry, token exchange, refresh) could previously exhaust the shared login limit and silently 429 with no visible feedback on the plain HTML authorize form; that form now also gets a readable HTML error page instead of a raw JSON body when rate-limited.
+
 ## [3.0.0] - 2026-07-14
 
 ### Migration
