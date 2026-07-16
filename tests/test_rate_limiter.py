@@ -111,7 +111,62 @@ def test_forwarded_for_is_only_used_from_configured_proxy(monkeypatch):
     assert _get_client_ip(request) == "198.51.100.20"
 
 
-def test_oauth_credentials_use_bruteforce_tier():
-    assert _classify_path("/oauth/token", "POST") == "login"
-    assert _classify_path("/oauth/authorize", "POST") == "login"
-    assert _classify_path("/oauth/register", "POST") == "login"
+def test_oauth_endpoints_use_own_tier():
+    """OAuth-Handshake braucht mehr Spielraum als das /login-Bruteforce-Tier
+    (Formular-Retry, Token-Exchange, Refresh) — eigenes 'oauth'-Tier statt 'login'."""
+    assert _classify_path("/oauth/token", "POST") == "oauth"
+    assert _classify_path("/oauth/authorize", "POST") == "oauth"
+    assert _classify_path("/oauth/register", "POST") == "oauth"
+
+
+@pytest.mark.asyncio
+async def test_oauth_tier_is_independent_from_login_tier():
+    """Regression: Vorher teilten sich /login und /oauth/* dasselbe 5/min-Tier,
+    wodurch ein normaler OAuth-Connector-Aufbau (Formular + Retry + Token-Exchange)
+    schon die Login-Bruteforce-Grenze sprengte und legitime Autorisierungen mit
+    429 blockierte."""
+    mw = RateLimitMiddleware(app=None, defaults={"login": (2, 60), "oauth": (5, 60)})
+    for _ in range(2):
+        req = _FakeRequest("/login", "POST", client_host="10.0.0.20")
+        resp = await mw.dispatch(req, _noop)
+        assert resp.status_code == 200
+    # /login-Tier ist jetzt erschoepft
+    req = _FakeRequest("/login", "POST", client_host="10.0.0.20")
+    assert (await mw.dispatch(req, _noop)).status_code == 429
+
+    # /oauth/authorize von derselben IP ist davon unberuehrt
+    for _ in range(5):
+        req = _FakeRequest("/oauth/authorize", "POST", client_host="10.0.0.20")
+        req.headers = {"accept": "application/json"}
+        resp = await mw.dispatch(req, _noop)
+        assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_authorize_form_gets_html_error():
+    """Ein blockierter Browser-Formular-POST auf /oauth/authorize soll eine
+    lesbare HTML-Fehlerseite bekommen statt eines unstyled JSON-Blobs, der auf
+    einer sonst leeren Seite wie 'nichts passiert' wirkt."""
+    mw = RateLimitMiddleware(app=None, defaults={"oauth": (1, 60)})
+    req = _FakeRequest("/oauth/authorize", "POST", client_host="10.0.0.21")
+    req.headers = {"accept": "text/html,application/xhtml+xml"}
+    assert (await mw.dispatch(req, _noop)).status_code == 200
+
+    blocked = await mw.dispatch(req, _noop)
+    assert blocked.status_code == 429
+    assert blocked.headers["content-type"].startswith("text/html")
+    assert "Zu viele Anfragen" in blocked.body.decode()
+    assert "Retry-After" in blocked.headers
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_authorize_json_client_gets_json_error():
+    """Programmatische Aufrufer (z.B. ChatGPTs Backend) bekommen weiterhin JSON."""
+    mw = RateLimitMiddleware(app=None, defaults={"oauth": (1, 60)})
+    req = _FakeRequest("/oauth/authorize", "POST", client_host="10.0.0.22")
+    req.headers = {"accept": "application/json"}
+    assert (await mw.dispatch(req, _noop)).status_code == 200
+
+    blocked = await mw.dispatch(req, _noop)
+    assert blocked.status_code == 429
+    assert blocked.headers["content-type"].startswith("application/json")
