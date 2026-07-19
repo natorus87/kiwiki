@@ -4,6 +4,6 @@ ruff==0.15.21
 pytest==9.1.1
 pytest-asyncio==1.4.0
 coverage==7.14.3
-pip-audit==2.9.0
+pip-audit==2.10.1
 playwright==1.55.0
 httpx2==2.3.0
