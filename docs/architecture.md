@@ -113,6 +113,12 @@ All global helpers in `kiwiki.js` are namespaced with the `kw` prefix (`kwToast`
 
 Helpers that need to change frontmatter (tags, metadata) must go through `PATCH /api/file/frontmatter` (`storage.update_frontmatter()` server-side) instead of reconstructing the frontmatter block client-side with string/regex manipulation. `kwBatchTag()` used to rebuild the whole `---\n...\n---` block via regex directly on `fc.content` — it matched inconsistently (the `/api/file` response already strips frontmatter from `content`) and, when it did match, wiped out every other frontmatter field (`title`, `created`, `updated`). The server-side merge only touches the keys it's given.
 
+State-sensitive HTMX reads use `kwHtmxGet(path, target)`. It creates a request-specific source element and resolves
+from `htmx:afterRequest.successful`, because the promise returned by HTMX 1.9 may resolve before a queued request has
+actually run and also resolves for HTTP error responses. File URLs, active markers and persisted open-folder state
+must only change after `kwHtmxGet()` reports success. The global `htmx:responseError` handler is responsible for
+visible retry/error feedback.
+
 Tree state (open folders, active file, scroll position) is persisted in `localStorage` under these keys:
 
 | Key | Purpose |
@@ -131,6 +137,16 @@ Role checks happen in three layers and must align — a missing layer causes sil
 3. **Client**: `kwCanWrite()` / `kwCanAdmin()` read from `window.KIWIKI.roleLevel`, set in `layout.html` from the session cookie
 
 If any layer is skipped, users see UI they cannot use (or vice versa). The `user` key in the template context is the bridge between server and template — always pass it.
+
+## Rate Limiting
+
+Browser fragments have their own `ui` tier (`KIWIKI_UI_LIMIT`, default 240 requests/minute per client IP). It covers
+GET requests below `/ui/` and the read-only live-search POST `/ui/search`. Mutating UI POSTs remain in the `write`
+tier, while REST/MCP reads use `read`. This separation prevents the initial file tree, dashboard fragments and
+persisted folder restoration from exhausting the lower programmatic-read budget.
+
+Behind a reverse proxy, enable `KIWIKI_TRUST_PROXY=true` only together with `KIWIKI_TRUSTED_PROXY_CIDRS`; otherwise
+all users share the proxy peer IP and therefore one limiter window.
 
 ## Testing
 
