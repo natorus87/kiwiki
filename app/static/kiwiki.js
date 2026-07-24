@@ -6,6 +6,38 @@ function apiHeaders(extra) {
   return Object.assign({}, extra || {});
 }
 
+function kwHtmxGet(path, target) {
+  return new Promise(function(resolve) {
+    var source = document.createElement('span');
+    var settled = false;
+    source.hidden = true;
+    document.body.appendChild(source);
+
+    function finish(success) {
+      if (settled) return;
+      settled = true;
+      source.remove();
+      resolve(success);
+    }
+
+    source.addEventListener('htmx:afterRequest', function(e) {
+      finish(Boolean(e.detail && e.detail.successful));
+    }, { once: true });
+
+    try {
+      htmx.ajax('GET', path, {
+        source: source,
+        target: target,
+        swap: 'innerHTML',
+      }).catch(function() {
+        finish(false);
+      });
+    } catch (_err) {
+      finish(false);
+    }
+  });
+}
+
 function kwIsMobileSidebar() {
   return window.matchMedia && window.matchMedia('(max-width: 1024px)').matches;
 }
@@ -79,20 +111,23 @@ function toggleSidebar() {
 function loadFile(path, el, options) {
   options = options || {};
   var fileUrl = '/?file=' + encodeURIComponent(path);
+  var requestUrl = '/ui/file?path=' + encodeURIComponent(path);
   if (window.location.pathname !== '/') {
     window.location.href = fileUrl;
     return;
   }
-  document.querySelectorAll('.file-item').forEach(function(item) { item.classList.remove('active'); });
-  if (el) el.classList.add('active');
-  kwSetActiveFile(path);
   var results = document.getElementById('search-results');
   if (results) results.innerHTML = '';
-  htmx.ajax('GET', '/ui/file?path=' + encodeURIComponent(path), { target: '#main-content', swap: 'innerHTML' });
-  if (options.history !== false && window.location.pathname + window.location.search !== fileUrl) {
-    window.history.pushState({ file: path }, '', fileUrl);
-  }
-  if (window.innerWidth <= 1024) closeSidebar();
+  return kwHtmxGet(requestUrl, '#main-content').then(function(success) {
+    if (!success) return;
+    document.querySelectorAll('.file-item').forEach(function(item) { item.classList.remove('active'); });
+    if (el) el.classList.add('active');
+    kwSetActiveFile(path);
+    if (options.history !== false && window.location.pathname + window.location.search !== fileUrl) {
+      window.history.pushState({ file: path }, '', fileUrl);
+    }
+    if (window.innerWidth <= 1024) closeSidebar();
+  });
 }
 
 function kwOpenDoc(path) {
@@ -204,11 +239,19 @@ function kwExpandFolderByPath(path) {
     if (row.classList.contains('open')) { resolve(true); return; }
     var subtree = row.nextElementSibling;
     if (!subtree || !subtree.classList.contains('subtree')) { resolve(false); return; }
+    var item = row.querySelector('.file-item.folder');
     row.classList.add('open');
-    htmx.ajax('GET', '/ui/files?path=' + encodeURIComponent(path), {
-      target: '#' + subtree.id, swap: 'innerHTML'
-    }).then(function() { resolve(true); })
-      .catch(function() { resolve(false); });
+    row.setAttribute('aria-expanded', 'true');
+    if (item) item.setAttribute('aria-expanded', 'true');
+    kwHtmxGet('/ui/files?path=' + encodeURIComponent(path), '#' + subtree.id).then(function(success) {
+      if (!success) {
+        subtree.innerHTML = '';
+        row.classList.remove('open');
+        row.setAttribute('aria-expanded', 'false');
+        if (item) item.setAttribute('aria-expanded', 'false');
+      }
+      resolve(success);
+    });
   });
 }
 
@@ -253,6 +296,17 @@ document.addEventListener('htmx:afterSwap', function(e) {
     var title = e.target.querySelector('.file-title');
     document.title = title ? title.textContent.trim() + ' – kiwiki' : 'kiwiki';
   }
+});
+
+document.addEventListener('htmx:responseError', function(e) {
+  var xhr = e.detail && e.detail.xhr;
+  if (xhr && xhr.status === 429) {
+    var retryAfter = parseInt(xhr.getResponseHeader('Retry-After') || '0', 10);
+    var suffix = retryAfter > 0 ? ' In ' + retryAfter + ' Sekunden erneut versuchen.' : '';
+    kwToast('Zu viele Anfragen.' + suffix, { type: 'error' });
+    return;
+  }
+  kwToast('Inhalt konnte nicht geladen werden.', { type: 'error' });
 });
 
 // Scroll-Position laufend speichern (debounced).
@@ -962,13 +1016,23 @@ function toggleFolder(el, path, treeId) {
     el.setAttribute('aria-expanded', 'false');
     kwRemoveOpenFolder(path);
   } else {
+    var requestUrl = '/ui/files?path=' + encodeURIComponent(path);
+    function rollbackFolder() {
+      subtree.innerHTML = '';
+      row.classList.remove('open');
+      row.setAttribute('aria-expanded', 'false');
+      el.setAttribute('aria-expanded', 'false');
+      kwRemoveOpenFolder(path);
+    }
     row.classList.add('open');
     row.setAttribute('aria-expanded', 'true');
     el.setAttribute('aria-expanded', 'true');
     kwAddOpenFolder(path);
-    htmx.ajax('GET', '/ui/files?path=' + encodeURIComponent(path), {
-      target: '#' + treeId, swap: 'innerHTML'
-    }).then(function() {
+    kwHtmxGet(requestUrl, '#' + treeId).then(function(success) {
+      if (!success) {
+        rollbackFolder();
+        return;
+      }
       // Wenn ein Sub-Ordner laut Persistenz offen sein soll, hier nachholen.
       if (!window.__kwRestoringTree) kwRestoreTreeState();
     });
