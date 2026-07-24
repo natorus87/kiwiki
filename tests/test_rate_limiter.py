@@ -119,6 +119,29 @@ def test_oauth_endpoints_use_own_tier():
     assert _classify_path("/oauth/register", "POST") == "oauth"
 
 
+def test_ui_fragments_use_own_tier():
+    """Explorer- und Dashboard-Fragmente duerfen das API-Leselimit nicht aufbrauchen."""
+    assert _classify_path("/ui/files", "GET") == "ui"
+    assert _classify_path("/ui/file", "GET") == "ui"
+    assert _classify_path("/ui/search", "POST") == "ui"
+    assert _classify_path("/ui/rename", "POST") == "write"
+    assert _classify_path("/api/file", "GET") == "read"
+
+
+@pytest.mark.asyncio
+async def test_ui_tier_is_independent_from_read_tier():
+    """Viele HTMX-Fragmente duerfen normale API-Lesezugriffe nicht blockieren."""
+    mw = RateLimitMiddleware(app=None, defaults={"read": (1, 60), "ui": (3, 60)})
+    client_host = "10.0.0.23"
+
+    for _ in range(3):
+        response = await mw.dispatch(_FakeRequest("/ui/files", "GET", client_host), _noop)
+        assert response.status_code == 200
+
+    assert (await mw.dispatch(_FakeRequest("/ui/files", "GET", client_host), _noop)).status_code == 429
+    assert (await mw.dispatch(_FakeRequest("/api/file", "GET", client_host), _noop)).status_code == 200
+
+
 @pytest.mark.asyncio
 async def test_oauth_tier_is_independent_from_login_tier():
     """Regression: Vorher teilten sich /login und /oauth/* dasselbe 5/min-Tier,
