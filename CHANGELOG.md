@@ -8,9 +8,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Fixed
+- **Web explorer no longer appears frozen after rate limiting** — HTMX file and folder requests now use a dedicated
+  `ui` tier (`KIWIKI_UI_LIMIT`, default 240/min) instead of sharing the lower API/MCP read budget. HTTP 429 responses
+  produce a visible retry toast, failed note navigation keeps the current URL and content, and failed folder loads
+  roll back their open/persisted state. Request-specific HTMX sources prevent rapid clicks from confirming queued
+  requests before their response, including during persisted tree restoration.
 - **MCP OAuth redirect fallback** — Unknown or expired DCR client registrations (the in-memory registry doesn't survive restarts or its 24h TTL) now fall back to the redirect-host whitelist instead of hard-rejecting with `invalid_redirect_uri`, matching the existing CIMD-client behavior. Fixes ChatGPT connector re-authorization breaking after a container restart.
 - **OAuth handshake rate-limit tier** — `/oauth/authorize`, `/oauth/token` and `/oauth/register` now share their own `oauth` tier (`KIWIKI_OAUTH_LIMIT`, default 20/min) instead of the 5/min `/login` brute-force tier. A single connector setup (form submit, retry, token exchange, refresh) could previously exhaust the shared login limit and silently 429 with no visible feedback on the plain HTML authorize form; that form now also gets a readable HTML error page instead of a raw JSON body when rate-limited.
 - **OAuth consent form CSP form-action** — `form-action 'self'` in the global CSP also governs the redirect target after a form submission, not just the initial submit URL. This silently blocked the browser from following the 302 to `chatgpt.com` after submitting the `/oauth/authorize` consent form — clicking "Autorisieren" appeared to do nothing, with the actual block only visible in the browser console. The authorize page now sets its own CSP with a `form-action` exception scoped to the one, already-validated `redirect_uri` origin.
+
+### Tests
+- **Explorer rate-limit regression coverage** — Browser smoke checks now cover successful nested navigation, visible
+  429 feedback, URL/content preservation, folder rollback, rapid competing clicks and failed persisted-folder restore.
+  Unit tests keep UI, API-read and write rate-limit tiers independent.
 
 ## [3.0.0] - 2026-07-14
 
