@@ -73,12 +73,100 @@ def _run_browser_checks() -> None:
         assert sidebar.evaluate("element => element.inert") is True
         assert hamburger.evaluate("element => document.activeElement === element") is True
 
+        hamburger.click()
+        notes_folder = page.locator('.tree-row[data-kind="dir"][data-path="notes"] .file-item')
+        notes_folder.click()
+        nested_note = page.locator('.tree-row[data-kind="file"][data-path="notes/nested.md"] .file-item')
+        nested_note.wait_for()
+        nested_note.click()
+        page.locator(".file-view").wait_for()
+        assert "Explorer-Test." in page.locator(".markdown-content").inner_text()
+        assert "file=notes%2Fnested.md" in page.url
+
+        page.route(
+            "**/ui/file?path=welcome.md",
+            lambda route: route.fulfill(
+                status=429,
+                content_type="application/json",
+                headers={"Retry-After": "42"},
+                body='{"detail":"Zu viele Anfragen. Bitte später erneut versuchen.","retry_after":42}',
+            ),
+        )
+        hamburger.click()
+        page.locator('.tree-row[data-kind="file"][data-path="welcome.md"] .file-item').click()
+        page.locator(".kw-toast.error").wait_for()
+        assert "Zu viele Anfragen" in page.locator(".kw-toast.error").inner_text()
+        assert "file=notes%2Fnested.md" in page.url
+        assert "Explorer-Test." in page.locator(".markdown-content").inner_text()
+        page.unroute("**/ui/file?path=welcome.md")
+
+        page.route(
+            "**/ui/files?path=projects",
+            lambda route: route.fulfill(
+                status=429,
+                content_type="application/json",
+                headers={"Retry-After": "42"},
+                body='{"detail":"Zu viele Anfragen. Bitte später erneut versuchen.","retry_after":42}',
+            ),
+        )
+        error_count = page.locator(".kw-toast.error").count()
+        projects_row = page.locator('.tree-row[data-kind="dir"][data-path="projects"]')
+        projects_row.locator(".file-item").click()
+        page.wait_for_function(
+            "(count) => document.querySelectorAll('.kw-toast.error').length > count",
+            arg=error_count,
+        )
+        assert "open" not in (projects_row.get_attribute("class") or "").split()
+        assert projects_row.get_attribute("aria-expanded") == "false"
+        page.unroute("**/ui/files?path=projects")
+
+        page.route(
+            "**/ui/file?path=notes%2Fnested.md",
+            lambda route: route.fulfill(
+                status=429,
+                content_type="application/json",
+                headers={"Retry-After": "42"},
+                body='{"detail":"Zu viele Anfragen. Bitte später erneut versuchen.","retry_after":42}',
+            ),
+        )
+        page.evaluate(
+            """() => {
+                document.querySelector(
+                    '.tree-row[data-kind="file"][data-path="welcome.md"] .file-item'
+                ).click();
+                document.querySelector(
+                    '.tree-row[data-kind="file"][data-path="notes/nested.md"] .file-item'
+                ).click();
+            }"""
+        )
+        page.wait_for_url(f"{BASE_URL}/?file=welcome.md")
+        page.locator(".file-view").wait_for()
+        assert "Browser-Test." in page.locator(".markdown-content").inner_text()
+        page.unroute("**/ui/file?path=notes%2Fnested.md")
+
         page.goto(f"{BASE_URL}/?file=welcome.md", wait_until="networkidle")
         page.locator(".file-view").wait_for()
         page.wait_for_function("document.title.toLowerCase().includes('welcome')")
         assert "file=welcome.md" in page.url
         assert "welcome" in page.title().lower()
         assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+
+        page.route(
+            "**/ui/files?path=projects",
+            lambda route: route.fulfill(
+                status=429,
+                content_type="application/json",
+                headers={"Retry-After": "42"},
+                body='{"detail":"Zu viele Anfragen. Bitte später erneut versuchen.","retry_after":42}',
+            ),
+        )
+        page.evaluate("localStorage.setItem('kiwiki:openFolders', JSON.stringify(['projects']))")
+        page.goto(f"{BASE_URL}/", wait_until="networkidle")
+        projects_row = page.locator('.tree-row[data-kind="dir"][data-path="projects"]')
+        projects_row.wait_for()
+        assert "open" not in (projects_row.get_attribute("class") or "").split()
+        assert page.evaluate("JSON.parse(localStorage.getItem('kiwiki:openFolders')).includes('projects')") is False
+        page.unroute("**/ui/files?path=projects")
 
         page.goto(f"{BASE_URL}/settings", wait_until="networkidle")
         form_width = page.locator(".settings-form").evaluate("element => element.getBoundingClientRect().width")
@@ -102,6 +190,10 @@ def main() -> None:
         user_dir = Path(data_dir) / "admin"
         user_dir.mkdir(parents=True)
         (user_dir / "welcome.md").write_text("# Willkommen\n\nBrowser-Test.\n", encoding="utf-8")
+        notes_dir = user_dir / "notes"
+        notes_dir.mkdir()
+        (notes_dir / "nested.md").write_text("# Verschachtelt\n\nExplorer-Test.\n", encoding="utf-8")
+        (user_dir / "projects").mkdir()
 
         env = os.environ.copy()
         env.update(
