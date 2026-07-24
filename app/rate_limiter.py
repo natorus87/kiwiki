@@ -1,11 +1,12 @@
 """
 Einfache, prozesslokale Rate-Limiting-Middleware.
 
-Vier Tier-Grenzen pro Client-IP:
+Fuenf Tier-Grenzen pro Client-IP:
   - login       : 5 Versuche / Minute  (Brute-Force-Schutz für /login)
   - oauth       : 20 Anfragen / Minute (MCP-OAuth-Handshake: authorize/token/register)
   - write       : 30 Anfragen / Minute (Schreiboperationen)
-  - alles andere: 60 Anfragen / Minute (Lesen / UI / MCP)
+  - ui          : 240 Anfragen / Minute (HTMX-Fragmente der Weboberflaeche)
+  - alles andere: 60 Anfragen / Minute (API-/MCP-Lesezugriffe)
 
 Der OAuth-Handshake braucht ein eigenes, grosszuegigeres Tier: Ein einzelner
 Connector-Aufbau (Authorize-Formular, ggf. Tippfehler-Retry, Token-Exchange,
@@ -64,6 +65,9 @@ _OAUTH_WINDOW: int = 60
 _WRITE_LIMIT: int = int(os.getenv("KIWIKI_WRITE_LIMIT", "30"))
 _WRITE_WINDOW: int = 60
 
+_UI_LIMIT: int = int(os.getenv("KIWIKI_UI_LIMIT", "240"))
+_UI_WINDOW: int = 60
+
 _READ_LIMIT: int = int(os.getenv("KIWIKI_READ_LIMIT", "60"))
 _READ_WINDOW: int = 60
 
@@ -115,6 +119,10 @@ def _classify_path(path: str, method: str) -> str:
         return "write"
     if path.startswith("/api/") and method in ("POST", "PUT", "DELETE", "PATCH"):
         return "write"
+    if path == "/ui/search" and method == "POST":
+        return "ui"
+    if path.startswith("/ui/"):
+        return "write" if method in ("POST", "PUT", "DELETE", "PATCH") else "ui"
     return "read"
 
 
@@ -169,6 +177,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "login": (_LOGIN_LIMIT, _LOGIN_WINDOW),
             "oauth": (_OAUTH_LIMIT, _OAUTH_WINDOW),
             "write": (_WRITE_LIMIT, _WRITE_WINDOW),
+            "ui":    (_UI_LIMIT,    _UI_WINDOW),
             "read":  (_READ_LIMIT,  _READ_WINDOW),
         }
         # { (client_ip, tier): [timestamp, ...] }
