@@ -224,7 +224,7 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RequestSizeLimitMiddleware)
 
 # ---------------------------------------------------------------------------
-# Rate Limiting — Login: 5/min, Write: 30/min, Read: 60/min pro IP
+# Rate Limiting — Login: 5/min, OAuth: 20/min, Write: 30/min, UI: 240/min, Read: 60/min pro IP
 # KIWIKI_RATE_LIMIT_ENABLED="false" deaktiviert komplett
 # ---------------------------------------------------------------------------
 app.add_middleware(RateLimitMiddleware)
