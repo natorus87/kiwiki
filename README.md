@@ -74,10 +74,11 @@ All runtime configuration is done through environment variables.
 | `KIWIKI_TRUST_PROXY` | `false` | Trust forwarding headers and use secure cookies behind a TLS reverse proxy |
 | `KIWIKI_TRUSTED_PROXY_CIDRS` | empty | Trusted proxy networks allowed to supply `X-Forwarded-For`; required when proxy trust is enabled |
 | `KIWIKI_CORS_ORIGINS` | empty | Comma-separated list of allowed CORS origins; empty disables cross-origin access |
-| `KIWIKI_RATE_LIMIT_ENABLED` | `true` | Enables login, read, and write rate limits |
+| `KIWIKI_RATE_LIMIT_ENABLED` | `true` | Enables login, OAuth, UI, read, and write rate limits |
 | `KIWIKI_LOGIN_LIMIT` | `5` | `/login` brute-force attempts per minute and client IP |
 | `KIWIKI_OAUTH_LIMIT` | `20` | OAuth handshake requests (authorize/token/register) per minute and client IP |
 | `KIWIKI_WRITE_LIMIT` | `30` | Authenticated write requests per minute and client IP |
+| `KIWIKI_UI_LIMIT` | `240` | Web UI fragment requests per minute and client IP |
 | `KIWIKI_READ_LIMIT` | `60` | Authenticated read requests per minute and client IP |
 | `KIWIKI_SESSION_TTL_SECONDS` | `43200` | Web-session lifetime; sessions are stored hashed and revoked after user/role changes |
 | `KIWIKI_MAX_TENANT_FILES` | `10000` | Maximum Markdown files per user workspace |
