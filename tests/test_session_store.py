@@ -161,15 +161,22 @@ def test_expired_session_is_pruned_on_lookup():
     assert record.token not in session_store._sessions
 
 
-def test_lookup_debounces_disk_writes_on_renewal(monkeypatch):
+def test_lookup_debounces_disk_writes_on_renewal(monkeypatch, tmp_path):
     """Wiederholte Lookups innerhalb des Debounce-Fensters persistieren nicht
     bei jedem Request — nur bei spuerbarer Verschiebung von expires_at."""
+    clock = [1_000.0]
+    monkeypatch.setattr(session_store, "_SESSION_FILE", tmp_path / "sessions.json")
+    monkeypatch.setattr(session_store, "_now", lambda: clock[0])
+    monkeypatch.setattr(session_store, "_loaded", True)
     record = session_store.create_session("alice", "write", "k")
     calls = []
     monkeypatch.setattr(session_store, "_save_to_disk", lambda: calls.append(1))
 
+    clock[0] += 10
     session_store.lookup_session(record.token)
+    clock[0] += 10
     session_store.lookup_session(record.token)
+    clock[0] += 10
     session_store.lookup_session(record.token)
 
     assert calls == []
@@ -177,20 +184,42 @@ def test_lookup_debounces_disk_writes_on_renewal(monkeypatch):
     assert session_store._sessions[session_store._token_hash(record.token)].expires_at > 0
 
 
-def test_lookup_persists_after_debounce_window(monkeypatch):
+def test_lookup_persists_after_debounce_window(monkeypatch, tmp_path):
     """Nach Ablauf des Debounce-Fensters wird die naechste Renewal wieder
     persistiert."""
+    clock = [1_000.0]
+    monkeypatch.setattr(session_store, "_SESSION_FILE", tmp_path / "sessions.json")
+    monkeypatch.setattr(session_store, "_now", lambda: clock[0])
+    monkeypatch.setattr(session_store, "_loaded", True)
     record = session_store.create_session("alice", "write", "k")
     calls = []
     monkeypatch.setattr(session_store, "_save_to_disk", lambda: calls.append(1))
 
-    lookup_key = session_store._token_hash(record.token)
-    old_expires_at = session_store._sessions[lookup_key].expires_at
-    session_store._sessions[lookup_key].expires_at = (
-        old_expires_at - session_store._SESSION_SAVE_DEBOUNCE_SECONDS - 1
-    )
+    clock[0] += session_store._SESSION_SAVE_DEBOUNCE_SECONDS + 1
     session_store.lookup_session(record.token)
     assert calls == [1]
+
+
+def test_frequent_lookups_persist_sliding_expiration(monkeypatch, tmp_path):
+    """Auch Zugriffe unterhalb des Debounce-Intervalls muessen die Session
+    nach Ablauf des gesamten Fensters dauerhaft verlaengern."""
+    session_file = tmp_path / "sessions.json"
+    clock = [1_000.0]
+    monkeypatch.setattr(session_store, "_SESSION_FILE", session_file)
+    monkeypatch.setattr(session_store, "_SESSION_TTL_SECONDS", 120)
+    monkeypatch.setattr(session_store, "_now", lambda: clock[0])
+    monkeypatch.setattr(session_store, "_loaded", True)
+
+    record = session_store.create_session("alice", "write", "k")
+    for _ in range(5):
+        clock[0] += 30
+        assert session_store.lookup_session(record.token) is not None
+
+    # Prozessneustart simulieren. Die urspruengliche Session waere bei 1120
+    # abgelaufen; die gleitende Verlaengerung muss daher auf Disk stehen.
+    session_store._sessions.clear()
+    monkeypatch.setattr(session_store, "_loaded", False)
+    assert session_store.lookup_session(record.token) is not None
 
 
 def test_expired_session_is_pruned_by_prune_expired():

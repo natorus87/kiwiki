@@ -112,6 +112,27 @@ def _login(users, key):
     return client
 
 
+def test_authenticated_request_renews_session_cookie(monkeypatch, tmp_path):
+    """Aktive Benutzer behalten eine gleitende Browser-Session."""
+    from app import session_store
+
+    monkeypatch.setenv("KIWIKI_USERS", "alice:writekey:write")
+    monkeypatch.setattr(session_store, "_SESSION_FILE", tmp_path / "sessions.json")
+    monkeypatch.setattr(session_store, "_loaded", True)
+    session_store._sessions.clear()
+
+    client = TestClient(app)
+    login = client.post("/login", data={"api_key": "writekey"}, follow_redirects=False)
+    assert login.status_code == 303
+    assert f"Max-Age={30 * 24 * 3600}" in login.headers["set-cookie"]
+
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 200
+    renewed_cookie = response.headers.get("set-cookie", "")
+    assert "kiwiki_session=" in renewed_cookie
+    assert f"Max-Age={30 * 24 * 3600}" in renewed_cookie
+
+
 def test_ui_file_leakt_keine_internen_exception_details(tmp_path, monkeypatch):
     """Unerwartete Exceptions (nicht ValueError/FileNotFoundError) duerfen
     ihre Detailmeldung nicht an den Client durchreichen — sonst koennten

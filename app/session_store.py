@@ -24,8 +24,8 @@ from pathlib import Path
 
 logger = logging.getLogger("kiwiki.session")
 
-# Default-TTL: 12 Stunden. Ueber KIWIKI_SESSION_TTL_SECONDS ueberschreibbar.
-_SESSION_TTL_SECONDS = int(os.getenv("KIWIKI_SESSION_TTL_SECONDS", str(12 * 3600)))
+# Default-TTL: 30 Tage. Ueber KIWIKI_SESSION_TTL_SECONDS ueberschreibbar.
+_SESSION_TTL_SECONDS = int(os.getenv("KIWIKI_SESSION_TTL_SECONDS", str(30 * 24 * 3600)))
 
 # Sliding-Expiration-Renewal wird nur auf Disk persistiert, wenn sich
 # expires_at um mehr als diesen Wert verschiebt — sonst wuerde jeder
@@ -46,6 +46,10 @@ class SessionRecord:
     username: str
     role: str
     expires_at: float
+    # Letzter Ablaufzeitpunkt, der erfolgreich in sessions.json geschrieben
+    # wurde. Ohne separaten Marker verhindern haeufige Lookups dauerhaft das
+    # Debounce-Persistieren, weil expires_at zuvor nur im RAM weiterwandert.
+    persisted_expires_at: float = 0.0
 
 
 # In-Memory-Cache (Quelle der Wahrheit laeuft, Datei ist Backup)
@@ -97,6 +101,7 @@ def _load_from_disk() -> None:
                     username=str(rec["username"]),
                     role=str(rec["role"]),
                     expires_at=float(rec["expires_at"]),
+                    persisted_expires_at=float(rec["expires_at"]),
                 )
                 loaded += 1
         if needs_migration:
@@ -132,6 +137,8 @@ def _save_to_disk() -> None:
             os.fsync(handle.fileno())
         os.replace(tmp_path, _SESSION_FILE)
         _SESSION_FILE.chmod(0o600)
+        for record in _sessions.values():
+            record.persisted_expires_at = record.expires_at
     except Exception:
         logger.warning("sessions: could not persist to %s", _SESSION_FILE, exc_info=True)
     finally:
@@ -185,7 +192,10 @@ def lookup_session(token: str) -> SessionRecord | None:
         # Sliding Expiration: Ablaufzeit bei jedem Zugriff erneuern, aber
         # nur bei spuerbarer Verschiebung auch auf Disk persistieren.
         new_expires_at = now + _SESSION_TTL_SECONDS
-        should_persist = new_expires_at - record.expires_at > _SESSION_SAVE_DEBOUNCE_SECONDS
+        should_persist = (
+            new_expires_at - record.persisted_expires_at
+            > _SESSION_SAVE_DEBOUNCE_SECONDS
+        )
         record.expires_at = new_expires_at
         if should_persist:
             _save_to_disk()

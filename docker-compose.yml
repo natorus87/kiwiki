@@ -11,6 +11,7 @@ services:
       KIWIKI_TRUST_PROXY: "false"  # auf "true" setzen hinter Reverse-Proxy/TLS-Terminierung
       KIWIKI_CORS_ORIGINS: ""      # leer oder Komma-getrennte Origins; "*" mit WARNS-LOG (Default)
       KIWIKI_RATE_LIMIT_ENABLED: "true"  # Rate Limiting aktivieren (empfohlen)
+      KIWIKI_SESSION_TTL_SECONDS: "${KIWIKI_SESSION_TTL_SECONDS:-2592000}"
       KIWIKI_OAUTH_TOKEN_SECRET: "${KIWIKI_OAUTH_TOKEN_SECRET:?KIWIKI_OAUTH_TOKEN_SECRET must be set}"
     volumes:
       - ./data:/data

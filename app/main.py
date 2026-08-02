@@ -263,6 +263,23 @@ _OPEN_PREFIXES = (
 )
 
 
+def _set_session_cookie(response, token: str) -> None:
+    """Setzt bzw. erneuert das gleitende Browser-Session-Cookie."""
+    trust_proxy = os.getenv("KIWIKI_TRUST_PROXY", "false").lower() == "true"
+    response.set_cookie(
+        "kiwiki_session",
+        token,
+        httponly=True,
+        secure=trust_proxy,
+        # strict statt lax: kiwiki hat keinen Cross-Site-Einstiegspunkt (kein
+        # Login-Link aus E-Mails etc.), daher schliesst strict CSRF ueber die
+        # zustandsaendernden /ui/*-POST-Endpunkte, ohne einen legitimen Flow
+        # zu brechen — alle internen Requests (HTMX, Formulare) sind same-site.
+        samesite="strict",
+        max_age=session_store.session_ttl_seconds(),
+    )
+
+
 class WebAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -293,7 +310,9 @@ class WebAuthMiddleware(BaseHTTPMiddleware):
             session_store.revoke_session(token)
             return RedirectResponse(url="/login", status_code=302)
         set_user_ns(record.username)
-        return await call_next(request)
+        response = await call_next(request)
+        _set_session_cookie(response, token)
+        return response
 
 
 app.add_middleware(WebAuthMiddleware)
@@ -414,20 +433,7 @@ async def login_submit(request: Request, api_key: str = Form(...)) -> HTMLRespon
     # NICHT den API-Key. Token-Compromise fuehrt nicht zur API-Key-Leak.
     record = session_store.create_session(username, role, api_key)
     response = RedirectResponse(url="/", status_code=303)
-    # Trust-proxy: secure cookie nur hinter HTTPS/Proxy
-    _trust_proxy = os.getenv("KIWIKI_TRUST_PROXY", "false").lower() == "true"
-    response.set_cookie(
-        "kiwiki_session",
-        record.token,
-        httponly=True,
-        secure=_trust_proxy,
-        # strict statt lax: kiwiki hat keinen Cross-Site-Einstiegspunkt (kein
-        # Login-Link aus E-Mails etc.), daher schliesst strict CSRF ueber die
-        # zustandsaendernden /ui/*-POST-Endpunkte, ohne einen legitimen Flow
-        # zu brechen — alle internen Requests (HTMX, Formulare) sind same-site.
-        samesite="strict",
-        max_age=session_store.session_ttl_seconds(),
-    )
+    _set_session_cookie(response, record.token)
     return response
 
 

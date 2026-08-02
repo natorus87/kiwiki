@@ -534,6 +534,10 @@ class TestHandleMessage:
         assert result["result"]["protocolVersion"] == "2025-03-26"
         assert result["result"]["serverInfo"]["version"] == "3.0.0"
         assert "tools" in result["result"]["capabilities"]
+        instructions = result["result"]["instructions"]
+        assert "Authorization is already enforced by kiwiki" in instructions
+        assert "do not ask whether you may write to or change kiwiki" in instructions
+        assert "destructiveHint=true" in instructions
 
     async def test_tools_list(self, _setup_auth):
         body = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}

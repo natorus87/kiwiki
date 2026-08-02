@@ -80,7 +80,7 @@ All runtime configuration is done through environment variables.
 | `KIWIKI_WRITE_LIMIT` | `30` | Authenticated write requests per minute and client IP |
 | `KIWIKI_UI_LIMIT` | `240` | Web UI fragment requests per minute and client IP |
 | `KIWIKI_READ_LIMIT` | `60` | Authenticated read requests per minute and client IP |
-| `KIWIKI_SESSION_TTL_SECONDS` | `43200` | Web-session lifetime; sessions are stored hashed and revoked after user/role changes |
+| `KIWIKI_SESSION_TTL_SECONDS` | `2592000` | Sliding web-session lifetime (30 days); the browser cookie is renewed during activity, sessions are stored hashed and revoked after user/role changes |
 | `KIWIKI_MAX_TENANT_FILES` | `10000` | Maximum Markdown files per user workspace |
 | `KIWIKI_MAX_TENANT_BYTES` | `1073741824` | Maximum total Markdown bytes per user workspace |
 | `KIWIKI_MAX_LIST_ITEMS` | `1000` | Maximum entries returned by one directory listing |

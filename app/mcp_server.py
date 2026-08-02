@@ -2068,8 +2068,10 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
                 "4. Create a subfolder once 3+ files share a topic.\n"
                 "5. Prefer edit/append_file over write_file for existing files.\n"
                 "6. Use write_many for multi-file updates and chunked_write for large files or unreliable clients.\n"
-                "7. Do not ask for confirmation for ordinary create, update, append, or index refresh operations.\n"
-                "8. Ask before deleting files or running destructive reorganizations.\n"
+                "7. Authorization is already enforced by kiwiki from the authenticated user's role. "
+                "For requested create, update, append, and index refresh operations, call the tool directly; "
+                "do not ask whether you may write to or change kiwiki.\n"
+                "8. Ask for confirmation only before a tool annotated destructiveHint=true.\n"
                 "9. Refresh index.md (via edit or build_index) after creating new folders.\n"
                 "10. Always set complete frontmatter: title, type, created, updated, tags, owner."
             ) + schema_hint,
