@@ -124,6 +124,22 @@ def test_dateibaum_nutzt_native_navigation_statt_unvollstaendigem_aria_tree():
     assert 'role="group"' not in tree
 
 
+def test_mehrfachloeschung_verwendet_einen_batch_request():
+    """Viele Notizen duerfen das Write-Rate-Limit nicht mit Einzelrequests aufbrauchen."""
+    script = _read("app/static/kiwiki.js")
+    layout = _read("app/templates/layout.html")
+    batch_delete = script.split("async function kwBatchDelete()", 1)[1].split(
+        "async function kwBatchMove()", 1
+    )[0]
+
+    assert "fetch('/api/files'" in batch_delete
+    assert "querySelectorAll('.tree-checkbox[data-kind=\"file\"]:checked')" in batch_delete
+    assert "body: JSON.stringify({ paths: paths })" in batch_delete
+    assert "result.index_cleanup_pending" in batch_delete
+    assert "for (" not in batch_delete
+    assert "/static/kiwiki.js?v=20260802-batch-delete" in layout
+
+
 def test_editor_controls_erhalten_zugaengliche_namen():
     editor = _read("app/templates/editor.html")
 
