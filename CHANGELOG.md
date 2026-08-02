@@ -8,6 +8,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Fixed
+- **Reliable multi-note deletion** — The explorer now deletes selected notes through one bounded batch request instead
+  of consuming one write-rate-limit slot per note. File deletion and search-index cleanup share path locks, bulk
+  deindexing uses one short-timeout transaction outside the event loop, mixed folder selections no longer poison the
+  note batch, and stale index revisions are excluded from search results.
 - **Web explorer no longer appears frozen after rate limiting** — HTMX file and folder requests now use a dedicated
   `ui` tier (`KIWIKI_UI_LIMIT`, default 240/min) instead of sharing the lower API/MCP read budget. HTTP 429 responses
   produce a visible retry toast, failed note navigation keeps the current URL and content, and failed folder loads
@@ -18,6 +22,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **OAuth consent form CSP form-action** — `form-action 'self'` in the global CSP also governs the redirect target after a form submission, not just the initial submit URL. This silently blocked the browser from following the 302 to `chatgpt.com` after submitting the `/oauth/authorize` consent form — clicking "Autorisieren" appeared to do nothing, with the actual block only visible in the browser console. The authorize page now sets its own CSP with a `form-action` exception scoped to the one, already-validated `redirect_uri` origin.
 
 ### Tests
+- **Batch-delete regression coverage** — API, rate-limit, authorization, request-size, SQLite-lock, stale-index and
+  real-browser tests cover deleting 35 selected notes with exactly one request.
 - **Explorer rate-limit regression coverage** — Browser smoke checks now cover successful nested navigation, visible
   429 feedback, URL/content preservation, folder rollback, rapid competing clicks and failed persisted-folder restore.
   Unit tests keep UI, API-read and write rate-limit tiers independent.
