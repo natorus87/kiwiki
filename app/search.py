@@ -39,7 +39,7 @@ def _get_pooled_conn(db_path: str) -> sqlite3.Connection:
                 return conn
             except sqlite3.ProgrammingError:
                 _pool.pop(key, None)
-        conn = sqlite3.connect(db_path, check_same_thread=False)
+        conn = sqlite3.connect(db_path, timeout=0.25, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -67,7 +67,7 @@ def get_db():
     yield conn
 
 
-_FTS_VERSION = 2  # Bump to recreate table with new tokenizer
+_FTS_VERSION = 3  # Bump to recreate table when indexed fields change.
 
 # Per-namespace DBs are only schema-checked once per process lifetime;
 # every search()/index_file() call was re-running the sqlite_master
@@ -84,16 +84,18 @@ def init_db() -> None:
     with _initialized_dbs_lock:
         if db_path in _initialized_dbs:
             return
+    schema_rebuilt = False
     with get_db() as conn:
         # Check if we need to recreate with porter tokenizer (E1)
         try:
             row = conn.execute(
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name='files'"
             ).fetchone()
-            if row and "porter" not in (row[0] or ""):
-                # Old table without porter — drop and recreate
+            schema = (row[0] or "") if row else ""
+            if row and ("porter" not in schema or "revision" not in schema):
+                # Alte Tabelle ohne aktuellen Tokenizer/Felder neu erstellen.
                 conn.execute("DROP TABLE IF EXISTS files")
-                conn.execute("DELETE FROM sqlite_master WHERE type='table' AND name='files'")
+                schema_rebuilt = True
         except Exception:
             pass
 
@@ -104,6 +106,7 @@ def init_db() -> None:
             title,
             tags,
             content,
+            revision UNINDEXED,
             updated_at,
             owner,
             tokenize='porter unicode61'
@@ -121,6 +124,11 @@ def init_db() -> None:
         """
         )
         conn.commit()
+    if schema_rebuilt:
+        try:
+            (Path(db_path).parent / ".last_reindex").unlink(missing_ok=True)
+        except OSError:
+            logger.exception("Failed to invalidate incremental reindex timestamp for %s", db_path)
     with _initialized_dbs_lock:
         _initialized_dbs.add(db_path)
 
@@ -130,36 +138,54 @@ def index_file(file_path: str) -> None:
     Index a markdown file in FTS5.
     Overwrites existing entry if present.
     """
-    from .storage import safe_path, read_file
+    from .storage import _path_lock, read_file, safe_path
 
     try:
-        full_path = safe_path(file_path)
-        if not full_path.exists() or not full_path.is_file():
-            return
-        content = read_file(file_path)
-        title = str(content.frontmatter.get("title", full_path.stem))
-        tags = ",".join(str(tag) for tag in content.frontmatter.get("tags", []))
-        updated_at = str(content.frontmatter.get("updated", "") or "")
-        owner = str(content.frontmatter.get("owner", "") or "")
-        with get_db() as conn:
-            conn.execute("DELETE FROM files WHERE path = ?", (file_path,))
-            conn.execute(
-                """
-            INSERT INTO files (path, title, tags, content, updated_at, owner)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-                (file_path, title, tags, content.content, updated_at, owner),
-            )
-            conn.commit()
+        with _path_lock(file_path):
+            full_path = safe_path(file_path)
+            if not full_path.exists() or not full_path.is_file():
+                return
+            content = read_file(file_path)
+            revision = full_path.stat().st_mtime_ns
+            title = str(content.frontmatter.get("title", full_path.stem))
+            tags = ",".join(str(tag) for tag in content.frontmatter.get("tags", []))
+            updated_at = str(content.frontmatter.get("updated", "") or "")
+            owner = str(content.frontmatter.get("owner", "") or "")
+            with get_db() as conn:
+                conn.execute("DELETE FROM files WHERE path = ?", (file_path,))
+                conn.execute(
+                    """
+                INSERT INTO files (path, title, tags, content, revision, updated_at, owner)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                    (file_path, title, tags, content.content, revision, updated_at, owner),
+                )
+                conn.commit()
     except Exception:
         logger.exception("Failed to index markdown file %r", file_path)
 
 
 def deindex_file(file_path: str) -> None:
     """Remove a file from the FTS5 index."""
-    with get_db() as conn:
-        conn.execute("DELETE FROM files WHERE path = ?", (file_path,))
-        conn.commit()
+    deindex_files([file_path])
+
+
+def deindex_files(file_paths: list[str]) -> None:
+    """Remove multiple files from the FTS5 index in one bounded transaction."""
+    params = [(file_path,) for file_path in file_paths]
+    if not params:
+        return
+    for attempt in range(3):
+        with get_db() as conn:
+            try:
+                conn.executemany("DELETE FROM files WHERE path = ?", params)
+                conn.commit()
+                return
+            except sqlite3.OperationalError:
+                conn.rollback()
+                if attempt == 2:
+                    raise
+        time.sleep(0.02 * (2 ** attempt))
 
 
 def _sanitize_fts(query: str) -> str:
@@ -177,7 +203,7 @@ def _sanitize_fts(query: str) -> str:
 
 def _fts_rows(conn, fts_query: str):
     return conn.execute(
-        "SELECT path, title, content, rank FROM files WHERE files MATCH ? ORDER BY rank LIMIT 20",
+        "SELECT path, title, content, revision, rank FROM files WHERE files MATCH ? ORDER BY rank LIMIT 20",
         (fts_query,),
     ).fetchall()
 
@@ -186,16 +212,27 @@ def _path_rows(conn, raw_query: str):
     """Fallback: LIKE search on path and title when FTS returns nothing."""
     term = f"%{raw_query.strip().split()[0]}%"
     return conn.execute(
-        "SELECT path, title, content, 0 AS rank FROM files WHERE path LIKE ? OR title LIKE ? LIMIT 20",
+        "SELECT path, title, content, revision, 0 AS rank "
+        "FROM files WHERE path LIKE ? OR title LIKE ? LIMIT 20",
         (term, term),
     ).fetchall()
 
 
 def _to_results(rows) -> list[SearchResult]:
+    from .storage import safe_path
+
     out = []
     seen = set()
     for row in rows:
         if row["path"] in seen:
+            continue
+        try:
+            file_path = safe_path(row["path"])
+            if not file_path.is_file():
+                continue
+            if file_path.stat().st_mtime_ns != int(row["revision"]):
+                continue
+        except (OSError, ValueError):
             continue
         seen.add(row["path"])
         content = row["content"] or ""
@@ -224,7 +261,7 @@ def search(query: str) -> list[SearchResult]:
         if tag_match:
             tag_term = tag_match.group(1).strip()
             rows = conn.execute(
-                "SELECT path, title, content, 0 AS rank FROM files "
+                "SELECT path, title, content, revision, 0 AS rank FROM files "
                 "WHERE instr(',' || lower(tags) || ',', ',' || lower(?) || ',') > 0 "
                 "ORDER BY title LIMIT 50",
                 (tag_term,),
