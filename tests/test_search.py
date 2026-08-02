@@ -1,6 +1,8 @@
 """Tests fuer app/search.py: FTS5-Initialisierung, Indexierung, Suche."""
 
+import sqlite3
 import threading
+from contextlib import contextmanager
 
 from app.search import (
     _db_file,
@@ -32,6 +34,32 @@ class TestDbInit:
         db2 = _db_file()
         assert db1 == db2  # Gleiche Datei, kein Fehler.
 
+    def test_schema_migration_invalidiert_inkrementellen_reindex(self, active_user, tmp_file):
+        import app.search as search_mod
+
+        rel = tmp_file("notes/migration.md", "---\ntitle: Migration\n---\n\nAltbestand")
+        db_path = _db_file()
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        close_pool()
+        connection = sqlite3.connect(db_path)
+        connection.execute(
+            "CREATE VIRTUAL TABLE files USING fts5("
+            "path, title, tags, content, updated_at, owner, tokenize='porter unicode61')"
+        )
+        connection.commit()
+        connection.close()
+        timestamp_file = db_path.parent / ".last_reindex"
+        timestamp_file.write_text("99999999999", encoding="utf-8")
+        search_mod._initialized_dbs.discard(str(db_path))
+
+        init_db()
+        count = reindex_changed()
+
+        assert count == 1
+        with get_db() as connection:
+            indexed = connection.execute("SELECT path FROM files WHERE path = ?", (rel,)).fetchone()
+        assert indexed["path"] == rel
+
 
 class TestIndexFile:
     """index_file() — Einzelne Datei indizieren."""
@@ -41,10 +69,13 @@ class TestIndexFile:
         init_db()
         index_file(rel)
         with get_db() as conn:
-            rows = conn.execute("SELECT path, title, content FROM files WHERE path = ?", (rel,)).fetchall()
+            rows = conn.execute("SELECT path, title, content, revision FROM files WHERE path = ?", (rel,)).fetchall()
         assert len(rows) == 1
         assert rows[0]["title"] == "Test"
         assert "Body" in rows[0]["content"]
+        from app.storage import safe_path
+
+        assert int(rows[0]["revision"]) == safe_path(rel).stat().st_mtime_ns
 
     def test_nicht_existierende_datei(self, active_user):
         init_db()
@@ -61,6 +92,45 @@ class TestIndexFile:
         assert row["updated_at"] == "2026-06-01"
         assert row["owner"] == "testuser"
 
+    def test_inhalt_und_revision_werden_unter_demselben_pfad_lock_erfasst(
+        self,
+        monkeypatch,
+        active_user,
+    ):
+        import app.storage as storage_mod
+        from app.tenancy import set_user_ns
+
+        rel = "notes/race-index.md"
+        storage_mod.write_file(rel, "# GeheimesAltesSuchwort")
+        init_db()
+        original_read_file = storage_mod.read_file
+        writer_finished = threading.Event()
+        writer_threads = []
+        writer_was_blocked = []
+
+        def write_new_content():
+            set_user_ns("alice")
+            storage_mod.write_file(rel, "# Harmloser neuer Inhalt")
+            writer_finished.set()
+
+        def racing_read_file(path):
+            content = original_read_file(path)
+            writer = threading.Thread(target=write_new_content)
+            writer_threads.append(writer)
+            writer.start()
+            writer_was_blocked.append(not writer_finished.wait(0.1))
+            return content
+
+        monkeypatch.setattr(storage_mod, "read_file", racing_read_file)
+
+        index_file(rel)
+        for writer in writer_threads:
+            writer.join(timeout=1)
+
+        assert writer_was_blocked == [True]
+        assert writer_finished.is_set()
+        assert search("GeheimesAltesSuchwort") == []
+
 
 class TestDeindexFile:
     """deindex_file() — Datei aus Index entfernen."""
@@ -73,6 +143,78 @@ class TestDeindexFile:
         with get_db() as conn:
             rows = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
         assert rows == 0
+
+    def test_sqlite_lock_wird_begrenzt_wiederholt(self, monkeypatch):
+        import app.search as search_mod
+
+        class FlakyConnection:
+            attempts = 0
+            commits = 0
+            rollbacks = 0
+
+            def executemany(self, _query, _params):
+                self.attempts += 1
+                if self.attempts < 3:
+                    raise sqlite3.OperationalError("database is locked")
+
+            def commit(self):
+                self.commits += 1
+
+            def rollback(self):
+                self.rollbacks += 1
+
+        connection = FlakyConnection()
+
+        @contextmanager
+        def fake_get_db():
+            yield connection
+
+        monkeypatch.setattr(search_mod, "get_db", fake_get_db)
+        monkeypatch.setattr(search_mod.time, "sleep", lambda _delay: None)
+
+        deindex_file("notes/test.md")
+
+        assert connection.attempts == 3
+        assert connection.rollbacks == 2
+        assert connection.commits == 1
+
+    def test_mehrere_pfade_werden_in_einer_transaktion_entfernt(self, monkeypatch):
+        import app.search as search_mod
+
+        class RecordingConnection:
+            calls = []
+            commits = 0
+
+            def executemany(self, query, params):
+                self.calls.append((query, list(params)))
+
+            def commit(self):
+                self.commits += 1
+
+        connection = RecordingConnection()
+
+        @contextmanager
+        def fake_get_db():
+            yield connection
+
+        monkeypatch.setattr(search_mod, "get_db", fake_get_db)
+
+        search_mod.deindex_files(["notes/a.md", "notes/b.md"])
+
+        assert connection.calls == [
+            (
+                "DELETE FROM files WHERE path = ?",
+                [("notes/a.md",), ("notes/b.md",)],
+            )
+        ]
+        assert connection.commits == 1
+
+    def test_sqlite_busy_timeout_ist_kurz(self, active_user):
+        connection = _get_pooled_conn(str(_db_file()))
+
+        busy_timeout_ms = connection.execute("PRAGMA busy_timeout").fetchone()[0]
+
+        assert busy_timeout_ms <= 250
 
 
 class TestSearch:
