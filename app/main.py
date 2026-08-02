@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request as StarletteRequest
 
 from . import session_store, user_store
@@ -34,6 +35,7 @@ from .models import (
     CreateFolderRequest,
     CreateNoteRequest,
     CreateUserRequest,
+    DeleteFilesRequest,
     MoveRequest,
     SearchRequest,
     UpdateFrontmatterRequest,
@@ -42,8 +44,10 @@ from .models import (
     MAX_CONTENT_LENGTH,
 )
 from .rate_limiter import RateLimitMiddleware
-from .search import deindex_file, index_file, init_db, reindex_all, reindex_changed, search as search_files
+from .search import deindex_file, deindex_files, index_file, init_db, reindex_all, reindex_changed, search as search_files
 from .storage import (
+    _locked_paths,
+    _path_lock,
     _read_frontmatter_only,
     append_file,
     create_folder,
@@ -205,7 +209,7 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
                     )
             except ValueError:
                 return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
-        elif request.method in {"POST", "PUT", "PATCH"}:
+        elif request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             chunks: list[bytes] = []
             received = 0
             async for chunk in request.stream():
@@ -1128,10 +1132,65 @@ async def api_delete_folder(path: str, user: User = Depends(require_role("admin"
 async def api_delete_file(path: str, user: User = Depends(require_role("admin"))):
     try:
         validate_markdown_content_path(path)
-        delete_file(path)
-        deindex_file(path)
-        return {"path": path, "status": "deleted"}
+        index_clean = await run_in_threadpool(_delete_file_and_deindex, path)
+        result = {"path": path, "status": "deleted"}
+        if not index_clean:
+            result["index_cleanup"] = "pending"
+        return result
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")
     except Exception as exc:
         raise _api_bad_request(exc)
+
+
+def _delete_file_and_deindex(path: str) -> bool:
+    """Loescht eine Notiz; ein reparierbarer Indexfehler aendert den Dateistatus nicht."""
+    with _path_lock(path):
+        delete_file(path)
+        try:
+            deindex_file(path)
+            return True
+        except Exception:
+            logging.getLogger("kiwiki.api").exception("Failed to deindex deleted file %r", path)
+            return False
+
+
+def _delete_files_and_deindex(paths: list[str]) -> tuple[list[str], list[str], list[str]]:
+    """Loescht einen Batch unter gemeinsamen Pfad-Locks und bereinigt den Index gesammelt."""
+    deleted: list[str] = []
+    failed: list[str] = []
+    index_cleanup_pending: list[str] = []
+    with _locked_paths(*paths):
+        for path in paths:
+            try:
+                delete_file(path)
+                deleted.append(path)
+            except (FileNotFoundError, ValueError):
+                failed.append(path)
+            except Exception:
+                logging.getLogger("kiwiki.api").exception("Failed to delete file %r", path)
+                failed.append(path)
+        try:
+            deindex_files(deleted)
+        except Exception:
+            logging.getLogger("kiwiki.api").exception("Failed to deindex deleted file batch")
+            index_cleanup_pending = list(deleted)
+    return deleted, failed, index_cleanup_pending
+
+
+@app.delete("/api/files")
+async def api_delete_files(req: DeleteFilesRequest, user: User = Depends(require_role("admin"))):
+    """Loescht mehrere Notizen in einem Request, damit ein Batch nur einmal rate-limitiert wird."""
+    paths = list(dict.fromkeys(req.paths))
+    try:
+        for path in paths:
+            validate_markdown_content_path(path)
+    except Exception as exc:
+        raise _api_bad_request(exc)
+
+    deleted, failed, index_cleanup_pending = await run_in_threadpool(_delete_files_and_deindex, paths)
+    return {
+        "deleted": deleted,
+        "failed": failed,
+        "index_cleanup_pending": index_cleanup_pending,
+    }
