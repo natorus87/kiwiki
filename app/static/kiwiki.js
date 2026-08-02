@@ -1303,8 +1303,12 @@ function kwGetSelected() { return Array.from(window.__kwSelected); }
 
 /* ── Batch Actions ────────────────────────────────────────────────── */
 async function kwBatchDelete() {
-  var paths = kwGetSelected();
-  if (!paths.length) return;
+  var selectedFiles = document.querySelectorAll('.tree-checkbox[data-kind="file"]:checked');
+  var paths = Array.from(selectedFiles).map(function(cb) { return cb.dataset.path; });
+  if (!paths.length) {
+    kwToast('Zum Löschen bitte mindestens eine Notiz auswählen.', { type: 'error' });
+    return;
+  }
   var ok = await kwConfirm({
     title: paths.length + ' Dateien löschen?',
     message: 'Alle ausgewählten Dateien werden <strong>unwiderruflich</strong> gelöscht.',
@@ -1312,16 +1316,31 @@ async function kwBatchDelete() {
     danger: true,
   });
   if (!ok) return;
-  var done = 0, failed = 0;
-  for (var i = 0; i < paths.length; i++) {
-    try {
-      var r = await fetch('/api/file?path=' + encodeURIComponent(paths[i]), { method: 'DELETE', headers: apiHeaders() });
-      if (r.ok) done++; else failed++;
-    } catch(e) { failed++; }
+  try {
+    var r = await fetch('/api/files', {
+      method: 'DELETE',
+      headers: apiHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ paths: paths }),
+    });
+    var result = await r.json();
+    if (!r.ok) {
+      kwToast('Fehler: ' + (result.detail || r.status), { type: 'error' });
+      return;
+    }
+    var done = Array.isArray(result.deleted) ? result.deleted.length : 0;
+    var failed = Array.isArray(result.failed) ? result.failed.length : paths.length - done;
+    var cleanupPending = Array.isArray(result.index_cleanup_pending) ? result.index_cleanup_pending.length : 0;
+    kwClearSelection();
+    htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
+    kwToast(
+      done + ' gelöscht'
+        + (failed ? ', ' + failed + ' fehlgeschlagen' : '')
+        + (cleanupPending ? ', ' + cleanupPending + ' Index-Bereinigungen ausstehend' : ''),
+      failed || cleanupPending ? { type: 'error' } : {}
+    );
+  } catch(e) {
+    kwToast('Netzwerkfehler: ' + e, { type: 'error' });
   }
-  kwClearSelection();
-  htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
-  kwToast(done + ' gelöscht' + (failed ? ', ' + failed + ' fehlgeschlagen' : ''));
 }
 async function kwBatchMove() {
   var paths = kwGetSelected();
