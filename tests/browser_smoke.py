@@ -83,6 +83,35 @@ def _run_browser_checks() -> None:
         assert "Explorer-Test." in page.locator(".markdown-content").inner_text()
         assert "file=notes%2Fnested.md" in page.url
 
+        hamburger.click()
+        page.locator("#select-toggle").click()
+        batch_checkboxes = page.locator('.tree-checkbox[data-kind="file"][data-path^="notes/browser-batch-"]')
+        assert batch_checkboxes.count() == 35
+        for index in range(batch_checkboxes.count()):
+            batch_checkboxes.nth(index).check()
+        delete_requests: list[str] = []
+
+        def record_delete_request(request) -> None:
+            if request.method == "DELETE" and "/api/file" in request.url:
+                delete_requests.append(request.url)
+
+        page.on("request", record_delete_request)
+        page.get_by_role("button", name="Auswahl löschen").click()
+        with page.expect_response(
+            lambda response: response.request.method == "DELETE" and response.url.endswith("/api/files")
+        ) as response_info:
+            page.locator('.kw-modal [data-action="ok"]').click()
+        response = response_info.value
+        assert response.status == 200
+        result = response.json()
+        assert set(result["deleted"]) == {f"notes/browser-batch-{index}.md" for index in range(35)}
+        assert result["failed"] == []
+        assert result["index_cleanup_pending"] == []
+        page.locator('.tree-checkbox[data-path="notes/browser-batch-0.md"]').wait_for(state="detached")
+        assert delete_requests == [f"{BASE_URL}/api/files"]
+        page.remove_listener("request", record_delete_request)
+        page.keyboard.press("Escape")
+
         page.route(
             "**/ui/file?path=welcome.md",
             lambda route: route.fulfill(
@@ -193,6 +222,11 @@ def main() -> None:
         notes_dir = user_dir / "notes"
         notes_dir.mkdir()
         (notes_dir / "nested.md").write_text("# Verschachtelt\n\nExplorer-Test.\n", encoding="utf-8")
+        for index in range(35):
+            (notes_dir / f"browser-batch-{index}.md").write_text(
+                f"# Browser Batch {index}\n",
+                encoding="utf-8",
+            )
         (user_dir / "projects").mkdir()
 
         env = os.environ.copy()
