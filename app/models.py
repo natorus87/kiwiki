@@ -54,6 +54,10 @@ class AppendFileRequest(BaseModel):
     content: ContentValue
 
 
+class DeleteFilesRequest(BaseModel):
+    paths: list[PathValue] = Field(min_length=1, max_length=500)
+
+
 class CreateFolderRequest(BaseModel):
     path: PathValue
 
