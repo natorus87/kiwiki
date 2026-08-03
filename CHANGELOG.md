@@ -7,6 +7,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-08-03
+
+### Added
+- **Upgrade-safe native Knowledge Engine (opt-in)** — A deterministic per-tenant SQLite index derives entities,
+  relationships and Markdown link provenance without rewriting source notes. Schema migrations, persistent
+  idempotent jobs, bounded startup backfill, mutation hooks, REST endpoints and seven MCP tools are guarded by
+  `KIWIKI_KNOWLEDGE_ENABLED=false` for rollback-safe upgrades of running instances.
+- **Interactive neural knowledge atlas** — The authenticated `/knowledge` page renders each tenant's documents,
+  tags and relationships as a self-hosted spatial canvas with orbit/zoom controls, node inspection, source-note
+  navigation, neighborhood focus, reduced-motion support, German/English localization and bounded graph payloads.
+
 ### Fixed
 - **Reliable multi-note deletion** — The explorer now deletes selected notes through one bounded batch request instead
   of consuming one write-rate-limit slot per note. File deletion and search-index cleanup share path locks, bulk
@@ -282,7 +293,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **Container:** Docker + docker-compose
 - **Orchestration:** Helm charts for Kubernetes
 
-[Unreleased]: https://github.com/natorus87/kiwiki/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/natorus87/kiwiki/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/natorus87/kiwiki/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/natorus87/kiwiki/compare/v2.6.0...v3.0.0
 [2.6.0]: https://github.com/natorus87/kiwiki/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/natorus87/kiwiki/compare/v2.4.1...v2.5.0

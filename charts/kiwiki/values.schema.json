@@ -7,6 +7,16 @@
       "minimum": 1,
       "maximum": 1,
       "description": "kiwiki currently supports exactly one replica because sessions, OAuth, SSE and uploads are process-local."
+    },
+    "env": {
+      "type": "object",
+      "properties": {
+        "KIWIKI_KNOWLEDGE_ENABLED": {"type": "string", "enum": ["true", "false"]},
+        "KIWIKI_KNOWLEDGE_BACKFILL_BATCH_SIZE": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "KIWIKI_KNOWLEDGE_MAX_FILE_BYTES": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "KIWIKI_KNOWLEDGE_MAX_DB_BYTES": {"type": "string", "pattern": "^[1-9][0-9]*$"}
+      },
+      "additionalProperties": true
     }
   }
 }

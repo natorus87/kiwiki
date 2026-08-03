@@ -44,6 +44,20 @@ def test_helm_defaults_to_hardened_single_replica_runtime():
     assert "automountServiceAccountToken: false" in deployment
 
 
+def test_knowledge_engine_is_opt_in_for_compose_and_helm():
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    values = yaml.safe_load((ROOT / "charts/kiwiki/values.yaml").read_text(encoding="utf-8"))
+    schema = json.loads((ROOT / "charts/kiwiki/values.schema.json").read_text(encoding="utf-8"))
+
+    compose_env = compose["services"]["kiwiki"]["environment"]
+    assert compose_env["KIWIKI_KNOWLEDGE_ENABLED"] == "${KIWIKI_KNOWLEDGE_ENABLED:-false}"
+    assert values["env"]["KIWIKI_KNOWLEDGE_ENABLED"] == "false"
+    assert schema["properties"]["env"]["properties"]["KIWIKI_KNOWLEDGE_ENABLED"]["enum"] == [
+        "true",
+        "false",
+    ]
+
+
 def test_docker_image_defines_healthcheck():
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "HEALTHCHECK" in dockerfile
@@ -55,10 +69,10 @@ def test_release_version_is_consistent():
     chart = yaml.safe_load((ROOT / "charts/kiwiki/Chart.yaml").read_text(encoding="utf-8"))
     values = yaml.safe_load((ROOT / "charts/kiwiki/values.yaml").read_text(encoding="utf-8"))
 
-    assert 'version = "3.0.0"' in pyproject
-    assert chart["version"] == "3.0.0"
-    assert chart["appVersion"] == "3.0.0"
-    assert values["image"]["tag"] == "3.0.0"
+    assert 'version = "3.1.0"' in pyproject
+    assert chart["version"] == "3.1.0"
+    assert chart["appVersion"] == "3.1.0"
+    assert values["image"]["tag"] == "3.1.0"
 
 
 def test_runtime_dependencies_are_exactly_pinned():

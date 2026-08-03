@@ -5,7 +5,20 @@ Dieses Projekt nutzt eine modulare `.Codex/` Struktur. Halte diese Datei kurz �
 ## Projekt-Kontext
 
 - Sprache: Deutsch (Kommentare & Doku), Code in Englisch
+- Produktoberfläche: Deutsch **und** Englisch (siehe verbindliche Lokalisierungsregel unten)
 - Architektur-Entscheidungen: @docs/architecture.md (falls vorhanden)
+
+## Verbindliche Lokalisierungsregel
+
+- Jede neue oder geänderte sichtbare UI, Microcopy, ARIA-Beschriftung sowie dynamische
+  Browsermeldung muss gleichzeitig auf Deutsch (`de`) und Englisch (`en`) vorliegen.
+- Keine neue Oberfläche darf mit fest verdrahteten Texten in nur einer Sprache
+  abgeschlossen werden. Server-Templates und JavaScript-Zustände zählen gleichermaßen.
+- Die Sprachwahl muss semantisch über `<html lang>` abgebildet und für weitere Aufrufe
+  gespeichert werden; ohne explizite Wahl dient `Accept-Language` als Fallback.
+- Neue UI-Funktionen benötigen mindestens je einen Test für Deutsch und Englisch.
+- Code-Bezeichner bleiben Englisch; Kommentare und technische Projektdokumentation
+  bleiben Deutsch, sofern kein englisches Nutzerhandbuch betroffen ist.
 
 ## Regeln (automatisch geladen via .Codex/rules/)
 

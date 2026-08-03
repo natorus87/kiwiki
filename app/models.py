@@ -66,6 +66,11 @@ class SearchRequest(BaseModel):
     query: Annotated[str, Field(max_length=MAX_QUERY_LENGTH)]
 
 
+class KnowledgeSearchRequest(BaseModel):
+    query: Annotated[str, Field(min_length=1, max_length=MAX_QUERY_LENGTH)]
+    limit: int = Field(default=20, ge=1, le=100)
+
+
 class CreateNoteRequest(BaseModel):
     title: Annotated[str, Field(min_length=1, max_length=MAX_TITLE_LENGTH)]
     content: ContentValue

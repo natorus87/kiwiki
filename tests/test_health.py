@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 def test_application_reports_release_version():
     from app.main import app
 
-    assert app.version == "3.0.0"
+    assert app.version == "3.1.0"
 
 
 def test_livez_is_public_and_only_reports_process_liveness(monkeypatch):
@@ -54,7 +54,7 @@ def test_readyz_checks_user_config_data_dir_and_sqlite(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
-    assert response.json()["version"] == "3.0.0"
+    assert response.json()["version"] == "3.1.0"
 
 
 def test_readyz_fails_without_valid_user_configuration(monkeypatch):

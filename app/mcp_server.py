@@ -40,7 +40,8 @@ from .models import User
 from .mcp_git import run_git as _run_git
 from .mcp_git import validate_git_path as _validate_git_path
 from .mcp_git import validate_git_revision as _validate_git_revision
-from .search import deindex_file, get_db, index_file, init_db, reindex_all, search as fts_search
+from .indexing import deindex_document, index_document
+from .search import get_db, init_db, reindex_all, search as fts_search
 from .storage import (
     _read_frontmatter_only,
     append_file,
@@ -1345,6 +1346,60 @@ TOOLS = [
             "required": ["job_id"],
         },
     },
+    {
+        "name": "knowledge_search",
+        "description": "Searches the local deterministic knowledge graph with source provenance.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "maxLength": 512},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "entity_details",
+        "description": "Returns one local knowledge entity by id.",
+        "inputSchema": {"type": "object", "properties": {"entity_id": {"type": "string", "maxLength": 128}}, "required": ["entity_id"]},
+    },
+    {
+        "name": "entity_neighbors",
+        "description": "Returns bounded relationships adjacent to one entity.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "entity_id": {"type": "string", "maxLength": 128},
+                "depth": {"type": "integer", "minimum": 1, "maximum": 3, "default": 1},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+            },
+            "required": ["entity_id"],
+        },
+    },
+    {
+        "name": "fact_timeline",
+        "description": "Returns bounded facts for an entity with their source documents.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"entity_id": {"type": "string", "maxLength": 128}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}},
+            "required": ["entity_id"],
+        },
+    },
+    {
+        "name": "explain_relation",
+        "description": "Explains one derived relation and its Markdown provenance.",
+        "inputSchema": {"type": "object", "properties": {"relation_id": {"type": "string", "maxLength": 128}}, "required": ["relation_id"]},
+    },
+    {
+        "name": "knowledge_status",
+        "description": "Returns local knowledge index state and bounded counters.",
+        "inputSchema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "knowledge_reindex",
+        "description": "Queues an idempotent knowledge reconcile for the current tenant. Requires admin role.",
+        "inputSchema": {"type": "object", "properties": {}, "required": []},
+    },
 ]
 
 _STRING_MAP_SCHEMA = {
@@ -1928,6 +1983,32 @@ _OUTPUT_SCHEMAS = {
         "required": ["status", "job_id"],
         "additionalProperties": False,
     },
+    "knowledge_search": {
+        "type": "object",
+        "properties": {
+            "status": {"type": "string"},
+            "results": {"type": "array", "items": {"type": "object"}},
+        },
+        "required": ["status", "results"],
+        "additionalProperties": False,
+    },
+    "entity_details": {"type": "object", "additionalProperties": True},
+    "entity_neighbors": {"type": "object", "additionalProperties": True},
+    "fact_timeline": {"type": "object", "additionalProperties": True},
+    "explain_relation": {"type": "object", "additionalProperties": True},
+    "knowledge_status": {
+        "type": "object",
+        "properties": {
+            "status": {"type": "string"},
+            "enabled": {"type": "boolean"},
+            "documents": {"type": "integer"},
+            "pending": {"type": "integer"},
+            "failed": {"type": "integer"},
+        },
+        "required": ["status", "enabled", "documents", "pending", "failed"],
+        "additionalProperties": False,
+    },
+    "knowledge_reindex": {"type": "object", "additionalProperties": True},
 }
 
 _READ_ONLY_TOOLS = {
@@ -1961,6 +2042,12 @@ _READ_ONLY_TOOLS = {
     "export",
     "duplicate_check",
     "ai_summarize",
+    "knowledge_search",
+    "entity_details",
+    "entity_neighbors",
+    "fact_timeline",
+    "explain_relation",
+    "knowledge_status",
 }
 
 _DESTRUCTIVE_TOOLS = {"delete_file", "move_file", "move_folder", "sort", "replace_many", "rename"}
@@ -1979,6 +2066,8 @@ def _tool_annotations(name: str) -> dict:
             "tag_index", "reindex_all", "search_status", "whoami",
             "file_history", "diff", "statistics", "validate_links", "link_graph",
             "export", "duplicate_check", "ai_summarize",
+            "knowledge_search", "entity_details", "entity_neighbors", "fact_timeline",
+            "explain_relation", "knowledge_status", "knowledge_reindex",
         },
         "openWorldHint": False,
     }
@@ -2567,12 +2656,12 @@ def _frontmatter_title_and_tags(path: str) -> tuple[str, list[str], dict]:
 
 def _index_markdown(path: str) -> None:
     init_db()
-    index_file(path)
+    index_document(path)
 
 
 def _deindex_markdown(path: str) -> None:
     init_db()
-    deindex_file(path)
+    deindex_document(path)
 
 
 def _content_sha256(content: str) -> str:
@@ -2857,6 +2946,57 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         _need_read()
         results = fts_search(args["query"])
         return json.dumps([r.model_dump() for r in results], ensure_ascii=False, indent=2)
+
+    if name == "knowledge_search":
+        _need_read()
+        from .knowledge.service import search_knowledge
+
+        return json.dumps(
+            search_knowledge(args["query"], args.get("limit", 20)),
+            ensure_ascii=False,
+        )
+
+    if name == "entity_details":
+        _need_read()
+        from .knowledge.service import entity_details
+
+        return json.dumps(entity_details(args["entity_id"]), ensure_ascii=False)
+
+    if name == "entity_neighbors":
+        _need_read()
+        from .knowledge.service import entity_neighbors
+
+        return json.dumps(
+            entity_neighbors(args["entity_id"], args.get("depth", 1), args.get("limit", 20)),
+            ensure_ascii=False,
+        )
+
+    if name == "fact_timeline":
+        _need_read()
+        from .knowledge.service import fact_timeline
+
+        return json.dumps(
+            fact_timeline(args["entity_id"], args.get("limit", 20)),
+            ensure_ascii=False,
+        )
+
+    if name == "explain_relation":
+        _need_read()
+        from .knowledge.service import explain_relation
+
+        return json.dumps(explain_relation(args["relation_id"]), ensure_ascii=False)
+
+    if name == "knowledge_status":
+        _need_read()
+        from .knowledge.service import knowledge_status
+
+        return json.dumps(knowledge_status(), ensure_ascii=False)
+
+    if name == "knowledge_reindex":
+        _need_admin()
+        from .knowledge.service import rebuild_current_workspace
+
+        return json.dumps(rebuild_current_workspace(), ensure_ascii=False)
 
     if name == "create_note":
         _need_write()
@@ -3517,7 +3657,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             template_type = "decision"
         content = templates.get(template_type, "")
         write_file(path, content)
-        index_file(path)
+        _index_markdown(path)
         return json.dumps({"path": path, "status": "created", "template_type": template_type}, ensure_ascii=False)
 
     if name == "validate_links":

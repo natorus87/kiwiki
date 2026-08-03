@@ -2,7 +2,7 @@
 image:
   repository: natorus87/kiwiki
   pullPolicy: IfNotPresent
-  tag: "3.0.0"
+  tag: "3.1.0"
 
 # Deployment
 replicaCount: 1
@@ -100,6 +100,11 @@ env:
   KIWIKI_TRUST_PROXY: "true"  # auf "false" fuer lokale Entwicklung ohne Proxy
   KIWIKI_CORS_ORIGINS: ""  # Leer deaktiviert CORS; sonst explizite Origins kommagetrennt setzen
   KIWIKI_RATE_LIMIT_ENABLED: "true"  # Rate Limiting aktivieren (empfohlen)
+  # Optionaler, migrationsfaehiger Wissensindex im bestehenden Daten-PVC.
+  KIWIKI_KNOWLEDGE_ENABLED: "false"
+  KIWIKI_KNOWLEDGE_BACKFILL_BATCH_SIZE: "25"
+  KIWIKI_KNOWLEDGE_MAX_FILE_BYTES: "1048576"
+  KIWIKI_KNOWLEDGE_MAX_DB_BYTES: "134217728"
 
 existingSecret: ""
 

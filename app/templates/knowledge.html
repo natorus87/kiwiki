@@ -1,0 +1,116 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ t.title }} – kiwiki{% endblock %}
+
+{% block page_assets %}
+<link rel="stylesheet" href="/static/knowledge-graph.css?v=20260803">
+<script src="/static/knowledge-graph.js?v=20260803" defer></script>
+{% endblock %}
+
+{% block sidebar %}
+<aside class="sidebar collapsed knowledge-sidebar" aria-label="{{ t.sidebar_label }}" aria-hidden="true" inert>
+  <div class="mobile-sidebar-header">
+    <span class="mobile-sidebar-logo">ki<em>wiki</em></span>
+    <button type="button" class="mobile-close-btn" onclick="closeSidebar()" aria-label="{{ t.close_sidebar }}">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 6 12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+
+  <nav class="knowledge-nav" id="file-tree" aria-label="{{ t.tools_label }}">
+    <a class="knowledge-back-link" href="/">
+      <span aria-hidden="true">←</span> {{ t.back }}
+    </a>
+    <p class="knowledge-nav-kicker">{{ t.atlas_kicker }}</p>
+    <h2>{{ t.sidebar_title }}</h2>
+    <p>{{ t.sidebar_intro }}</p>
+
+    <div class="knowledge-language" aria-label="{{ t.language }}">
+      <a href="/knowledge?lang=de" lang="de"{% if lang == 'de' %} aria-current="true"{% endif %}>DE</a>
+      <span aria-hidden="true">/</span>
+      <a href="/knowledge?lang=en" lang="en"{% if lang == 'en' %} aria-current="true"{% endif %}>EN</a>
+    </div>
+
+    <div class="knowledge-legend" aria-label="{{ t.legend }}">
+      <span><i class="legend-node legend-document"></i>{{ t.document }}</span>
+      <span><i class="legend-node legend-tag"></i>{{ t.tag }}</span>
+      <span><i class="legend-node legend-concept"></i>{{ t.relation }}</span>
+    </div>
+
+    <div class="knowledge-keymap">
+      <h3>{{ t.controls }}</h3>
+      <dl>
+        <div><dt>{{ t.drag }}</dt><dd>{{ t.rotate }}</dd></div>
+        <div><dt>{{ t.wheel }}</dt><dd>{{ t.zoom }}</dd></div>
+        <div><dt>{{ t.click }}</dt><dd>{{ t.focus }}</dd></div>
+        <div><dt>{{ t.double_click }}</dt><dd>{{ t.open_note }}</dd></div>
+        <div><dt>W A S D</dt><dd>{{ t.walk }}</dd></div>
+      </dl>
+    </div>
+  </nav>
+  {% include "partials/sidebar_account.html" %}
+</aside>
+{% endblock %}
+
+{% block content %}
+<section class="knowledge-stage" aria-labelledby="knowledge-title">
+  <header class="knowledge-hud">
+    <div class="knowledge-heading">
+      <span class="knowledge-pulse" aria-hidden="true"></span>
+      <div>
+        <p>{{ t.region }}</p>
+        <h1 id="knowledge-title">{{ t.atlas }}</h1>
+      </div>
+    </div>
+    <div class="knowledge-stats" aria-live="polite">
+      <span><strong id="knowledge-node-count">–</strong> {{ t.nodes }}</span>
+      <span><strong id="knowledge-edge-count">–</strong> {{ t.synapses }}</span>
+      <span class="knowledge-depth"><strong id="knowledge-depth">100%</strong> {{ t.depth }}</span>
+    </div>
+    <div class="knowledge-actions" aria-label="Graph-Aktionen">
+      <button type="button" id="knowledge-reset" class="knowledge-icon-button" title="{{ t.reset }}" aria-label="{{ t.reset }}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6h6M20 20v-6h-6M5.6 15a7 7 0 0 0 11.8 2.4M18.4 9A7 7 0 0 0 6.6 6.6"/></svg>
+      </button>
+      <button type="button" id="knowledge-motion" class="knowledge-icon-button" aria-pressed="false" title="{{ t.pause }}" aria-label="{{ t.pause }}">
+        <svg class="motion-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="knowledge-viewport" id="knowledge-viewport">
+    <canvas id="knowledge-graph" tabindex="0" aria-label="{{ t.canvas }}" aria-describedby="knowledge-help"></canvas>
+    <div class="knowledge-atmosphere" aria-hidden="true"></div>
+    <div class="knowledge-loading" id="knowledge-loading" role="status">
+      <span class="loading-orbit" aria-hidden="true"><i></i><i></i><i></i></span>
+      <strong>{{ t.connecting }}</strong>
+      <span>{{ t.translating }}</span>
+    </div>
+    <div class="knowledge-empty" id="knowledge-empty" hidden>
+      <span class="empty-neuron" aria-hidden="true"></span>
+      <h2>{{ t.empty_title }}</h2>
+      <p>{{ t.empty_text }}</p>
+      {% if user.role == 'admin' %}
+      <button type="button" id="knowledge-reindex" class="btn btn-primary">{{ t.reindex }}</button>
+      {% endif %}
+    </div>
+    <div class="knowledge-error" id="knowledge-error" role="alert" hidden>
+      <strong>{{ t.error }}</strong>
+      <button type="button" id="knowledge-retry">{{ t.retry }}</button>
+    </div>
+
+    <aside class="knowledge-inspector" id="knowledge-inspector" aria-label="{{ t.details }}" hidden>
+      <button type="button" class="inspector-close" id="knowledge-inspector-close" aria-label="{{ t.close_details }}">×</button>
+      <p class="inspector-kind" id="knowledge-inspector-kind">{{ t.document }}</p>
+      <h2 id="knowledge-inspector-title"></h2>
+      <p class="inspector-path" id="knowledge-inspector-path"></p>
+      <dl id="knowledge-inspector-meta"></dl>
+      <div class="inspector-actions">
+        <button type="button" id="knowledge-follow" class="btn btn-primary">{{ t.follow }}</button>
+        <a id="knowledge-open" class="btn btn-ghost" href="#" hidden>{{ t.open_note }}</a>
+      </div>
+    </aside>
+
+    <p class="knowledge-help" id="knowledge-help">{{ t.help }}</p>
+    <div class="sr-only" id="knowledge-a11y-status" aria-live="polite"></div>
+  </div>
+</section>
+{% endblock %}

@@ -1,3 +1,4 @@
+import asyncio
 import html
 import logging
 import os
@@ -10,7 +11,7 @@ from pathlib import Path
 import markdown as md_lib
 import nh3
 import yaml
-from fastapi import FastAPI, Depends, Form, HTTPException, Request
+from fastapi import FastAPI, Depends, Form, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -36,6 +37,7 @@ from .models import (
     CreateNoteRequest,
     CreateUserRequest,
     DeleteFilesRequest,
+    KnowledgeSearchRequest,
     MoveRequest,
     SearchRequest,
     UpdateFrontmatterRequest,
@@ -44,7 +46,12 @@ from .models import (
     MAX_CONTENT_LENGTH,
 )
 from .rate_limiter import RateLimitMiddleware
-from .search import deindex_file, deindex_files, index_file, init_db, reindex_all, reindex_changed, search as search_files
+from .indexing import (
+    deindex_document as deindex_file,
+    deindex_documents as deindex_files,
+    index_document as index_file,
+)
+from .search import init_db, reindex_all, reindex_changed, search as search_files
 from .storage import (
     _locked_paths,
     _path_lock,
@@ -78,6 +85,69 @@ logging.basicConfig(
     level=os.getenv("KIWIKI_LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+
+_GRAPH_TRANSLATIONS = {
+    "de": {
+        "title": "Wissensgraph", "sidebar_label": "Graph-Navigation",
+        "close_sidebar": "Sidebar schließen", "tools_label": "Wissensgraph-Werkzeuge",
+        "back": "Zurück zum Wiki", "atlas_kicker": "Synapsen-Atlas",
+        "sidebar_title": "Dein Wissen in Bewegung",
+        "sidebar_intro": "Dokumente, Tags und Verweise bilden ein lebendiges Netz. Jede Linie führt zu ihrer Markdown-Quelle zurück.",
+        "legend": "Legende", "document": "Dokument", "tag": "Tag", "relation": "Bezug",
+        "controls": "Steuerung", "drag": "Ziehen", "rotate": "Raum drehen",
+        "wheel": "Mausrad", "zoom": "Zoomen", "click": "Klick",
+        "focus": "Knoten fokussieren", "double_click": "Doppelklick",
+        "open_note": "Notiz öffnen", "walk": "Durch das Netz gehen",
+        "region": "Lokaler Wissensraum", "atlas": "Neuronaler Atlas",
+        "nodes": "Knoten", "synapses": "Synapsen", "depth": "Tiefe",
+        "reset": "Ansicht zurücksetzen", "pause": "Bewegung pausieren",
+        "canvas": "Interaktiver 3D-Wissensgraph", "connecting": "Synapsen werden verbunden",
+        "translating": "Der lokale Index wird in einen Raum übersetzt.",
+        "empty_title": "Noch keine Synapsen",
+        "empty_text": "Aktiviere die Knowledge Engine und indiziere deine Notizen, damit dein Wissensraum sichtbar wird.",
+        "reindex": "Graph neu aufbauen", "error": "Der Wissensraum ist gerade nicht erreichbar.",
+        "retry": "Erneut versuchen", "details": "Knoten-Details", "close_details": "Details schließen",
+        "follow": "Verbindungen verfolgen",
+        "help": "Ziehen dreht den Raum. Das Mausrad zoomt. Knoten lassen sich anklicken; Enter öffnet die fokussierte Notiz.",
+        "language": "Sprache", "german": "Deutsch", "english": "Englisch",
+    },
+    "en": {
+        "title": "Knowledge graph", "sidebar_label": "Graph navigation",
+        "close_sidebar": "Close sidebar", "tools_label": "Knowledge graph tools",
+        "back": "Back to wiki", "atlas_kicker": "Synapse atlas",
+        "sidebar_title": "Your knowledge in motion",
+        "sidebar_intro": "Documents, tags and references form a living network. Every line leads back to its Markdown source.",
+        "legend": "Legend", "document": "Document", "tag": "Tag", "relation": "Relation",
+        "controls": "Controls", "drag": "Drag", "rotate": "Rotate space",
+        "wheel": "Mouse wheel", "zoom": "Zoom", "click": "Click",
+        "focus": "Focus node", "double_click": "Double-click",
+        "open_note": "Open note", "walk": "Walk through the network",
+        "region": "Local knowledge space", "atlas": "Neural Atlas",
+        "nodes": "Nodes", "synapses": "Synapses", "depth": "Depth",
+        "reset": "Reset view", "pause": "Pause motion",
+        "canvas": "Interactive 3D knowledge graph", "connecting": "Connecting synapses",
+        "translating": "The local index is being translated into space.",
+        "empty_title": "No synapses yet",
+        "empty_text": "Enable the Knowledge Engine and index your notes to make your knowledge space visible.",
+        "reindex": "Rebuild graph", "error": "The knowledge space is currently unavailable.",
+        "retry": "Try again", "details": "Node details", "close_details": "Close details",
+        "follow": "Explore connections",
+        "help": "Drag to rotate space. Use the mouse wheel to zoom. Click nodes to inspect them; Enter opens the focused note.",
+        "language": "Language", "german": "German", "english": "English",
+    },
+}
+
+
+def _request_language(request: Request) -> tuple[str, bool]:
+    """DE/EN aus expliziter Wahl, Cookie oder Accept-Language bestimmen."""
+    selected = request.query_params.get("lang", "").lower()
+    if selected in _GRAPH_TRANSLATIONS:
+        return selected, True
+    stored = request.cookies.get("kiwiki_language", "").lower()
+    if stored in _GRAPH_TRANSLATIONS:
+        return stored, False
+    accepted = request.headers.get("Accept-Language", "").lower()
+    return ("en" if accepted.startswith("en") else "de"), False
 
 def _render_markdown_safe(content: str) -> str:
     rendered = md_lib.markdown(
@@ -121,9 +191,26 @@ async def _lifespan(app: FastAPI):
             logging.getLogger("kiwiki.startup").info(
                 "Lazy reindexed %d file(s) for user %s", count, username
             )
-    yield
-    from .search import close_pool
-    close_pool()
+    knowledge_stop = asyncio.Event()
+    knowledge_task = None
+    from .knowledge.service import is_enabled as knowledge_enabled
+    if knowledge_enabled():
+        from .knowledge.worker import run_worker
+
+        knowledge_task = asyncio.create_task(
+            run_worker(knowledge_stop, lambda: [username for username, _role in parse_users().values()])
+        )
+    try:
+        yield
+    finally:
+        if knowledge_task is not None:
+            knowledge_stop.set()
+            try:
+                await asyncio.wait_for(knowledge_task, timeout=3)
+            except TimeoutError:
+                knowledge_task.cancel()
+        from .search import close_pool
+        close_pool()
 
 
 app = FastAPI(title="kiwiki", version=APP_VERSION, lifespan=_lifespan)
@@ -469,6 +556,25 @@ async def settings_page(request: Request) -> HTMLResponse:
         name="settings.html",
         context={"user": user, "users": user_store.list_users()},
     )
+
+
+@app.get("/knowledge", response_class=HTMLResponse)
+async def knowledge_page(request: Request) -> HTMLResponse:
+    user = _session_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    language, explicitly_selected = _request_language(request)
+    response = templates.TemplateResponse(
+        request=request,
+        name="knowledge.html",
+        context={"user": user, "lang": language, "t": _GRAPH_TRANSLATIONS[language]},
+    )
+    if explicitly_selected:
+        response.set_cookie(
+            "kiwiki_language", language, max_age=365 * 24 * 3600,
+            httponly=True, samesite="strict", secure=request.url.scheme == "https",
+        )
+    return response
 
 
 @app.get("/editor", response_class=HTMLResponse)
@@ -972,6 +1078,38 @@ async def api_search(req: SearchRequest, user: User = Depends(get_current_user))
         return search_files(req.query)
     except Exception as exc:
         raise _api_bad_request(exc)
+
+
+@app.get("/api/knowledge/status")
+async def api_knowledge_status(user: User = Depends(get_current_user)):
+    from .knowledge.service import knowledge_status
+
+    return knowledge_status()
+
+
+@app.post("/api/knowledge/search")
+async def api_knowledge_search(req: KnowledgeSearchRequest, user: User = Depends(get_current_user)):
+    from .knowledge.service import search_knowledge
+
+    return search_knowledge(req.query, req.limit)
+
+
+@app.get("/api/knowledge/graph")
+async def api_knowledge_graph(
+    max_nodes: int = Query(default=400, ge=1, le=800),
+    max_edges: int = Query(default=900, ge=1, le=2000),
+    user: User = Depends(get_current_user),
+):
+    from .knowledge.service import knowledge_graph
+
+    return await run_in_threadpool(knowledge_graph, max_nodes, max_edges)
+
+
+@app.post("/api/knowledge/reindex", status_code=202)
+async def api_knowledge_reindex(user: User = Depends(require_role("admin"))):
+    from .knowledge.service import rebuild_current_workspace
+
+    return await run_in_threadpool(rebuild_current_workspace)
 
 
 @app.post("/api/note")

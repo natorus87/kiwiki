@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="{{ lang|default('de') }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -26,10 +26,10 @@
 <body class="role-{{ user.role if user else 'none' }}">
 <script src="/static/kiwiki.js?v=20260802-batch-delete" defer></script>
 
-<a href="#main-content" class="skip-link sr-only">Zum Inhalt springen</a>
+<a href="#main-content" class="skip-link sr-only">{{ 'Skip to content' if lang|default('de') == 'en' else 'Zum Inhalt springen' }}</a>
 
 <header>
-  <button type="button" class="hamburger" onclick="toggleSidebar()" aria-label="Menü" aria-controls="file-tree" aria-expanded="false">
+  <button type="button" class="hamburger" onclick="toggleSidebar()" aria-label="{{ 'Menu' if lang|default('de') == 'en' else 'Menü' }}" aria-controls="file-tree" aria-expanded="false">
     <span class="hamburger-lines">
       <span></span><span></span><span></span>
     </span>
@@ -44,12 +44,12 @@
         hx-post="/ui/search" hx-target="#search-results" hx-swap="innerHTML"
         hx-trigger="input changed delay:400ms, submit">
     <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    <input type="search" name="query" class="search-input" placeholder="Suchen…" autocomplete="off" aria-label="Wiki durchsuchen" aria-controls="search-results">
-    <div id="search-results" role="region" aria-label="Suchergebnisse" aria-live="polite"></div>
+    <input type="search" name="query" class="search-input" placeholder="{{ 'Search…' if lang|default('de') == 'en' else 'Suchen…' }}" autocomplete="off" aria-label="{{ 'Search wiki' if lang|default('de') == 'en' else 'Wiki durchsuchen' }}" aria-controls="search-results">
+    <div id="search-results" role="region" aria-label="{{ 'Search results' if lang|default('de') == 'en' else 'Suchergebnisse' }}" aria-live="polite"></div>
   </form>
 </header>
 
-<button type="button" class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()" aria-label="Sidebar schließen"></button>
+<button type="button" class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()" aria-label="{{ 'Close sidebar' if lang|default('de') == 'en' else 'Sidebar schließen' }}"></button>
 
 <div class="app-layout" id="app-layout">
   {% block sidebar %}{% endblock %}

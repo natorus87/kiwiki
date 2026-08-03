@@ -29,7 +29,7 @@ from app.mcp_server import (
 )
 from app.models import User
 
-TOOL_COUNT = 49
+TOOL_COUNT = 56
 ADDED_TOOLS = {
     "recent_files",
     "backlinks",
@@ -57,6 +57,13 @@ ADDED_TOOLS = {
     "export",
     "duplicate_check",
     "ai_summarize",
+    "knowledge_search",
+    "entity_details",
+    "entity_neighbors",
+    "fact_timeline",
+    "explain_relation",
+    "knowledge_status",
+    "knowledge_reindex",
 }
 
 
@@ -532,7 +539,7 @@ class TestHandleMessage:
         body = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
         result = await _handle_message(body, User(username="alice", role="admin"))
         assert result["result"]["protocolVersion"] == "2025-03-26"
-        assert result["result"]["serverInfo"]["version"] == "3.0.0"
+        assert result["result"]["serverInfo"]["version"] == "3.1.0"
         assert "tools" in result["result"]["capabilities"]
         instructions = result["result"]["instructions"]
         assert "Authorization is already enforced by kiwiki" in instructions

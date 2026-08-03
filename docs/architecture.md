@@ -107,6 +107,29 @@ search("tag:python")
 
 The prefix path sidesteps FTS5 column filters, which are brittle in SQLite's FTS5. Use it whenever you need structured tag filtering from the UI.
 
+## Optional Knowledge Engine
+
+`app/indexing.py` is the single mutation facade for derived indices. It updates the
+existing FTS database synchronously and, when `KIWIKI_KNOWLEDGE_ENABLED=true`, adds
+an idempotent job to the tenant's `.kiwiki/knowledge.sqlite` queue. The background
+worker explicitly sets and resets the tenant `ContextVar`, processes users fairly in
+bounded batches, and never participates in `/readyz`.
+
+Markdown remains the source of truth. `app/knowledge/extract.py` derives document,
+tag and link facts deterministically; every relation stores its source path and
+revision. `PRAGMA user_version` drives forward-only schema migrations, while an
+unknown newer version fails closed without modifying the database. On first enable
+or restart, reconciliation compares workspace revisions, queues missing/up-to-date
+operations, and never changes Markdown bytes. See
+[`knowledge-engine-plan.md`](knowledge-engine-plan.md) for rollout and rollback details.
+
+`GET /api/knowledge/graph` projects this derived data into a bounded visualization
+contract (maximum 800 nodes and 2,000 edges). `/knowledge` renders it locally through
+`app/static/knowledge-graph.js`; no graph payload leaves the browser origin. The
+renderer uses a deterministic 3D layout projected onto an accessible canvas, with a
+DOM-based inspector for readable metadata and source navigation. The UI remains
+functional as an explicit empty state while the engine is disabled or backfilling.
+
 ## JS Helper Conventions
 
 All global helpers in `kiwiki.js` are namespaced with the `kw` prefix (`kwToast`, `kwDialog`, `kwNewNote`, `kwSearchTag`, `kwToggleSelect`, …). Legacy helpers (`loadFile`, `openEditor`, `toggleFolder`, `deleteFile`) keep their original names for backward compatibility with templates but should not be extended — prefer `kw*` for new helpers.
@@ -166,7 +189,9 @@ UI regression tests combine fast template assertions with a real Chromium smoke 
 1. **Name**: `kw<Action>` in `app/static/kiwiki.js`
 2. **Role check**: `if (!kwCanWrite()) return;` at the top if the action needs write/admin
 3. **Feedback**: Use `kwToast(msg)` or `kwToast(msg, {type: 'error'})` for all outcomes (never `alert()`)
-4. **Localization**: German UI strings, English code identifiers
+4. **Localization**: Every new or changed user-facing string, ARIA label and dynamic
+   browser message ships in German and English. Explicit choice is persisted, with
+   `Accept-Language` as fallback; code identifiers remain English.
 5. **Test**: Add a regression test in `tests/test_*.py` — render the partial and assert on the rendered HTML
 6. **Cache-bust**: Bump `?v=…` in `layout.html` for both `kiwiki.css` and `kiwiki.js`
 7. **Docs**: Update [docs/ui-accessibility.md](ui-accessibility.md) if the change affects keyboard, ARIA, or touch behavior

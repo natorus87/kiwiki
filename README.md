@@ -98,6 +98,29 @@ All runtime configuration is done through environment variables.
 | `KIWIKI_MCP_UPLOAD_TTL_SECONDS` | `3600` | Lifetime of incomplete staged uploads |
 | `KIWIKI_MCP_MAX_UPLOAD_BYTES` | `10485760` | Maximum assembled bytes per staged upload |
 | `KIWIKI_MCP_MAX_UPLOAD_CHUNKS` | `1000` | Maximum chunks per staged upload |
+| `KIWIKI_KNOWLEDGE_ENABLED` | `false` | Enables the optional deterministic per-user knowledge index and worker |
+| `KIWIKI_KNOWLEDGE_BACKFILL_BATCH_SIZE` | `25` | Maximum queued documents processed per tenant and worker pass |
+| `KIWIKI_KNOWLEDGE_MAX_FILE_BYTES` | `1048576` | Maximum Markdown file size accepted by the knowledge extractor |
+| `KIWIKI_KNOWLEDGE_MAX_DB_BYTES` | `134217728` | Per-user knowledge database size ceiling |
+
+### Optional Knowledge Engine
+
+Set `KIWIKI_KNOWLEDGE_ENABLED=true` and restart kiwiki to build a deterministic,
+source-backed knowledge index. Existing installations are upgraded in place: every
+user gets `.kiwiki/knowledge.sqlite` in the existing workspace, Markdown files are
+never rewritten, and a persistent reconcile queue backfills documents in bounded
+batches. The feature can be disabled again without affecting notes or the existing
+full-text index.
+
+Read access is available through `/api/knowledge/status`,
+`/api/knowledge/search`, and the MCP knowledge tools. An admin can queue a complete,
+idempotent reconcile through `POST /api/knowledge/reindex` or `knowledge_reindex`.
+
+The authenticated web UI exposes the local graph at `/knowledge`. Its self-hosted
+3D canvas renderer visualizes documents, tags, Markdown links and derived relations
+without sending graph data to third parties. Drag or touch to orbit, use the wheel
+or trackpad to zoom, click a node for provenance, double-click a document to open it,
+and use W/A/S/D to move through the knowledge space.
 | `KIWIKI_MCP_MAX_STAGED_UPLOADS` | `32` | Maximum staged chunked uploads per process |
 | `KIWIKI_MCP_MAX_STAGED_BYTES` | `52428800` | Maximum aggregate bytes held by staged uploads |
 
