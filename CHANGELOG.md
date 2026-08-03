@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-08-03
+
 ### Fixed
 - **Desktop sidebar menus remain clickable after restoring a custom width** — A saved resizer width no longer
   overrides the zero-width `collapsed` state while the sidebar is still `inert`. Desktop width restoration now only
@@ -315,7 +317,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **Container:** Docker + docker-compose
 - **Orchestration:** Helm charts for Kubernetes
 
-[Unreleased]: https://github.com/natorus87/kiwiki/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/natorus87/kiwiki/compare/v3.1.1...HEAD
+[3.1.1]: https://github.com/natorus87/kiwiki/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/natorus87/kiwiki/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/natorus87/kiwiki/compare/v2.6.0...v3.0.0
 [2.6.0]: https://github.com/natorus87/kiwiki/compare/v2.5.0...v2.6.0

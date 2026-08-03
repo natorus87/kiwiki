@@ -69,10 +69,10 @@ def test_release_version_is_consistent():
     chart = yaml.safe_load((ROOT / "charts/kiwiki/Chart.yaml").read_text(encoding="utf-8"))
     values = yaml.safe_load((ROOT / "charts/kiwiki/values.yaml").read_text(encoding="utf-8"))
 
-    assert 'version = "3.1.0"' in pyproject
-    assert chart["version"] == "3.1.0"
-    assert chart["appVersion"] == "3.1.0"
-    assert values["image"]["tag"] == "3.1.0"
+    assert 'version = "3.1.1"' in pyproject
+    assert chart["version"] == "3.1.1"
+    assert chart["appVersion"] == "3.1.1"
+    assert values["image"]["tag"] == "3.1.1"
 
 
 def test_runtime_dependencies_are_exactly_pinned():
