@@ -23,6 +23,14 @@ Visit **[kiwiki.xyz](https://kiwiki.xyz)** for the project website, FAQ, agent i
   <img src="docs/assets/screenshots/kiwiki-mobile.png" alt="kiwiki mobile layout" width="360">
 </p>
 
+### Neural Atlas / Neuronaler Atlas
+
+![kiwiki neural knowledge atlas on desktop](docs/assets/screenshots/kiwiki-neural-atlas-desktop.png)
+
+<p align="center">
+  <img src="docs/assets/screenshots/kiwiki-neural-atlas-mobile.png" alt="kiwiki Neural Atlas in the English mobile interface" width="360">
+</p>
+
 ## Features
 
 - **Multi-Agent Harness** — Central knowledge base for Claude Code, Codex, OpenCode, Cursor, ChatGPT, OpenClaw, Hermes, and any MCP-compatible agent. All agents read and write the same wiki in parallel.
