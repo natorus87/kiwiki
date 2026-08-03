@@ -92,6 +92,29 @@ def test_large_graph_simulation_scales_repulsion_by_node_count():
     assert strength.group(1).strip() == "1 / Math.max(nodes.length, 1)"
 
 
+def test_large_graph_uses_bounded_linear_simulation_and_camera_fit():
+    """Mobile Grossgraphen brauchen lineare Arbeit und einen datenabhaengigen Reset."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "var MAX_PAIRWISE_NODES =" in script
+    assert "var MAX_NODE_SPEED =" in script
+    assert "function simulateLargeGraph(" in script
+    assert "nodes.length > MAX_PAIRWISE_NODES" in script
+    assert "var pull = (distance - 115) * 0.0025 / distance" in script
+    assert "state.adjacency.get(source.id).size" in script
+    assert "state.adjacency.get(target.id).size" in script
+    assert "state.simulationSteps" in script
+    assert "function restoreGraphPositions(" in script
+    assert "Number.isFinite(node.x)" in script
+    assert "lostpointercapture" in script
+    assert "window.addEventListener('pageshow'" in script
+    assert "state.frame = 0" in script
+    assert "function fitGraphDistance(" in script
+    assert "defaultDistance:" in script
+    assert "setDistance(fitGraphDistance(), true)" in script
+    assert "state.nodes.length <= MAX_PAIRWISE_NODES" in script
+
+
 def test_mobile_graph_implements_bounded_two_pointer_pinch_zoom():
     """Der Canvas muss Pinch selbst behandeln, weil natives Touch-Zoom deaktiviert ist."""
     script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")

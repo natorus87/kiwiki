@@ -29,13 +29,17 @@
       rebuilding: 'Rebuilding…', retry: 'Try again'
     }
   }[language];
+  var MAX_PAIRWISE_NODES = 180;
+  var MAX_NODE_SPEED = 4;
+  var MAX_NODE_RADIUS = 700;
+  var MAX_SIMULATION_STEPS = 240;
   var state = {
     nodes: [], edges: [], nodeById: new Map(), adjacency: new Map(),
-    width: 1, height: 1, dpr: 1, yaw: -0.35, pitch: 0.18, distance: 720,
+    width: 1, height: 1, dpr: 1, yaw: -0.35, pitch: 0.18, distance: 720, defaultDistance: 720,
     targetX: 0, targetY: 0, targetZ: 0, selected: null, hovered: null,
     dragging: false, moved: false, lastX: 0, lastY: 0, paused: prefersReducedMotion,
     pointers: new Map(), pinchDistance: null,
-    neighborhoodOnly: false, frame: 0, lastTime: performance.now(), settled: false
+    neighborhoodOnly: false, frame: 0, lastTime: performance.now(), settled: false, simulationSteps: 0
   };
 
   var palette = {
@@ -69,7 +73,10 @@
   function prepareGraph(payload) {
     state.nodes = payload.nodes.map(function (node, index) {
       var point = seededPosition(node.id, index, payload.nodes.length);
-      return Object.assign({}, node, point, { sx: 0, sy: 0, depth: 0, radius: node.kind === 'document' ? 6.5 : 4.2 });
+      return Object.assign({}, node, point, {
+        homeX: point.x, homeY: point.y, homeZ: point.z,
+        sx: 0, sy: 0, depth: 0, radius: node.kind === 'document' ? 6.5 : 4.2
+      });
     });
     state.nodeById = new Map(state.nodes.map(function (node) { return [node.id, node]; }));
     state.edges = payload.edges.filter(function (edge) {
@@ -83,10 +90,11 @@
     document.getElementById('knowledge-node-count').textContent = String(state.nodes.length);
     document.getElementById('knowledge-edge-count').textContent = String(state.edges.length);
     document.getElementById('knowledge-a11y-status').textContent = copy.loaded(state.nodes.length, state.edges.length);
-    state.settled = false;
+    state.settled = false; state.simulationSteps = 0;
   }
 
   function resize() {
+    var wasFitted = Math.abs(state.distance - state.defaultDistance) < 1;
     var rect = viewport.getBoundingClientRect();
     state.width = Math.max(1, rect.width);
     state.height = Math.max(1, rect.height);
@@ -96,6 +104,29 @@
     canvas.style.width = state.width + 'px';
     canvas.style.height = state.height + 'px';
     context.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+    if (state.nodes.length && wasFitted) setDistance(fitGraphDistance(), true);
+  }
+
+  function restoreGraphPositions(force) {
+    state.nodes.forEach(function (node) {
+      var valid = Number.isFinite(node.x) && Number.isFinite(node.y) && Number.isFinite(node.z) &&
+        Number.isFinite(node.vx) && Number.isFinite(node.vy) && Number.isFinite(node.vz);
+      if (!force && valid) return;
+      node.x = node.homeX; node.y = node.homeY; node.z = node.homeZ;
+      node.vx = 0; node.vy = 0; node.vz = 0;
+    });
+    state.settled = false; state.simulationSteps = 0;
+  }
+
+  function simulateLargeGraph(nodes) {
+    var idealRadius = 190 + Math.min(90, Math.sqrt(nodes.length) * 4);
+    nodes.forEach(function (node) {
+      var radius = Math.max(1, Math.sqrt(node.x * node.x + node.y * node.y + node.z * node.z));
+      var radialForce = (idealRadius - radius) * 0.0012;
+      node.vx += node.x / radius * radialForce;
+      node.vy += node.y / radius * radialForce;
+      node.vz += node.z / radius * radialForce;
+    });
   }
 
   function simulate() {
@@ -104,33 +135,59 @@
     // Die Gesamtabstossung muss mit der Knotenzahl konstant bleiben. Die alte
     // 160/n-Skalierung liess grosse Graphen nach dem Laden aus dem Bild wachsen.
     var strength = 1 / Math.max(nodes.length, 1);
-    for (var i = 0; i < nodes.length; i += 1) {
-      var a = nodes[i];
-      a.vx += -a.x * 0.0007; a.vy += -a.y * 0.0007; a.vz += -a.z * 0.0007;
-      for (var j = i + 1; j < nodes.length; j += 1) {
-        var b = nodes[j];
-        var dx = a.x - b.x; var dy = a.y - b.y; var dz = a.z - b.z;
-        var d2 = Math.max(100, dx * dx + dy * dy + dz * dz);
-        var push = 52 * strength / d2;
-        a.vx += dx * push; a.vy += dy * push; a.vz += dz * push;
-        b.vx -= dx * push; b.vy -= dy * push; b.vz -= dz * push;
+    if (nodes.length > MAX_PAIRWISE_NODES) {
+      simulateLargeGraph(nodes);
+    } else {
+      for (var i = 0; i < nodes.length; i += 1) {
+        var a = nodes[i];
+        a.vx += -a.x * 0.0007; a.vy += -a.y * 0.0007; a.vz += -a.z * 0.0007;
+        for (var j = i + 1; j < nodes.length; j += 1) {
+          var b = nodes[j];
+          var dx = a.x - b.x; var dy = a.y - b.y; var dz = a.z - b.z;
+          var d2 = Math.max(100, dx * dx + dy * dy + dz * dz);
+          var push = 52 * strength / d2;
+          a.vx += dx * push; a.vy += dy * push; a.vz += dz * push;
+          b.vx -= dx * push; b.vy -= dy * push; b.vz -= dz * push;
+        }
       }
     }
     state.edges.forEach(function (edge) {
       var source = state.nodeById.get(edge.source); var target = state.nodeById.get(edge.target);
       var dx = target.x - source.x; var dy = target.y - source.y; var dz = target.z - source.z;
       var distance = Math.max(1, Math.sqrt(dx * dx + dy * dy + dz * dz));
-      var pull = (distance - 115) * 0.0005;
-      source.vx += dx * pull; source.vy += dy * pull; source.vz += dz * pull;
-      target.vx -= dx * pull; target.vy -= dy * pull; target.vz -= dz * pull;
+      var pull = (distance - 115) * 0.0025 / distance;
+      var sourceDegree = Math.max(1, state.adjacency.get(source.id).size);
+      var targetDegree = Math.max(1, state.adjacency.get(target.id).size);
+      source.vx += dx * pull / sourceDegree; source.vy += dy * pull / sourceDegree; source.vz += dz * pull / sourceDegree;
+      target.vx -= dx * pull / targetDegree; target.vy -= dy * pull / targetDegree; target.vz -= dz * pull / targetDegree;
     });
     var energy = 0;
     nodes.forEach(function (node) {
+      if (!Number.isFinite(node.x) || !Number.isFinite(node.y) || !Number.isFinite(node.z) ||
+          !Number.isFinite(node.vx) || !Number.isFinite(node.vy) || !Number.isFinite(node.vz)) {
+        node.x = node.homeX; node.y = node.homeY; node.z = node.homeZ;
+        node.vx = 0; node.vy = 0; node.vz = 0;
+      }
       node.vx *= 0.88; node.vy *= 0.88; node.vz *= 0.88;
+      var speed = Math.sqrt(node.vx * node.vx + node.vy * node.vy + node.vz * node.vz);
+      if (speed > MAX_NODE_SPEED) {
+        var speedLimit = MAX_NODE_SPEED / speed;
+        node.vx *= speedLimit; node.vy *= speedLimit; node.vz *= speedLimit;
+      }
       node.x += node.vx; node.y += node.vy; node.z += node.vz;
+      var radius = Math.sqrt(node.x * node.x + node.y * node.y + node.z * node.z);
+      if (!Number.isFinite(radius)) {
+        node.x = node.homeX; node.y = node.homeY; node.z = node.homeZ;
+        node.vx = 0; node.vy = 0; node.vz = 0;
+      } else if (radius > MAX_NODE_RADIUS) {
+        var radiusLimit = MAX_NODE_RADIUS / radius;
+        node.x *= radiusLimit; node.y *= radiusLimit; node.z *= radiusLimit;
+        node.vx = 0; node.vy = 0; node.vz = 0;
+      }
       energy += Math.abs(node.vx) + Math.abs(node.vy) + Math.abs(node.vz);
     });
-    if (energy < 0.025 * nodes.length) state.settled = true;
+    state.simulationSteps += 1;
+    if (energy < 0.025 * nodes.length || state.simulationSteps >= MAX_SIMULATION_STEPS) state.settled = true;
   }
 
   function project(node) {
@@ -167,7 +224,7 @@
     context.beginPath(); context.moveTo(source.sx, source.sy); context.lineTo(target.sx, target.sy);
     context.strokeStyle = selected ? palette.lineHot : (muted ? 'rgba(159,170,160,.025)' : palette.line);
     context.lineWidth = selected ? 1.45 : 0.7; context.stroke();
-    if (!state.paused && !muted && state.edges.length < 1200) {
+    if (!state.paused && !muted && state.nodes.length <= MAX_PAIRWISE_NODES) {
       var offset = (time * 0.00012 + (hash(edge.id) % 100) / 100) % 1;
       var px = source.sx + (target.sx - source.sx) * offset;
       var py = source.sy + (target.sy - source.sy) * offset;
@@ -184,7 +241,7 @@
     var radius = Math.max(2.2, node.radius * Math.min(1.65, node.scale));
     context.save();
     context.globalAlpha = connected ? 1 : .1;
-    if (node.kind === 'document' || selected || hovered) {
+    if ((node.kind === 'document' && state.nodes.length <= MAX_PAIRWISE_NODES) || selected || hovered) {
       var halo = context.createRadialGradient(node.sx, node.sy, 0, node.sx, node.sy, radius * (selected ? 5 : 3.2));
       halo.addColorStop(0, selected ? 'rgba(238,251,207,.38)' : 'rgba(184,223,120,.22)'); halo.addColorStop(1, 'rgba(184,223,120,0)');
       context.fillStyle = halo; context.beginPath(); context.arc(node.sx, node.sy, radius * (selected ? 5 : 3.2), 0, Math.PI * 2); context.fill();
@@ -230,9 +287,19 @@
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
 
-  function setDistance(distance) {
-    state.distance = Math.max(220, Math.min(1600, distance));
-    document.getElementById('knowledge-depth').textContent = Math.round(720 / state.distance * 100) + '%';
+  function fitGraphDistance() {
+    if (!state.nodes.length) return 720;
+    var radius = state.nodes.reduce(function (largest, node) {
+      return Math.max(largest, Math.sqrt(node.x * node.x + node.y * node.y + node.z * node.z));
+    }, 1);
+    var visibleRadius = Math.max(90, Math.min(state.width, state.height) * 0.44);
+    return Math.max(520, Math.min(4000, radius + radius * 620 / visibleRadius));
+  }
+
+  function setDistance(distance, updateDefault) {
+    state.distance = Math.max(220, Math.min(4000, distance));
+    if (updateDefault) state.defaultDistance = state.distance;
+    document.getElementById('knowledge-depth').textContent = Math.round(state.defaultDistance / state.distance * 100) + '%';
   }
 
   function pointerDistance() {
@@ -264,14 +331,15 @@
   function focusNode(node) {
     if (!node) return;
     state.targetX = node.x; state.targetY = node.y; state.targetZ = node.z;
-    state.distance = Math.max(300, state.distance * .72);
+    setDistance(Math.max(300, state.distance * .72));
   }
 
   function resetView() {
-    state.yaw = -.35; state.pitch = .18; state.distance = 720;
+    state.yaw = -.35; state.pitch = .18;
     state.targetX = 0; state.targetY = 0; state.targetZ = 0; state.neighborhoodOnly = false;
+    restoreGraphPositions(true);
     selectNode(null, false);
-    document.getElementById('knowledge-depth').textContent = '100%';
+    setDistance(fitGraphDistance(), true);
   }
 
   canvas.addEventListener('pointerdown', function (event) {
@@ -318,6 +386,9 @@
     if (selectOnRelease) { var point = eventPoint(event); selectNode(nearestNode(point.x, point.y), true); }
   });
   canvas.addEventListener('pointercancel', function (event) {
+    state.pointers.delete(event.pointerId); state.pinchDistance = null; state.dragging = false; state.moved = true;
+  });
+  canvas.addEventListener('lostpointercapture', function (event) {
     state.pointers.delete(event.pointerId); state.pinchDistance = null; state.dragging = false; state.moved = true;
   });
   canvas.addEventListener('dblclick', function (event) {
@@ -387,5 +458,10 @@
 
   new ResizeObserver(resize).observe(viewport);
   resize(); loadGraph(); state.frame = window.requestAnimationFrame(render);
-  window.addEventListener('pagehide', function () { window.cancelAnimationFrame(state.frame); });
+  window.addEventListener('pagehide', function () {
+    window.cancelAnimationFrame(state.frame); state.frame = 0; state.pointers.clear();
+  });
+  window.addEventListener('pageshow', function () {
+    if (!state.frame) { resize(); state.frame = window.requestAnimationFrame(render); }
+  });
 }());

@@ -9,14 +9,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 - **Mobile Neural Atlas remains visible and supports pinch zoom** — Large graphs no longer expand out of the camera
-  after loading because repulsion now scales with the total node count. The canvas tracks two touch pointers for
-  bounded pinch-to-zoom, keeps single-finger rotation stable after multi-touch, and restores the default depth through
-  the reset control. German and English instructions describe both mouse-wheel and touch operation.
+  after loading. Repulsion scales with the total node count; large layouts use a bounded linear simulation; and spring
+  forces are normalized by distance and node degree so highly connected notes or tags cannot corrupt coordinates.
+  Velocity and radius guards recover non-finite nodes, reset restores both layout and fitted camera, and Safari resumes
+  rendering after back/forward-cache navigation. The canvas tracks two touch pointers for bounded pinch-to-zoom and
+  German and English instructions describe both mouse-wheel and touch operation.
 
 ### Tests
-- **Large mobile graph regression coverage** — Contract and real-browser checks load 500 nodes with 424 edges, wait
-  through 120 animation frames, verify visible graph pixels, exercise pinch zoom in both directions and confirm reset
-  to 100 percent.
+- **Large mobile graph regression coverage** — Contract, Chromium and local WebKit checks load 500 nodes with a
+  degree-424 hub, wait through 120 animation frames, enforce a frame-time budget, reject page errors, verify visible
+  graph pixels, exercise pinch zoom in both directions, confirm reset to 100 percent and cover Safari canvas resume.
 
 ## [3.1.0] - 2026-08-03
 

@@ -38,6 +38,8 @@ def _run_browser_checks() -> None:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 375, "height": 812})
+        page_errors: list[str] = []
+        page.on("pageerror", lambda error: page_errors.append(str(error)))
         page.route(
             "**/*",
             lambda route: route.continue_()
@@ -218,8 +220,8 @@ def _run_browser_checks() -> None:
         graph_edges = [
             {
                 "id": f"edge:{index}",
-                "source": f"document:{index % 500}",
-                "target": f"document:{(index * 17 + 23) % 500}",
+                "source": "document:0",
+                "target": f"document:{index + 1}",
                 "kind": "links_to",
             }
             for index in range(424)
@@ -241,13 +243,18 @@ def _run_browser_checks() -> None:
         )
         page.goto(f"{BASE_URL}/knowledge", wait_until="networkidle")
         page.wait_for_function("document.querySelector('#knowledge-node-count').textContent === '500'")
-        page.evaluate(
+        animation_duration = page.evaluate(
             """() => new Promise(resolve => {
+                const started = performance.now();
                 let frames = 0;
-                const tick = () => { frames += 1; frames >= 120 ? resolve() : requestAnimationFrame(tick); };
+                const tick = () => {
+                    frames += 1;
+                    frames >= 120 ? resolve(performance.now() - started) : requestAnimationFrame(tick);
+                };
                 requestAnimationFrame(tick);
             })"""
         )
+        assert animation_duration < 4000
         bright_pixels = page.locator("#knowledge-graph").evaluate(
             """canvas => {
                 const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
@@ -272,6 +279,27 @@ def _run_browser_checks() -> None:
         canvas.dispatch_event("pointerup", {"pointerId": 1, "pointerType": "touch", "clientX": 100, "clientY": 400})
         page.locator("#knowledge-reset").click()
         assert page.locator("#knowledge-depth").inner_text() == "100%"
+        page.evaluate(
+            """() => {
+                window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: true}));
+                const canvas = document.querySelector('#knowledge-graph');
+                const context = canvas.getContext('2d');
+                context.fillStyle = '#171713';
+                context.fillRect(0, 0, canvas.width, canvas.height);
+                window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}));
+            }"""
+        )
+        page.wait_for_function(
+            """() => {
+                const canvas = document.querySelector('#knowledge-graph');
+                const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+                for (let index = 0; index < data.length; index += 16) {
+                    if (data[index] > 140 && data[index + 1] > 160 && data[index + 2] < 170) return true;
+                }
+                return false;
+            }"""
+        )
+        assert page_errors == []
         page.unroute("**/api/knowledge/graph?*")
 
         browser.close()
