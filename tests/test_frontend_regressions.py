@@ -137,7 +137,20 @@ def test_mehrfachloeschung_verwendet_einen_batch_request():
     assert "body: JSON.stringify({ paths: paths })" in batch_delete
     assert "result.index_cleanup_pending" in batch_delete
     assert "for (" not in batch_delete
-    assert "/static/kiwiki.js?v=20260802-batch-delete" in layout
+    assert "/static/kiwiki.js?v=20260803-desktop-menu" in layout
+
+
+def test_desktop_sidebar_breite_respektiert_collapsed_zustand_und_drag_abbruch():
+    """Gespeicherte Breiten duerfen keine sichtbare, aber inerte Sidebar erzeugen."""
+    script = _read("app/static/kiwiki.js")
+
+    assert "function kwGetSavedSidebarWidth(" in script
+    assert "sidebar.classList.contains('collapsed')" in script
+    assert "KW_SIDEBAR_MIN_WIDTH" in script
+    assert "KW_SIDEBAR_MAX_WIDTH" in script
+    assert "resizer.addEventListener('lostpointercapture', endDrag)" in script
+    assert "window.addEventListener('blur', endDrag)" in script
+    assert "resizer.addEventListener('mousedown', startDrag)" not in script
 
 
 def test_editor_controls_erhalten_zugaengliche_namen():

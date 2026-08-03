@@ -302,6 +302,85 @@ def _run_browser_checks() -> None:
         assert page_errors == []
         page.unroute("**/api/knowledge/graph?*")
 
+        page.set_viewport_size({"width": 1440, "height": 900})
+        page.evaluate("localStorage.setItem('kiwiki_sidebar_w', '380')")
+        page.goto(f"{BASE_URL}/", wait_until="networkidle")
+        sidebar = page.locator(".sidebar")
+        hamburger = page.get_by_role("button", name="Menü")
+        assert sidebar.get_attribute("aria-hidden") == "true"
+        assert sidebar.evaluate("element => element.inert") is True
+        assert sidebar.evaluate("element => element.getBoundingClientRect().width") == 0
+
+        hamburger.click()
+        assert sidebar.get_attribute("aria-hidden") == "false"
+        assert sidebar.evaluate("element => element.inert") is False
+        page.wait_for_function(
+            "() => Math.round(document.querySelector('.sidebar').getBoundingClientRect().width) === 380"
+        )
+        assert sidebar.evaluate("element => Math.round(element.getBoundingClientRect().width)") == 380
+        page.locator(".sidebar-account-button").click()
+        account_menu = page.locator("#sidebar-account-menu")
+        assert account_menu.get_attribute("aria-hidden") == "false"
+        knowledge_link = account_menu.locator('a[href="/knowledge"]')
+        assert knowledge_link.evaluate(
+            """element => {
+                const rect = element.getBoundingClientRect();
+                const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+                return hit === element || element.contains(hit);
+            }"""
+        ) is True
+        account_button = page.locator(".sidebar-account-button")
+        page.set_viewport_size({"width": 1024, "height": 900})
+        page.wait_for_function("() => document.querySelector('.sidebar').getAttribute('aria-hidden') === 'true'")
+        assert account_menu.get_attribute("aria-hidden") == "true"
+        assert hamburger.get_attribute("aria-expanded") == "false"
+        page.set_viewport_size({"width": 1440, "height": 900})
+        page.wait_for_function(
+            "() => Math.round(document.querySelector('.sidebar').getBoundingClientRect().width) === 380"
+        )
+        assert sidebar.get_attribute("aria-hidden") == "false"
+        assert hamburger.get_attribute("aria-expanded") == "true"
+        account_button.click()
+        assert account_menu.get_attribute("aria-hidden") == "false"
+
+        for _ in range(6):
+            account_button.click()
+            assert account_menu.get_attribute("aria-hidden") == "true"
+            account_button.click()
+            assert account_menu.get_attribute("aria-hidden") == "false"
+        account_button.click()
+
+        notes_folder = page.locator('.tree-row[data-kind="dir"][data-path="notes"] .file-item')
+        notes_folder.click(button="right")
+        context_menu = page.locator(".kw-context-menu")
+        context_menu.wait_for()
+        context_action = context_menu.locator(".kw-context-item:not(.disabled)").first
+        assert context_action.evaluate(
+            """element => {
+                const rect = element.getBoundingClientRect();
+                const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+                return hit === element || element.contains(hit);
+            }"""
+        ) is True
+        context_action.click()
+        context_menu.wait_for(state="detached")
+
+        resizer = page.locator("#sidebar-resizer")
+        resizer.dispatch_event(
+            "pointerdown",
+            {"pointerId": 9, "pointerType": "mouse", "button": 0, "clientX": 380, "clientY": 300},
+        )
+        assert "dragging" in (resizer.get_attribute("class") or "").split()
+        assert page.locator("body").evaluate("element => element.style.userSelect") == "none"
+        page.evaluate("window.dispatchEvent(new Event('blur'))")
+        assert "dragging" not in (resizer.get_attribute("class") or "").split()
+        assert page.locator("body").evaluate("element => element.style.userSelect") == ""
+
+        hamburger.click()
+        page.wait_for_function("() => document.querySelector('.sidebar').getBoundingClientRect().width === 0")
+        assert sidebar.evaluate("element => element.getBoundingClientRect().width") == 0
+        assert account_menu.get_attribute("aria-hidden") == "true"
+
         browser.close()
 
 

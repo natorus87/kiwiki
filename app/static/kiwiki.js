@@ -42,6 +42,29 @@ function kwIsMobileSidebar() {
   return window.matchMedia && window.matchMedia('(max-width: 1024px)').matches;
 }
 
+var KW_SIDEBAR_MIN_WIDTH = 180;
+var KW_SIDEBAR_MAX_WIDTH = 480;
+
+function kwGetSavedSidebarWidth() {
+  try {
+    var saved = parseInt(localStorage.getItem('kiwiki_sidebar_w'), 10);
+    return saved >= KW_SIDEBAR_MIN_WIDTH && saved <= KW_SIDEBAR_MAX_WIDTH ? saved : null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function kwApplyDesktopSidebarWidth(sidebar, logoWrap) {
+  var saved = kwGetSavedSidebarWidth();
+  sidebar.style.width = saved ? saved + 'px' : '';
+  if (logoWrap) logoWrap.style.width = saved ? saved + 'px' : '';
+}
+
+function kwClearDesktopSidebarWidth(sidebar, logoWrap) {
+  if (sidebar) sidebar.style.width = '';
+  if (logoWrap) logoWrap.style.width = '';
+}
+
 function kwSetSidebarAccessibility(s, isClosed) {
   if (!s) return;
   s.setAttribute('aria-hidden', isClosed ? 'true' : 'false');
@@ -62,15 +85,7 @@ function openSidebar() {
   } else {
     if (s) {
       s.classList.remove('collapsed');
-      // Inline-Width vom Resizer wiederherstellen
-      var savedW = parseInt(localStorage.getItem('kiwiki_sidebar_w'), 10);
-      if (savedW && savedW > 0) {
-        s.style.width = savedW + 'px';
-        if (logoWrap) logoWrap.style.width = savedW + 'px';
-      } else {
-        s.style.width = '';
-        if (logoWrap) logoWrap.style.width = '';
-      }
+      kwApplyDesktopSidebarWidth(s, logoWrap);
     }
   }
   if (btn) btn.setAttribute('aria-expanded', 'true');
@@ -91,11 +106,10 @@ function closeSidebar() {
   } else {
     if (s) {
       s.classList.add('collapsed');
-      // Inline-Width löschen, damit CSS-Klasse greifen kann
-      s.style.width = '';
-      if (logoWrap) logoWrap.style.width = '';
+      kwClearDesktopSidebarWidth(s, logoWrap);
     }
   }
+  kwCloseAccountMenu();
   if (btn) btn.setAttribute('aria-expanded', 'false');
   kwSetSidebarAccessibility(s, true);
   if (s && s.contains(document.activeElement) && btn) btn.focus();
@@ -164,13 +178,32 @@ function kwToggleAccountMenu() {
 
 function kwSyncSidebarForViewport() {
   var s = document.querySelector('.sidebar');
+  var logoWrap = document.querySelector('.logo-wrap');
+  var backdrop = document.getElementById('sidebar-backdrop');
+  var button = document.querySelector('.hamburger');
   if (!s) return;
   if (kwIsMobileSidebar()) {
-    s.style.transform = s.classList.contains('open') ? 'translateX(0)' : 'translateX(-100%)';
-    kwSetSidebarAccessibility(s, !s.classList.contains('open'));
+    kwClearDesktopSidebarWidth(s, logoWrap);
+    var mobileOpen = s.classList.contains('open');
+    s.style.transform = mobileOpen ? 'translateX(0)' : 'translateX(-100%)';
+    if (backdrop) backdrop.classList.toggle('open', mobileOpen);
+    if (button) button.setAttribute('aria-expanded', mobileOpen ? 'true' : 'false');
+    kwSetSidebarAccessibility(s, !mobileOpen);
+    if (!mobileOpen) { kwCloseAccountMenu(); kwCloseTreeContextMenu(); }
   } else {
+    s.classList.remove('open');
     s.style.transform = '';
-    kwSetSidebarAccessibility(s, s.classList.contains('collapsed'));
+    if (backdrop) backdrop.classList.remove('open');
+    var desktopOpen = !s.classList.contains('collapsed');
+    if (button) button.setAttribute('aria-expanded', desktopOpen ? 'true' : 'false');
+    if (!desktopOpen) {
+      kwClearDesktopSidebarWidth(s, logoWrap);
+      kwSetSidebarAccessibility(s, true);
+      kwCloseAccountMenu(); kwCloseTreeContextMenu();
+    } else {
+      kwApplyDesktopSidebarWidth(s, logoWrap);
+      kwSetSidebarAccessibility(s, false);
+    }
   }
 }
 
@@ -1049,16 +1082,13 @@ function kwInitSidebarResizer() {
   if (resizer.dataset.kwBound === '1') return;
   resizer.dataset.kwBound = '1';
 
-  if (window.innerWidth > 1024) {
-    var savedW = parseInt(localStorage.getItem('kiwiki_sidebar_w'), 10);
-    if (savedW && savedW > 0) {
-      sidebar.style.width  = savedW + 'px';
-      if (logoWrap) logoWrap.style.width = savedW + 'px';
-    }
+  if (window.innerWidth > 1024 && !sidebar.classList.contains('collapsed')) {
+    kwApplyDesktopSidebarWidth(sidebar, logoWrap);
   }
 
   function startDrag(e) {
-    if (e.pointerType && e.pointerType !== 'mouse' && e.pointerType !== 'pen') return;
+    if (kwIsMobileSidebar() || sidebar.classList.contains('collapsed')) return;
+    if ((e.pointerType && e.pointerType !== 'mouse' && e.pointerType !== 'pen') || e.button !== 0) return;
     dragging = true;
     startX   = e.clientX;
     startW   = sidebar.getBoundingClientRect().width;
@@ -1073,7 +1103,7 @@ function kwInitSidebarResizer() {
 
   function moveDrag(e) {
     if (!dragging) return;
-    var w = Math.max(1, startW + e.clientX - startX);
+    var w = Math.min(KW_SIDEBAR_MAX_WIDTH, Math.max(KW_SIDEBAR_MIN_WIDTH, startW + e.clientX - startX));
     sidebar.style.width = w + 'px';
     if (logoWrap) logoWrap.style.width = w + 'px';
   }
@@ -1084,17 +1114,18 @@ function kwInitSidebarResizer() {
     resizer.classList.remove('dragging');
     document.body.style.cursor     = '';
     document.body.style.userSelect = '';
-    localStorage.setItem('kiwiki_sidebar_w', parseInt(sidebar.style.width, 10));
+    var width = Math.round(sidebar.getBoundingClientRect().width);
+    if (width >= KW_SIDEBAR_MIN_WIDTH && width <= KW_SIDEBAR_MAX_WIDTH) {
+      localStorage.setItem('kiwiki_sidebar_w', String(width));
+    }
   }
 
   resizer.addEventListener('pointerdown', startDrag);
   document.addEventListener('pointermove', moveDrag);
   document.addEventListener('pointerup', endDrag);
   document.addEventListener('pointercancel', endDrag);
-
-  resizer.addEventListener('mousedown', startDrag);
-  document.addEventListener('mousemove', moveDrag);
-  document.addEventListener('mouseup', endDrag);
+  resizer.addEventListener('lostpointercapture', endDrag);
+  window.addEventListener('blur', endDrag);
 }
 
 if (document.readyState === 'loading') {

@@ -8,6 +8,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Fixed
+- **Desktop sidebar menus remain clickable after restoring a custom width** — A saved resizer width no longer
+  overrides the zero-width `collapsed` state while the sidebar is still `inert`. Desktop width restoration now only
+  happens after opening, invalid values are bounded, closing also closes the account menu, and pointer loss or window
+  blur reliably ends resizing without leaving the interface in a dragging state. Desktop/mobile breakpoint changes
+  now synchronize the hamburger, backdrop, accessibility state and any open account or context menu.
 - **Mobile Neural Atlas remains visible and supports pinch zoom** — Large graphs no longer expand out of the camera
   after loading. Repulsion scales with the total node count; large layouts use a bounded linear simulation; and spring
   forces are normalized by distance and node degree so highly connected notes or tags cannot corrupt coordinates.
@@ -16,6 +21,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   German and English instructions describe both mouse-wheel and touch operation.
 
 ### Tests
+- **Desktop menu interaction regression coverage** — The real-browser suite restores a custom sidebar width, verifies
+  the collapsed/open geometry and accessibility state, repeatedly toggles the account menu, hit-tests its Knowledge
+  Graph link, exercises the desktop right-click context menu and verifies menu cleanup across breakpoint changes and
+  interrupted resize gestures.
 - **Large mobile graph regression coverage** — Contract, Chromium and local WebKit checks load 500 nodes with a
   degree-424 hub, wait through 120 animation frames, enforce a frame-time budget, reject page errors, verify visible
   graph pixels, exercise pinch zoom in both directions, confirm reset to 100 percent and cover Safari canvas resume.
