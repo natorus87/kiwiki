@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
@@ -204,6 +205,74 @@ def _run_browser_checks() -> None:
         )
         assert button_width <= form_width
         assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+
+        graph_nodes = [
+            {
+                "id": f"document:{index}",
+                "kind": "document",
+                "label": f"Mobile graph node {index}",
+                "path": f"notes/mobile-{index}.md",
+            }
+            for index in range(500)
+        ]
+        graph_edges = [
+            {
+                "id": f"edge:{index}",
+                "source": f"document:{index % 500}",
+                "target": f"document:{(index * 17 + 23) % 500}",
+                "kind": "links_to",
+            }
+            for index in range(424)
+        ]
+        page.route(
+            "**/api/knowledge/graph?*",
+            lambda route: route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps(
+                    {
+                        "status": "ready",
+                        "nodes": graph_nodes,
+                        "edges": graph_edges,
+                        "truncated": False,
+                    }
+                ),
+            ),
+        )
+        page.goto(f"{BASE_URL}/knowledge", wait_until="networkidle")
+        page.wait_for_function("document.querySelector('#knowledge-node-count').textContent === '500'")
+        page.evaluate(
+            """() => new Promise(resolve => {
+                let frames = 0;
+                const tick = () => { frames += 1; frames >= 120 ? resolve() : requestAnimationFrame(tick); };
+                requestAnimationFrame(tick);
+            })"""
+        )
+        bright_pixels = page.locator("#knowledge-graph").evaluate(
+            """canvas => {
+                const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+                let count = 0;
+                for (let index = 0; index < data.length; index += 16) {
+                    if (data[index] > 140 && data[index + 1] > 160 && data[index + 2] < 170) count += 1;
+                }
+                return count;
+            }"""
+        )
+        assert bright_pixels > 100
+
+        canvas = page.locator("#knowledge-graph")
+        canvas.evaluate("element => { element.setPointerCapture = () => {}; }")
+        canvas.dispatch_event("pointerdown", {"pointerId": 1, "pointerType": "touch", "clientX": 100, "clientY": 400})
+        canvas.dispatch_event("pointerdown", {"pointerId": 2, "pointerType": "touch", "clientX": 200, "clientY": 400})
+        canvas.dispatch_event("pointermove", {"pointerId": 2, "pointerType": "touch", "clientX": 260, "clientY": 400})
+        assert int(page.locator("#knowledge-depth").inner_text().rstrip("%")) > 100
+        canvas.dispatch_event("pointermove", {"pointerId": 2, "pointerType": "touch", "clientX": 150, "clientY": 400})
+        assert int(page.locator("#knowledge-depth").inner_text().rstrip("%")) < 100
+        canvas.dispatch_event("pointerup", {"pointerId": 2, "pointerType": "touch", "clientX": 150, "clientY": 400})
+        canvas.dispatch_event("pointerup", {"pointerId": 1, "pointerType": "touch", "clientX": 100, "clientY": 400})
+        page.locator("#knowledge-reset").click()
+        assert page.locator("#knowledge-depth").inner_text() == "100%"
+        page.unroute("**/api/knowledge/graph?*")
 
         browser.close()
 

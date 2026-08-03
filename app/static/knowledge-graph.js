@@ -34,6 +34,7 @@
     width: 1, height: 1, dpr: 1, yaw: -0.35, pitch: 0.18, distance: 720,
     targetX: 0, targetY: 0, targetZ: 0, selected: null, hovered: null,
     dragging: false, moved: false, lastX: 0, lastY: 0, paused: prefersReducedMotion,
+    pointers: new Map(), pinchDistance: null,
     neighborhoodOnly: false, frame: 0, lastTime: performance.now(), settled: false
   };
 
@@ -100,7 +101,9 @@
   function simulate() {
     if (state.settled || state.paused) return;
     var nodes = state.nodes;
-    var strength = Math.min(1, 160 / Math.max(nodes.length, 1));
+    // Die Gesamtabstossung muss mit der Knotenzahl konstant bleiben. Die alte
+    // 160/n-Skalierung liess grosse Graphen nach dem Laden aus dem Bild wachsen.
+    var strength = 1 / Math.max(nodes.length, 1);
     for (var i = 0; i < nodes.length; i += 1) {
       var a = nodes[i];
       a.vx += -a.x * 0.0007; a.vy += -a.y * 0.0007; a.vz += -a.z * 0.0007;
@@ -227,6 +230,17 @@
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
 
+  function setDistance(distance) {
+    state.distance = Math.max(220, Math.min(1600, distance));
+    document.getElementById('knowledge-depth').textContent = Math.round(720 / state.distance * 100) + '%';
+  }
+
+  function pointerDistance() {
+    var points = Array.from(state.pointers.values());
+    if (points.length !== 2) return null;
+    return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+  }
+
   function selectNode(node, announce) {
     state.selected = node; state.neighborhoodOnly = false;
     var inspector = document.getElementById('knowledge-inspector');
@@ -261,11 +275,29 @@
   }
 
   canvas.addEventListener('pointerdown', function (event) {
-    canvas.setPointerCapture(event.pointerId); state.dragging = true; state.moved = false;
-    state.lastX = event.clientX; state.lastY = event.clientY;
+    if (!state.pointers.has(event.pointerId) && state.pointers.size >= 2) return;
+    canvas.setPointerCapture(event.pointerId);
+    state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (state.pointers.size === 1) {
+      state.dragging = true; state.moved = false;
+      state.lastX = event.clientX; state.lastY = event.clientY;
+    } else if (state.pointers.size === 2) {
+      state.dragging = false; state.moved = true; state.pinchDistance = pointerDistance();
+    }
   });
   canvas.addEventListener('pointermove', function (event) {
     var point = eventPoint(event); state.hovered = nearestNode(point.x, point.y);
+    if (state.pointers.has(event.pointerId)) {
+      state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+    if (state.pointers.size === 2) {
+      var distance = pointerDistance();
+      if (distance && state.pinchDistance) {
+        setDistance(state.distance * state.pinchDistance / distance);
+      }
+      state.pinchDistance = distance; state.moved = true;
+      return;
+    }
     canvas.style.cursor = state.dragging ? 'grabbing' : (state.hovered ? 'pointer' : 'grab');
     if (!state.dragging) return;
     var dx = event.clientX - state.lastX; var dy = event.clientY - state.lastY;
@@ -274,18 +306,27 @@
     state.lastX = event.clientX; state.lastY = event.clientY;
   });
   canvas.addEventListener('pointerup', function (event) {
-    state.dragging = false;
-    if (!state.moved) { var point = eventPoint(event); selectNode(nearestNode(point.x, point.y), true); }
+    var selectOnRelease = state.pointers.size === 1 && !state.moved;
+    state.pointers.delete(event.pointerId);
+    state.pinchDistance = null;
+    if (state.pointers.size === 1) {
+      var remaining = Array.from(state.pointers.values())[0];
+      state.lastX = remaining.x; state.lastY = remaining.y; state.dragging = true; state.moved = true;
+    } else {
+      state.dragging = false;
+    }
+    if (selectOnRelease) { var point = eventPoint(event); selectNode(nearestNode(point.x, point.y), true); }
   });
-  canvas.addEventListener('pointercancel', function () { state.dragging = false; });
+  canvas.addEventListener('pointercancel', function (event) {
+    state.pointers.delete(event.pointerId); state.pinchDistance = null; state.dragging = false; state.moved = true;
+  });
   canvas.addEventListener('dblclick', function (event) {
     var point = eventPoint(event); var node = nearestNode(point.x, point.y);
     if (node && node.path) window.location.href = '/?file=' + encodeURIComponent(node.path);
   });
   canvas.addEventListener('wheel', function (event) {
     event.preventDefault();
-    state.distance = Math.max(220, Math.min(1600, state.distance * Math.exp(event.deltaY * .001)));
-    document.getElementById('knowledge-depth').textContent = Math.round(720 / state.distance * 100) + '%';
+    setDistance(state.distance * Math.exp(event.deltaY * .001));
   }, { passive: false });
   canvas.addEventListener('keydown', function (event) {
     var step = Math.max(10, state.distance * .025); var handled = true;

@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app.main import app
+
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def _login(monkeypatch, username: str = "alice", key: str = "alice-key") -> TestClient:
@@ -37,9 +43,20 @@ def test_knowledge_page_supports_english_and_language_switch(monkeypatch):
     assert '<html lang="en">' in response.text
     assert "Neural Atlas" in response.text
     assert "Explore connections" in response.text
+    assert "Mouse wheel / pinch" in response.text
     assert "Back to wiki" in response.text
     assert 'href="/knowledge?lang=de"' in response.text
     assert "Verbindungen verfolgen" not in response.text
+
+
+def test_knowledge_page_explains_mobile_pinch_zoom_in_german(monkeypatch):
+    client = _login(monkeypatch)
+
+    response = client.get("/knowledge?lang=de")
+
+    assert response.status_code == 200
+    assert "Mausrad / Pinch" in response.text
+    assert "Mit zwei Fingern zoomen" in response.text
 
 
 def test_knowledge_page_uses_accept_language_and_persists_choice(monkeypatch):
@@ -63,6 +80,28 @@ def test_sidebar_links_to_knowledge_graph(monkeypatch):
     assert response.status_code == 200
     assert 'href="/knowledge"' in response.text
     assert "Wissensgraph" in response.text
+
+
+def test_large_graph_simulation_scales_repulsion_by_node_count():
+    """Viele Knoten duerfen nicht nach dem Laden aus dem Sichtfeld explodieren."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    strength = re.search(r"var strength = ([^;]+);", script)
+
+    assert strength is not None
+    assert strength.group(1).strip() == "1 / Math.max(nodes.length, 1)"
+
+
+def test_mobile_graph_implements_bounded_two_pointer_pinch_zoom():
+    """Der Canvas muss Pinch selbst behandeln, weil natives Touch-Zoom deaktiviert ist."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "pointers: new Map()" in script
+    assert "function setDistance(" in script
+    assert "function pointerDistance(" in script
+    assert "state.pointers.size === 2" in script
+    assert "state.distance * state.pinchDistance / distance" in script
+    assert "state.pointers.delete(event.pointerId)" in script
 
 
 def test_graph_api_is_disabled_without_creating_data(monkeypatch):
