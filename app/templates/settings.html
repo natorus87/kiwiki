@@ -220,17 +220,17 @@
 {% endblock %}
 
 {% block sidebar %}
-<aside class="sidebar" aria-label="Navigation">
+<aside class="sidebar" aria-label="{{ t.navigation }}">
   <div class="mobile-sidebar-header">
     <span class="mobile-sidebar-logo">ki<em>wiki</em></span>
-    <button type="button" class="mobile-close-btn" onclick="closeSidebar()" aria-label="Sidebar schließen">
+    <button type="button" class="mobile-close-btn" onclick="closeSidebar()" aria-label="{{ t.close_sidebar }}">
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
   </div>
   <div class="sidebar-toolbar">
     <button type="button" class="sidebar-btn" onclick="window.location.href='/'">
       <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-      Zurück
+      {{ t.back }}
     </button>
   </div>
   <div class="file-tree" aria-hidden="true"></div>
@@ -242,49 +242,49 @@
 <div class="settings-wrap">
   <div class="settings-head">
     <div>
-      <h1 class="settings-title">Einstellungen</h1>
-      <p class="settings-sub">Builtin-Benutzer kommen über <code>KIWIKI_USERS</code>. Lokale Benutzer werden im Datenvolume gespeichert und können hier verwaltet werden.</p>
+      <h1 class="settings-title">{{ t.settings }}</h1>
+      <p class="settings-sub">{{ t.settings_intro }}</p>
     </div>
     <a href="/" class="btn btn-ghost">
       <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-      Zurück
+      {{ t.back }}
     </a>
   </div>
 
   <section class="settings-section" aria-labelledby="users-heading">
-    <h2 id="users-heading">Benutzer</h2>
+    <h2 id="users-heading">{{ t.users }}</h2>
     <div class="user-table-wrap">
       <table class="user-table">
         <thead>
           <tr>
-            <th>Benutzer</th>
-            <th>Rolle</th>
-            <th>Quelle</th>
-            <th>Aktion</th>
+            <th>{{ t.user }}</th>
+            <th>{{ t.role }}</th>
+            <th>{{ t.source }}</th>
+            <th>{{ t.action }}</th>
           </tr>
         </thead>
         <tbody id="settings-users">
           {% for account in users %}
           <tr data-user-row="{{ account.username }}">
-            <td data-label="Benutzer">
+            <td data-label="{{ t.user }}">
               <div class="user-name-cell">
                 <div class="user-avatar">{{ account.username[0].upper() }}</div>
                 {{ account.username }}
               </div>
             </td>
-            <td data-label="Rolle"><span class="role-pill role-{{ account.role }}">{{ account.role }}</span></td>
-            <td data-label="Quelle">
+            <td data-label="{{ t.role }}"><span class="role-pill role-{{ account.role }}">{{ account.role }}</span></td>
+            <td data-label="{{ t.source }}">
               <span class="source-pill source-{{ account.source }}">{{ account.source }}</span>
             </td>
-            <td data-label="Aktion">
+            <td data-label="{{ t.action }}">
               <div class="settings-actions">
                 {% if account.source == 'local' and account.username != user.username %}
                 <button type="button" class="btn btn-danger" data-delete-user="{{ account.username }}">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  Löschen
+                  {{ t.delete }}
                 </button>
                 {% else %}
-                <span class="settings-note">geschützt</span>
+                <span class="settings-note">{{ t.protected }}</span>
                 {% endif %}
               </div>
             </td>
@@ -296,10 +296,10 @@
   </section>
 
   <section class="settings-section" aria-labelledby="add-user-heading">
-    <h2 id="add-user-heading">Lokalen Benutzer hinzufügen</h2>
+    <h2 id="add-user-heading">{{ t.add_local_user }}</h2>
     <form class="settings-form" id="add-user-form">
       <div class="settings-field">
-        <label for="new-username">Benutzername</label>
+        <label for="new-username">{{ t.username }}</label>
         <input class="settings-input" id="new-username" name="username" autocomplete="off" required pattern="[A-Za-z0-9_-]{1,64}">
       </div>
       <div class="settings-field">
@@ -308,12 +308,12 @@
           <input class="settings-input" id="new-key" name="key" autocomplete="new-password" required>
           <button type="button" class="btn btn-ghost" onclick="generateSettingsKey()">
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7h.01"/><path d="M10 14l6-6"/><circle cx="12" cy="12" r="10"/></svg>
-            Generieren
+            {{ t.generate }}
           </button>
         </div>
       </div>
       <div class="settings-field">
-        <label for="new-role">Rolle</label>
+        <label for="new-role">{{ t.role }}</label>
         <select class="settings-select" id="new-role" name="role">
           <option value="read">read</option>
           <option value="write">write</option>
@@ -322,10 +322,10 @@
       </div>
       <button type="submit" class="btn btn-primary">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-        Hinzufügen
+        {{ t.add }}
       </button>
     </form>
-    <p class="settings-note">API-Keys funktionieren für Login, REST und MCP Bearer Tokens. Builtin-Accounts änderst du weiterhin über Helm.</p>
+    <p class="settings-note">{{ t.settings_key_help }}</p>
   </section>
 </div>
 
@@ -337,13 +337,13 @@
     var action = account.source === 'local' && account.username !== CURRENT_SETTINGS_USER
       ? '<button type="button" class="btn btn-danger" data-delete-user="' + safeName + '">'
         + '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
-        + 'Löschen</button>'
-      : '<span class="settings-note">geschützt</span>';
+        + escapeHtml(kwText('delete')) + '</button>'
+      : '<span class="settings-note">' + escapeHtml({{ t.protected|tojson }}) + '</span>';
     return '<tr data-user-row="' + safeName + '">'
-      + '<td data-label="Benutzer"><div class="user-name-cell"><div class="user-avatar">' + safeName.charAt(0).toUpperCase() + '</div>' + safeName + '</div></td>'
-      + '<td data-label="Rolle"><span class="role-pill role-' + escapeHtml(account.role) + '">' + escapeHtml(account.role) + '</span></td>'
-      + '<td data-label="Quelle"><span class="source-pill source-' + escapeHtml(account.source) + '">' + escapeHtml(account.source) + '</span></td>'
-      + '<td data-label="Aktion"><div class="settings-actions">' + action + '</div></td>'
+      + '<td data-label="' + escapeHtml({{ t.user|tojson }}) + '"><div class="user-name-cell"><div class="user-avatar">' + safeName.charAt(0).toUpperCase() + '</div>' + safeName + '</div></td>'
+      + '<td data-label="' + escapeHtml({{ t.role|tojson }}) + '"><span class="role-pill role-' + escapeHtml(account.role) + '">' + escapeHtml(account.role) + '</span></td>'
+      + '<td data-label="' + escapeHtml({{ t.source|tojson }}) + '"><span class="source-pill source-' + escapeHtml(account.source) + '">' + escapeHtml(account.source) + '</span></td>'
+      + '<td data-label="' + escapeHtml({{ t.action|tojson }}) + '"><div class="settings-actions">' + action + '</div></td>'
       + '</tr>';
   }
 
@@ -353,7 +353,7 @@
       .then(function(accounts) {
         document.getElementById('settings-users').innerHTML = accounts.map(renderUserRow).join('');
       })
-      .catch(function(err) { kwToast('Benutzerliste konnte nicht geladen werden: ' + err.message, { type: 'error' }); });
+      .catch(function(err) { kwToast(kwText('userListFailed') + ': ' + err.message, { type: 'error' }); });
   }
 
   function generateSettingsKey() {
@@ -364,9 +364,9 @@
         keyInput.value = data.key || '';
         keyInput.focus();
         keyInput.select();
-        kwToast('API-Key generiert');
+        kwToast(kwText('keyGenerated'));
       })
-      .catch(function(err) { kwToast('Key konnte nicht generiert werden: ' + err.message, { type: 'error' }); });
+      .catch(function(err) { kwToast(kwText('keyGenerationFailed') + ': ' + err.message, { type: 'error' }); });
   }
 
   document.getElementById('add-user-form').addEventListener('submit', function(e) {
@@ -385,10 +385,10 @@
       .then(function(r) { return r.ok ? r.json() : r.json().then(function(d) { throw new Error(d.detail || r.status); }); })
       .then(function() {
         form.reset();
-        kwToast('Benutzer angelegt: ' + payload.username);
+        kwToast(kwText('userCreated') + ': ' + payload.username);
         reloadSettingsUsers();
       })
-      .catch(function(err) { kwToast('Fehler: ' + err.message, { type: 'error' }); });
+      .catch(function(err) { kwToast(kwText('error') + ': ' + err.message, { type: 'error' }); });
   });
 
   document.getElementById('settings-users').addEventListener('click', function(e) {
@@ -399,19 +399,19 @@
 
   async function deleteSettingsUser(username) {
     var ok = await kwConfirm({
-      title: 'Benutzer löschen?',
-      message: 'Der lokale Benutzer <code>' + escapeHtml(username) + '</code> verliert den Zugriff. Sein Wiki-Verzeichnis bleibt erhalten.',
-      confirmLabel: 'Löschen',
+      title: kwText('deleteUserQuestion'),
+      message: '<code>' + escapeHtml(username) + '</code>: ' + escapeHtml(kwText('deleteUserMessage')),
+      confirmLabel: kwText('delete'),
       danger: true,
     });
     if (!ok) return;
     fetch('/api/users/' + encodeURIComponent(username), { method: 'DELETE', headers: apiHeaders() })
       .then(function(r) { return r.ok ? r.json() : r.json().then(function(d) { throw new Error(d.detail || r.status); }); })
       .then(function() {
-        kwToast('Benutzer gelöscht: ' + username);
+        kwToast(kwText('userDeleted') + ': ' + username);
         reloadSettingsUsers();
       })
-      .catch(function(err) { kwToast('Fehler: ' + err.message, { type: 'error' }); });
+      .catch(function(err) { kwToast(kwText('error') + ': ' + err.message, { type: 'error' }); });
   }
 </script>
 {% endblock %}

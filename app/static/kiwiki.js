@@ -6,6 +6,11 @@ function apiHeaders(extra) {
   return Object.assign({}, extra || {});
 }
 
+function kwText(key, fallback) {
+  var catalog = window.KIWIKI_I18N || {};
+  return catalog[key] || fallback || key;
+}
+
 function kwHtmxGet(path, target) {
   return new Promise(function(resolve) {
     var source = document.createElement('span');
@@ -480,44 +485,44 @@ function kwContextActions(ctx) {
   if (!ctx) return actions;
 
   if (ctx.kind === 'file') {
-    actions.push({ label: 'Öffnen', run: function() {
+    actions.push({ label: kwText('open'), run: function() {
       var item = ctx.row && ctx.row.querySelector('.file-item');
       loadFile(ctx.path, item);
     }});
     if (kwCanWrite()) {
-      actions.push({ label: 'Bearbeiten', run: function() { openEditor(ctx.path); } });
-      actions.push({ label: 'Verschieben', run: function() { moveItem(ctx.path, false); } });
-      actions.push({ label: 'Umbenennen', run: function() { kwInlineRename(ctx.path); } });
+      actions.push({ label: kwText('edit'), run: function() { openEditor(ctx.path); } });
+      actions.push({ label: kwText('move'), run: function() { moveItem(ctx.path, false); } });
+      actions.push({ label: kwText('rename'), run: function() { kwInlineRename(ctx.path); } });
     }
     if (kwCanAdmin()) {
-      actions.push({ label: 'Löschen', danger: true, run: function() { deleteFile(ctx.path); } });
+      actions.push({ label: kwText('delete'), danger: true, run: function() { deleteFile(ctx.path); } });
     }
   } else if (ctx.kind === 'dir') {
     var isOpen = ctx.row && ctx.row.classList.contains('open');
-    actions.push({ label: isOpen ? 'Zuklappen' : 'Aufklappen', run: function() { kwToggleFolderFromRow(ctx.row); } });
+    actions.push({ label: isOpen ? kwText('collapse') : kwText('expand'), run: function() { kwToggleFolderFromRow(ctx.row); } });
     if (kwCanWrite()) {
-      actions.push({ label: 'Neue Datei', run: function() { newFileIn(ctx.path); } });
-      actions.push({ label: 'Neuer Ordner', run: function() { newFolderIn(ctx.path); } });
-      actions.push({ label: 'Verschieben', run: function() { moveItem(ctx.path, true); } });
-      actions.push({ label: 'Umbenennen', run: function() { kwInlineRename(ctx.path); } });
+      actions.push({ label: kwText('newFile'), run: function() { newFileIn(ctx.path); } });
+      actions.push({ label: kwText('newFolder'), run: function() { newFolderIn(ctx.path); } });
+      actions.push({ label: kwText('move'), run: function() { moveItem(ctx.path, true); } });
+      actions.push({ label: kwText('rename'), run: function() { kwInlineRename(ctx.path); } });
     }
     if (kwCanAdmin()) {
-      actions.push({ label: 'Ordner löschen', danger: true, run: function() { deleteFolder(ctx.path); } });
+      actions.push({ label: kwText('deleteFolder'), danger: true, run: function() { deleteFolder(ctx.path); } });
     }
   } else if (ctx.kind === 'root') {
     if (kwCanWrite()) {
-      actions.push({ label: 'Neue Datei', run: function() { newFileIn(''); } });
-      actions.push({ label: 'Neuer Ordner', run: function() { newFolderIn(''); } });
+      actions.push({ label: kwText('newFile'), run: function() { newFileIn(''); } });
+      actions.push({ label: kwText('newFolder'), run: function() { newFolderIn(''); } });
     }
   }
 
   if (kwCanWrite()) {
     actions.push({ separator: true });
-    actions.push({ label: window.__kwSelectMode ? 'Auswahl beenden' : 'Mehrfachauswahl', run: function() { kwToggleSelectMode(); } });
+    actions.push({ label: window.__kwSelectMode ? kwText('endSelection') : kwText('multiSelect'), run: function() { kwToggleSelectMode(); } });
   }
 
   if (!actions.length) {
-    actions.push({ label: 'Keine Aktionen verfügbar', disabled: true, run: function() {} });
+    actions.push({ label: kwText('noActions'), disabled: true, run: function() {} });
   }
   return actions;
 }
@@ -577,7 +582,7 @@ function kwOpenDesktopContextMenu(ctx, x, y) {
   var menu = document.createElement('div');
   menu.className = 'kw-context-menu';
   menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', ctx.path ? ('Aktionen für ' + ctx.path) : 'Dateibaum-Aktionen');
+  menu.setAttribute('aria-label', ctx.path ? (kwText('actionsFor') + ' ' + ctx.path) : kwText('treeActions'));
   actions.forEach(function(action) { menu.appendChild(kwBuildContextButton(action, true)); });
   document.body.appendChild(menu);
 
@@ -602,11 +607,11 @@ function kwOpenMobileActionSheet(ctx) {
   var backdrop = document.createElement('div');
   backdrop.className = 'kw-action-sheet-backdrop';
   backdrop.innerHTML = ''
-    + '<div class="kw-action-sheet" role="menu" aria-label="Dateibaum-Aktionen">'
+    + '<div class="kw-action-sheet" role="menu" aria-label="' + escapeHtml(kwText('treeActions')) + '">'
     + '<div class="kw-action-sheet-handle" aria-hidden="true"></div>'
-    + '<div class="kw-action-sheet-title">' + escapeHtml(ctx.path || 'Dateibaum') + '</div>'
+    + '<div class="kw-action-sheet-title">' + escapeHtml(ctx.path || kwText('fileTree')) + '</div>'
     + '<div class="kw-action-sheet-actions"></div>'
-    + '<button type="button" class="kw-action-sheet-cancel">Abbrechen</button>'
+    + '<button type="button" class="kw-action-sheet-cancel">' + escapeHtml(kwText('cancel')) + '</button>'
     + '</div>';
   var list = backdrop.querySelector('.kw-action-sheet-actions');
   actions.forEach(function(action) { list.appendChild(kwBuildContextButton(action, true)); });
@@ -765,12 +770,12 @@ document.addEventListener('DOMContentLoaded', function() {
         kwRewritePaths(src.path, dst);
         // Ziel-Ordner aufklappen, damit man das verschobene Item sieht
         if (folder) kwAddOpenFolder(folder);
-        kwToast('Verschoben nach: ' + dst);
+        kwToast(kwText('movedTo') + ': ' + dst);
         htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
       } else {
-        r.json().then(function(d) { kwToast('Fehler: ' + (d.detail || r.status), { type: 'error' }); });
+        r.json().then(function(d) { kwToast(kwText('error') + ': ' + (d.detail || r.status), { type: 'error' }); });
       }
-    }).catch(function(err) { kwToast('Netzwerkfehler: ' + err, { type: 'error' }); });
+    }).catch(function(err) { kwToast(kwText('networkError') + ': ' + err, { type: 'error' }); });
   });
 });
 function openEditor(path) {
@@ -783,10 +788,10 @@ function openEditor(path) {
 // überschrieben werden. `notes/` wird als Default-Ordner vorausgesetzt.
 async function kwNewNote() {
   var name = await kwPrompt({
-    title: 'Neue Notiz',
-    message: 'Dateiname (z. B. <code>meine-notiz.md</code>):',
+    title: kwText('newNote'),
+    message: escapeHtml(kwText('filenameExample')),
     placeholder: 'meine-notiz.md',
-    submitLabel: 'Erstellen',
+    submitLabel: kwText('create'),
   });
   if (!name) return;
   if (!name.endsWith('.md')) name += '.md';
@@ -810,10 +815,10 @@ function kwRunSearch(query) {
 }
 async function newFileIn(folderPath) {
   var name = await kwPrompt({
-    title: 'Neue Datei',
-    message: folderPath ? 'Dateiname in <code>' + escapeHtml(folderPath) + '</code>:' : 'Dateiname (z. B. <code>meine-notiz.md</code>):',
+    title: kwText('newFile'),
+    message: folderPath ? kwText('filenameIn') + ' <code>' + escapeHtml(folderPath) + '</code>:' : escapeHtml(kwText('filenameExample')),
     placeholder: 'meine-notiz.md',
-    submitLabel: 'Erstellen',
+    submitLabel: kwText('create'),
   });
   if (!name) return;
   if (!name.endsWith('.md')) name += '.md';
@@ -822,10 +827,10 @@ async function newFileIn(folderPath) {
 }
 async function newFolderIn(parentPath) {
   var name = await kwPrompt({
-    title: 'Neuer Ordner',
-    message: parentPath ? 'Ordnername in <code>' + escapeHtml(parentPath) + '</code>:' : 'Ordnerpfad:',
+    title: kwText('newFolder'),
+    message: parentPath ? kwText('folderNameIn') + ' <code>' + escapeHtml(parentPath) + '</code>:' : kwText('folderPath') + ':',
     placeholder: parentPath ? 'unterordner' : 'notes/projekt',
-    submitLabel: 'Anlegen',
+    submitLabel: kwText('createFolder'),
   });
   if (!name) return;
   var fullPath = parentPath ? parentPath + '/' + name : name;
@@ -835,17 +840,17 @@ async function newFolderIn(parentPath) {
     body: JSON.stringify({ path: fullPath }),
   }).then(function(r) {
     if (r.ok) {
-      kwToast('Ordner angelegt: ' + fullPath);
+      kwToast(kwText('folderCreated') + ': ' + fullPath);
       htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
-    } else r.json().then(function(d) { kwToast('Fehler: ' + (d.detail || r.status), { type: 'error' }); });
-  }).catch(function(e) { kwToast('Netzwerkfehler: ' + e, { type: 'error' }); });
+    } else r.json().then(function(d) { kwToast(kwText('error') + ': ' + (d.detail || r.status), { type: 'error' }); });
+  }).catch(function(e) { kwToast(kwText('networkError') + ': ' + e, { type: 'error' }); });
 }
 function promptCreateFolder() { newFolderIn(''); }
 async function deleteFile(path) {
   var ok = await kwConfirm({
-    title: 'Datei löschen?',
-    message: 'Möchtest du <code>' + escapeHtml(path) + '</code> wirklich löschen?',
-    confirmLabel: 'Löschen',
+    title: kwText('deleteFileQuestion'),
+    message: '<code>' + escapeHtml(path) + '</code> ' + kwText('reallyDelete'),
+    confirmLabel: kwText('delete'),
     danger: true,
   });
   if (!ok) return;
@@ -853,17 +858,17 @@ async function deleteFile(path) {
     method: 'DELETE', headers: apiHeaders(),
   }).then(function(r) {
     if (r.ok) {
-      showDeletedEmptyState('Datei', path);
+      showDeletedEmptyState(kwText('file'), path);
       htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
-      kwToast('Datei gelöscht: ' + path);
-    } else r.json().then(function(d) { kwToast('Fehler: ' + (d.detail || r.status), { type: 'error' }); });
-  }).catch(function(e) { kwToast('Netzwerkfehler: ' + e, { type: 'error' }); });
+      kwToast(kwText('fileDeleted') + ': ' + path);
+    } else r.json().then(function(d) { kwToast(kwText('error') + ': ' + (d.detail || r.status), { type: 'error' }); });
+  }).catch(function(e) { kwToast(kwText('networkError') + ': ' + e, { type: 'error' }); });
 }
 async function deleteFolder(path) {
   var ok = await kwConfirm({
-    title: 'Ordner löschen?',
-    message: 'Der Ordner <code>' + escapeHtml(path) + '</code> und <strong>alle enthaltenen Dateien</strong> werden unwiderruflich entfernt.',
-    confirmLabel: 'Alles löschen',
+    title: kwText('deleteFolderQuestion'),
+    message: '<code>' + escapeHtml(path) + '</code> ' + kwText('deleteFolderMessage'),
+    confirmLabel: kwText('deleteAll'),
     danger: true,
   });
   if (!ok) return;
@@ -871,20 +876,20 @@ async function deleteFolder(path) {
     method: 'DELETE', headers: apiHeaders(),
   }).then(function(r) {
     if (r.ok) {
-      showDeletedEmptyState('Ordner', path);
+      showDeletedEmptyState(kwText('folder'), path);
       htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
-      kwToast('Ordner gelöscht: ' + path);
-    } else r.json().then(function(d) { kwToast('Fehler: ' + (d.detail || r.status), { type: 'error' }); });
-  }).catch(function(e) { kwToast('Netzwerkfehler: ' + e, { type: 'error' }); });
+      kwToast(kwText('folderDeleted') + ': ' + path);
+    } else r.json().then(function(d) { kwToast(kwText('error') + ': ' + (d.detail || r.status), { type: 'error' }); });
+  }).catch(function(e) { kwToast(kwText('networkError') + ': ' + e, { type: 'error' }); });
 }
 async function moveItem(path, isDir) {
-  var label = isDir ? 'Ordner' : 'Datei';
+  var label = isDir ? kwText('folder') : kwText('file');
   var dst = await kwPrompt({
-    title: label + ' verschieben',
-    message: 'Neuer Pfad für <code>' + escapeHtml(path) + '</code>:',
+    title: label + ' ' + kwText('moveItem'),
+    message: kwText('newPath') + ' <code>' + escapeHtml(path) + '</code>:',
     defaultValue: path,
     placeholder: path,
-    submitLabel: 'Verschieben',
+    submitLabel: kwText('move'),
   });
   if (!dst || dst === path) return;
   fetch('/api/move', {
@@ -893,10 +898,10 @@ async function moveItem(path, isDir) {
     body: JSON.stringify({ src: path, dst: dst }),
   }).then(function(r) {
     if (r.ok) {
-      kwToast('Verschoben nach: ' + dst);
+      kwToast(kwText('movedTo') + ': ' + dst);
       htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
-    } else r.json().then(function(d) { kwToast('Fehler: ' + (d.detail || r.status), { type: 'error' }); });
-  }).catch(function(e) { kwToast('Netzwerkfehler: ' + e, { type: 'error' }); });
+    } else r.json().then(function(d) { kwToast(kwText('error') + ': ' + (d.detail || r.status), { type: 'error' }); });
+  }).catch(function(e) { kwToast(kwText('networkError') + ': ' + e, { type: 'error' }); });
 }
 
 function escapeHtml(s) {
@@ -907,7 +912,7 @@ function escapeHtml(s) {
 
 function showDeletedEmptyState(label, path) {
   document.getElementById('main-content').innerHTML =
-    '<div class="empty-state"><p>' + label + ' <strong>' + escapeHtml(path) + '</strong> gelöscht.</p></div>';
+    '<div class="empty-state"><p>' + label + ' <strong>' + escapeHtml(path) + '</strong> ' + kwText('deleted') + '.</p></div>';
 }
 
 /* ── Dashboard-Dialoge (Ersatz für Browser-Popups) ─────────────────── */
@@ -946,7 +951,7 @@ function kwDialog(opts) {
           : '')
       + '<div class="kw-modal-actions">'
       + (opts.cancelLabel !== null
-          ? '<button type="button" class="kw-btn kw-btn-secondary" data-action="cancel">' + escapeHtml(opts.cancelLabel || 'Abbrechen') + '</button>'
+          ? '<button type="button" class="kw-btn kw-btn-secondary" data-action="cancel">' + escapeHtml(opts.cancelLabel || kwText('cancel')) + '</button>'
           : '')
       + '<button type="button" class="kw-btn ' + (opts.danger ? 'kw-btn-danger' : 'kw-btn-primary') + '" data-action="ok">' + escapeHtml(opts.confirmLabel || opts.submitLabel || 'OK') + '</button>'
       + '</div>'
@@ -1003,14 +1008,14 @@ function kwDialog(opts) {
 }
 
 function kwConfirm(opts) {
-  return kwDialog(Object.assign({ confirmLabel: 'Bestätigen' }, opts || {}, { input: false }));
+  return kwDialog(Object.assign({ confirmLabel: kwText('confirm') }, opts || {}, { input: false }));
 }
 function kwPrompt(opts) {
   return kwDialog(Object.assign({ submitLabel: 'OK' }, opts || {}, { input: true }));
 }
 function kwAlert(opts) {
   if (typeof opts === 'string') opts = { message: opts };
-  return kwDialog(Object.assign({ title: 'Hinweis', cancelLabel: null, confirmLabel: 'OK' }, opts || {}, { input: false }));
+  return kwDialog(Object.assign({ title: kwText('notice'), cancelLabel: null, confirmLabel: 'OK' }, opts || {}, { input: false }));
 }
 
 function kwToast(message, options) {
@@ -1021,7 +1026,7 @@ function kwToast(message, options) {
     stack.id = 'kw-toast-stack';
     stack.className = 'kw-toast-stack';
     stack.setAttribute('role', 'region');
-    stack.setAttribute('aria-label', 'Benachrichtigungen');
+    stack.setAttribute('aria-label', kwText('notifications'));
     stack.setAttribute('aria-live', 'polite');
     document.body.appendChild(stack);
   }
@@ -1190,7 +1195,7 @@ document.addEventListener('keydown', function(e) {
 
 window.addEventListener('unhandledrejection', function(e) {
   if (typeof kwToast === 'function') {
-    kwToast('Unerwarteter Fehler: ' + (e.reason && e.reason.message || e.reason || 'unbekannt'), { type: 'error' });
+    kwToast(kwText('unexpectedError') + ': ' + (e.reason && e.reason.message || e.reason || kwText('unknown')), { type: 'error' });
   }
 });
 
@@ -1222,7 +1227,7 @@ function kwFilterTree(query) {
 function kwCopyPath(path) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(path).then(function() {
-      kwToast('Pfad kopiert: ' + path);
+      kwToast(kwText('pathCopied') + ': ' + path);
     }).catch(function() { kwCopyPathFallback(path); });
   } else { kwCopyPathFallback(path); }
 }
@@ -1232,7 +1237,7 @@ function kwCopyPathFallback(path) {
   ta.style.cssText = 'position:fixed;left:-9999px';
   document.body.appendChild(ta);
   ta.select();
-  try { document.execCommand('copy'); kwToast('Pfad kopiert: ' + path); } catch(e) { kwToast('Kopieren fehlgeschlagen', {type:'error'}); }
+  try { document.execCommand('copy'); kwToast(kwText('pathCopied') + ': ' + path); } catch(e) { kwToast(kwText('copyFailed'), {type:'error'}); }
   ta.remove();
 }
 
@@ -1248,7 +1253,7 @@ function kwInlineRename(path) {
   input.type = 'text';
   input.className = 'tree-rename-input';
   input.value = oldName;
-  input.setAttribute('aria-label', 'Neuer Name');
+  input.setAttribute('aria-label', kwText('newName'));
   nameEl.replaceWith(input);
   input.focus();
   input.select();
@@ -1272,10 +1277,10 @@ function kwInlineRename(path) {
         row.querySelector('.file-item').dataset.path = newPath;
         var cb = row.querySelector('.tree-checkbox');
         if (cb) cb.dataset.path = newPath;
-        kwToast('Umbenannt: ' + newName);
+        kwToast(kwText('renamed') + ': ' + newName);
         htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
-      } else { kwToast('Fehler beim Umbenennen', {type:'error'}); htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' }); }
-    }).catch(function() { kwToast('Netzwerkfehler', {type:'error'}); });
+      } else { kwToast(kwText('renameFailed'), {type:'error'}); htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' }); }
+    }).catch(function() { kwToast(kwText('networkError'), {type:'error'}); });
   }
   input.addEventListener('blur', finish);
   input.addEventListener('keydown', function(e) {
@@ -1328,7 +1333,7 @@ function kwUpdateSelectionBar() {
   var n = window.__kwSelected.size;
   if (n === 0) { bar.hidden = true; return; }
   bar.hidden = false;
-  count.textContent = n + (n === 1 ? ' ausgewählt' : ' ausgewählt');
+  count.textContent = n + ' ' + kwText('selectedSuffix');
 }
 function kwGetSelected() { return Array.from(window.__kwSelected); }
 
@@ -1337,13 +1342,13 @@ async function kwBatchDelete() {
   var selectedFiles = document.querySelectorAll('.tree-checkbox[data-kind="file"]:checked');
   var paths = Array.from(selectedFiles).map(function(cb) { return cb.dataset.path; });
   if (!paths.length) {
-    kwToast('Zum Löschen bitte mindestens eine Notiz auswählen.', { type: 'error' });
+    kwToast(kwText('selectNoteToDelete'), { type: 'error' });
     return;
   }
   var ok = await kwConfirm({
-    title: paths.length + ' Dateien löschen?',
-    message: 'Alle ausgewählten Dateien werden <strong>unwiderruflich</strong> gelöscht.',
-    confirmLabel: 'Alles löschen',
+    title: paths.length + ' ' + kwText('filesDeleteQuestion'),
+    message: escapeHtml(kwText('irreversibleSelection')),
+    confirmLabel: kwText('deleteAll'),
     danger: true,
   });
   if (!ok) return;
@@ -1355,7 +1360,7 @@ async function kwBatchDelete() {
     });
     var result = await r.json();
     if (!r.ok) {
-      kwToast('Fehler: ' + (result.detail || r.status), { type: 'error' });
+      kwToast(kwText('error') + ': ' + (result.detail || r.status), { type: 'error' });
       return;
     }
     var done = Array.isArray(result.deleted) ? result.deleted.length : 0;
@@ -1364,23 +1369,23 @@ async function kwBatchDelete() {
     kwClearSelection();
     htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
     kwToast(
-      done + ' gelöscht'
-        + (failed ? ', ' + failed + ' fehlgeschlagen' : '')
-        + (cleanupPending ? ', ' + cleanupPending + ' Index-Bereinigungen ausstehend' : ''),
+      done + ' ' + kwText('filesDeleted')
+        + (failed ? ', ' + failed + ' ' + kwText('failed') : '')
+        + (cleanupPending ? ', ' + cleanupPending + ' ' + kwText('cleanupPending') : ''),
       failed || cleanupPending ? { type: 'error' } : {}
     );
   } catch(e) {
-    kwToast('Netzwerkfehler: ' + e, { type: 'error' });
+    kwToast(kwText('networkError') + ': ' + e, { type: 'error' });
   }
 }
 async function kwBatchMove() {
   var paths = kwGetSelected();
   if (!paths.length) return;
   var dst = await kwPrompt({
-    title: paths.length + ' Dateien verschieben',
-    message: 'Zielordner:',
+    title: paths.length + ' ' + kwText('filesMove'),
+    message: kwText('destinationFolder') + ':',
     placeholder: 'notes/projekt',
-    submitLabel: 'Verschieben',
+    submitLabel: kwText('move'),
   });
   if (!dst) return;
   var done = 0, failed = 0;
@@ -1398,16 +1403,16 @@ async function kwBatchMove() {
   }
   kwClearSelection();
   htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
-  kwToast(done + ' verschoben' + (failed ? ', ' + failed + ' fehlgeschlagen' : ''));
+  kwToast(done + ' ' + kwText('moved') + (failed ? ', ' + failed + ' ' + kwText('failed') : ''));
 }
 async function kwBatchTag() {
   var paths = kwGetSelected();
   if (!paths.length) return;
   var tags = await kwPrompt({
-    title: 'Tags setzen',
-    message: 'Kommaseparierte Tags (werden zu bestehenden hinzugefügt):',
+    title: kwText('setTags'),
+    message: kwText('tagsPrompt'),
     placeholder: 'python, refactor',
-    submitLabel: 'Setzen',
+    submitLabel: kwText('apply'),
   });
   if (!tags) return;
   var tagList = tags.split(',').map(function(t){return t.trim()}).filter(Boolean);
@@ -1425,7 +1430,7 @@ async function kwBatchTag() {
       if (r.ok) done++;
     } catch(e) {}
   }
-  kwToast(done + ' Dateien getaggt');
+  kwToast(done + ' ' + kwText('filesTagged'));
 }
 function kwExportSelected() {
   var paths = kwGetSelected();

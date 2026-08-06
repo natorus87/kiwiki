@@ -4,7 +4,7 @@
          data-path="{{ item.path }}" data-kind="dir" draggable="true">
       {% if user and user.role in ['write', 'admin'] %}
       <input type="checkbox" class="tree-checkbox" data-path="{{ item.path }}" data-kind="dir"
-             onclick="event.stopPropagation(); kwToggleSelect(this)" aria-label="{{ item.name }} auswählen">
+             onclick="event.stopPropagation(); kwToggleSelect(this)" aria-label="{{ t.select_item.format(name=item.name) }}">
       {% endif %}
       <button type="button" class="file-item folder" data-path="{{ item.path }}" aria-expanded="false"
               onclick="toggleFolder(this,{{ item.path|tojson|forceescape }},{{ item.tree_id|tojson|forceescape }})">
@@ -22,7 +22,7 @@
          data-path="{{ item.path }}" data-kind="file" draggable="true">
       {% if user and user.role in ['write', 'admin'] %}
       <input type="checkbox" class="tree-checkbox" data-path="{{ item.path }}" data-kind="file"
-             onclick="event.stopPropagation(); kwToggleSelect(this)" aria-label="{{ item.name }} auswählen">
+             onclick="event.stopPropagation(); kwToggleSelect(this)" aria-label="{{ t.select_item.format(name=item.name) }}">
       {% endif %}
       <a href="/?file={{ item.path|urlencode }}" class="file-item kw-file-link"
          data-path="{{ item.path }}" data-file-path="{{ item.path }}">

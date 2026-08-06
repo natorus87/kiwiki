@@ -1,17 +1,17 @@
 <div class="content-inner">
-  <h2>Tags</h2>
+  <h2>{{ t.tags }}</h2>
   {% if tags %}
   <div class="tag-cloud">
-    {% for t in tags %}
+    {% for tag_item in tags %}
     <div class="tag-item">
-      <a href="/?search={{ ('tag:' ~ t.tag)|urlencode }}" class="tag-chip kw-search-link" data-search-query="tag:{{ t.tag }}">
-        {{ t.tag }}
-        <span class="tag-count">{{ t.count }}</span>
+      <a href="/?search={{ ('tag:' ~ tag_item.tag)|urlencode }}" class="tag-chip kw-search-link" data-search-query="tag:{{ tag_item.tag }}">
+        {{ tag_item.tag }}
+        <span class="tag-count">{{ tag_item.count }}</span>
       </a>
       <details class="tag-files">
-        <summary>{{ t.count }} Datei{{ 'en' if t.count != 1 else '' }}</summary>
+        <summary>{{ t.files_count.format(count=tag_item.count) if tag_item.count == 1 else t.files_count_plural.format(count=tag_item.count) }}</summary>
         <ul>
-          {% for f in t.files %}
+          {% for f in tag_item.files %}
           <li><a href="/?file={{ f|urlencode }}" class="kw-file-link" data-file-path="{{ f }}">{{ f }}</a></li>
           {% endfor %}
         </ul>
@@ -21,7 +21,7 @@
   </div>
   {% else %}
   <div class="empty-state">
-    <p>Noch keine Tags vorhanden. Tags werden in den Frontmatter-Dateien definiert.</p>
+    <p>{{ t.no_tags }}</p>
   </div>
   {% endif %}
 </div>

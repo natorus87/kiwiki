@@ -15,21 +15,25 @@
     window.KIWIKI = {
       role: "{{ user.role if user else 'none' }}",
       roleLevel: {{ {'none':0,'read':1,'write':2,'admin':3}[user.role if user else 'none'] }},
+      lang: {{ lang|tojson }},
+      i18n: {{ t.js|tojson }},
     };
     var KIWIKI_ROLE = window.KIWIKI.role;
     var KIWIKI_ROLE_LEVEL = window.KIWIKI.roleLevel;
+    window.KIWIKI_I18N = window.KIWIKI.i18n;
   </script>
 
   <link rel="stylesheet" href="/static/kiwiki.css?v=20260706-sidebar">
+  <link rel="stylesheet" href="/static/kiwiki-polish.css?v=20260806">
   {% block extra_styles %}{% endblock %}
 </head>
 <body class="role-{{ user.role if user else 'none' }}">
-<script src="/static/kiwiki.js?v=20260803-desktop-menu" defer></script>
+<script src="/static/kiwiki.js?v=20260806-ui-polish" defer></script>
 
-<a href="#main-content" class="skip-link sr-only">{{ 'Skip to content' if lang|default('de') == 'en' else 'Zum Inhalt springen' }}</a>
+<a href="#main-content" class="skip-link sr-only">{{ t.skip_content }}</a>
 
 <header>
-  <button type="button" class="hamburger" onclick="toggleSidebar()" aria-label="{{ 'Menu' if lang|default('de') == 'en' else 'Menü' }}" aria-controls="file-tree" aria-expanded="false">
+  <button type="button" class="hamburger" onclick="toggleSidebar()" aria-label="{{ t.menu }}" aria-controls="file-tree" aria-expanded="false">
     <span class="hamburger-lines">
       <span></span><span></span><span></span>
     </span>
@@ -44,12 +48,12 @@
         hx-post="/ui/search" hx-target="#search-results" hx-swap="innerHTML"
         hx-trigger="input changed delay:400ms, submit">
     <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    <input type="search" name="query" class="search-input" placeholder="{{ 'Search…' if lang|default('de') == 'en' else 'Suchen…' }}" autocomplete="off" aria-label="{{ 'Search wiki' if lang|default('de') == 'en' else 'Wiki durchsuchen' }}" aria-controls="search-results">
-    <div id="search-results" role="region" aria-label="{{ 'Search results' if lang|default('de') == 'en' else 'Suchergebnisse' }}" aria-live="polite"></div>
+    <input type="search" name="query" class="search-input" placeholder="{{ t.search_placeholder }}" autocomplete="off" aria-label="{{ t.search_wiki }}" aria-controls="search-results">
+    <div id="search-results" role="region" aria-label="{{ t.search_results }}" aria-live="polite"></div>
   </form>
 </header>
 
-<button type="button" class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()" aria-label="{{ 'Close sidebar' if lang|default('de') == 'en' else 'Sidebar schließen' }}"></button>
+<button type="button" class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()" aria-label="{{ t.close_sidebar }}"></button>
 
 <div class="app-layout" id="app-layout">
   {% block sidebar %}{% endblock %}

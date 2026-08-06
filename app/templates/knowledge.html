@@ -18,7 +18,7 @@
 
   <nav class="knowledge-nav" id="file-tree" aria-label="{{ t.tools_label }}">
     <a class="knowledge-back-link" href="/">
-      <span aria-hidden="true">←</span> {{ t.back }}
+      <span aria-hidden="true">←</span> {{ t.back_to_wiki }}
     </a>
     <p class="knowledge-nav-kicker">{{ t.atlas_kicker }}</p>
     <h2>{{ t.sidebar_title }}</h2>
@@ -66,7 +66,7 @@
       <span><strong id="knowledge-edge-count">–</strong> {{ t.synapses }}</span>
       <span class="knowledge-depth"><strong id="knowledge-depth">100%</strong> {{ t.depth }}</span>
     </div>
-    <div class="knowledge-actions" aria-label="Graph-Aktionen">
+    <div class="knowledge-actions" aria-label="{{ t.graph_actions }}">
       <button type="button" id="knowledge-reset" class="knowledge-icon-button" title="{{ t.reset }}" aria-label="{{ t.reset }}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6h6M20 20v-6h-6M5.6 15a7 7 0 0 0 11.8 2.4M18.4 9A7 7 0 0 0 6.6 6.6"/></svg>
       </button>

@@ -1,12 +1,12 @@
 <div class="content-inner">
-  <h2>Verlauf: {{ path }}</h2>
+  <h2>{{ t.history }}: {{ path }}</h2>
   {% if history %}
   <table class="history-table">
     <thead>
       <tr>
-        <th>Datum</th>
-        <th>Autor</th>
-        <th>Nachricht</th>
+        <th>{{ t.date }}</th>
+        <th>{{ t.author }}</th>
+        <th>{{ t.message }}</th>
       </tr>
     </thead>
     <tbody>
@@ -21,7 +21,7 @@
   </table>
   {% else %}
   <div class="empty-state">
-    <p>Kein Git-Verlauf für diese Datei gefunden.</p>
+    <p>{{ t.no_git_history }}</p>
   </div>
   {% endif %}
 </div>

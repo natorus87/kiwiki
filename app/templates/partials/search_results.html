@@ -1,5 +1,5 @@
 {% if not results %}
-  <p class="no-results" role="status">Keine Treffer für „{{ query }}“.</p>
+  <p class="no-results" role="status">{{ t.no_results.format(query=query) }}</p>
 {% else %}
   {% for result in results %}
     <a href="/?file={{ result.path|urlencode }}" class="search-result kw-file-link" data-file-path="{{ result.path }}">

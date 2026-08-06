@@ -1,12 +1,12 @@
 {% extends "layout.html" %}
 
 {% block sidebar %}
-<aside class="sidebar collapsed" aria-label="Dateien" aria-hidden="true" inert>
+<aside class="sidebar collapsed" aria-label="{{ t.files }}" aria-hidden="true" inert>
 
   <!-- Mobile-only: Kopfleiste mit Logo + Schließen-Button -->
   <div class="mobile-sidebar-header">
     <span class="mobile-sidebar-logo">ki<em>wiki</em></span>
-    <button type="button" class="mobile-close-btn" onclick="closeSidebar()" aria-label="Sidebar schließen">
+    <button type="button" class="mobile-close-btn" onclick="closeSidebar()" aria-label="{{ t.close_sidebar }}">
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
   </div>
@@ -15,39 +15,39 @@
   <div class="tree-toolbar">
     <div class="tree-filter-wrap">
       <svg class="tree-filter-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" class="tree-filter" id="tree-filter" placeholder="Filtern…" aria-label="Dateibaum filtern" oninput="kwFilterTree(this.value)">
+      <input type="text" class="tree-filter" id="tree-filter" placeholder="{{ t.filter }}" aria-label="{{ t.filter_tree }}" oninput="kwFilterTree(this.value)">
     </div>
-    <button type="button" class="btn-select-toggle" id="select-toggle" onclick="kwToggleSelectMode()" title="Mehrfachauswahl" aria-pressed="false">
+    <button type="button" class="btn-select-toggle" id="select-toggle" onclick="kwToggleSelectMode()" title="{{ t.multi_select }}" aria-label="{{ t.multi_select }}" aria-pressed="false">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
     </button>
   </div>
   {% endif %}
 
   <nav class="file-tree" id="file-tree"
-       aria-label="Dateien. Rechtsklick oder langes Drücken öffnet Aktionen."
+       aria-label="{{ t.files_help }}"
        hx-get="/ui/files?path=." hx-trigger="load" hx-swap="innerHTML">
-    <div class="tree-loading" role="status" aria-live="polite">Lade…</div>
+    <div class="tree-loading" role="status" aria-live="polite">{{ t.loading }}</div>
   </nav>
 
   <div class="tree-selection-bar" id="selection-bar" hidden>
-    <span class="selection-count" id="selection-count">0 ausgewählt</span>
+    <span class="selection-count" id="selection-count">{{ t.selected_zero }}</span>
     <div class="selection-actions">
-      <button type="button" class="btn btn-ghost btn-sm" onclick="kwBatchMove()" title="Verschieben" aria-label="Auswahl verschieben">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="kwBatchMove()" title="{{ t.move }}" aria-label="{{ t.move_selection }}">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
       </button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="kwBatchTag()" title="Tags setzen" aria-label="Tags setzen">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="kwBatchTag()" title="{{ t.set_tags }}" aria-label="{{ t.set_tags }}">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>
       </button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="kwExportSelected()" title="Exportieren" aria-label="Auswahl exportieren">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="kwExportSelected()" title="{{ t.export }}" aria-label="{{ t.export_selection }}">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       </button>
       {% if user and user.role == 'admin' %}
-      <button type="button" class="btn btn-danger btn-sm" onclick="kwBatchDelete()" title="Löschen" aria-label="Auswahl löschen">
+      <button type="button" class="btn btn-danger btn-sm" onclick="kwBatchDelete()" title="{{ t.delete }}" aria-label="{{ t.delete_selection }}">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
       </button>
       {% endif %}
     </div>
-    <button type="button" class="btn btn-ghost btn-sm" onclick="kwClearSelection()" title="Auswahl aufheben" aria-label="Auswahl aufheben">
+    <button type="button" class="btn btn-ghost btn-sm" onclick="kwClearSelection()" title="{{ t.clear_selection }}" aria-label="{{ t.clear_selection }}">
       <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
     </button>
   </div>
@@ -322,80 +322,80 @@
   <!-- ── Hero & Info ──────────────────────────────────────────────── -->
   <section class="hero">
     <div>
-      <div class="hero-eyebrow"><span class="dot"></span>Markdown als Wahrheit</div>
+      <div class="hero-eyebrow"><span class="dot"></span>{{ t.markdown_truth }}</div>
       <h1 class="hero-title">ki<em>wiki</em></h1>
       <p class="hero-sub">
-        Dein persönlicher Wissensspeicher. Notizen leben als Markdown-Dateien, bleiben lokal strukturiert und sind direkt für Suche und KI-Workflows nutzbar.
+        {{ t.home_intro }}
       </p>
       <div class="quick-actions">
         <button type="button" class="btn btn-primary needs-write" onclick="kwNewNote()">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-          Neue Notiz
+          {{ t.new_note }}
         </button>
-        <a class="btn btn-ghost kw-view-link" href="/?view=tags" data-view-endpoint="/ui/tags">Tags</a>
-        <a class="btn btn-ghost kw-view-link" href="/?view=search-history" data-view-endpoint="/ui/search-history">Suchverlauf</a>
+        <a class="btn btn-ghost kw-view-link" href="/?view=tags" data-view-endpoint="/ui/tags">{{ t.tags }}</a>
+        <a class="btn btn-ghost kw-view-link" href="/?view=search-history" data-view-endpoint="/ui/search-history">{{ t.search_history }}</a>
       </div>
     </div>
-    <div class="hero-panel" aria-label="Arbeitsstatus">
-      <div class="hero-panel-row"><span>Format</span><strong>.md</strong></div>
-      <div class="hero-panel-row"><span>Suche</span><strong>FTS5</strong></div>
-      <div class="hero-panel-row"><span>Zugriff</span><strong>{{ user.role if user else 'none' }}</strong></div>
+    <div class="hero-panel" aria-label="{{ t.work_status }}">
+      <div class="hero-panel-row"><span>{{ t.format }}</span><strong>.md</strong></div>
+      <div class="hero-panel-row"><span>{{ t.search }}</span><strong>FTS5</strong></div>
+      <div class="hero-panel-row"><span>{{ t.access }}</span><strong>{{ user.role if user else 'none' }}</strong></div>
     </div>
   </section>
 
   <!-- ── Dashboard: Zuletzt bearbeitet & erstellt ─────────────────── -->
   <section class="dashboard">
     <div class="dashboard-panel">
-      <p class="section-label">Zuletzt bearbeitet</p>
+      <p class="section-label">{{ t.recently_edited }}</p>
       <div id="recent-edited" class="recent-files" hx-get="/ui/recent-edited" hx-trigger="load" hx-swap="innerHTML">
-        <div class="recent-loading" style="color:var(--md-outline);font-size:0.82rem;">Lade…</div>
+        <div class="recent-loading">{{ t.loading }}</div>
       </div>
     </div>
     <div class="dashboard-panel">
-      <p class="section-label">Zuletzt erstellt</p>
+      <p class="section-label">{{ t.recently_created }}</p>
       <div id="recent-created" class="recent-files" hx-get="/ui/recent-created" hx-trigger="load" hx-swap="innerHTML">
-        <div class="recent-loading" style="color:var(--md-outline);font-size:0.82rem;">Lade…</div>
+        <div class="recent-loading">{{ t.loading }}</div>
       </div>
     </div>
   </section>
 
-  <p class="section-label">Erste Schritte</p>
+  <p class="section-label">{{ t.getting_started }}</p>
   <div class="step-grid">
     <div class="step-card">
       <div class="step-card-icon" style="background: rgba(184, 223, 120, 0.12); color: #b8df78;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
       </div>
-      <div class="step-card-title">Notiz öffnen</div>
-      <div class="step-card-text">Klick auf eine Datei im Baum links zeigt sie sofort hier an.</div>
+      <div class="step-card-title">{{ t.open_note }}</div>
+      <div class="step-card-text">{{ t.open_note_help }}</div>
     </div>
     <div class="step-card">
       <div class="step-card-icon" style="background: rgba(130, 200, 160, 0.12); color: #82c8a0;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
       </div>
-      <div class="step-card-title">Neue Notiz</div>
-      <div class="step-card-text"><code>+ Datei</code> in der Sidebar startet den Editor mit Live-Vorschau.</div>
+      <div class="step-card-title">{{ t.new_note }}</div>
+      <div class="step-card-text">{{ t.new_note_help }}</div>
     </div>
     <div class="step-card">
       <div class="step-card-icon" style="background: rgba(180, 160, 120, 0.12); color: #b4a078;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
       </div>
-      <div class="step-card-title">Volltext-Suche</div>
-      <div class="step-card-text">Das Feld im Header durchsucht den gesamten Speicher per FTS5.</div>
+      <div class="step-card-title">{{ t.fulltext_search }}</div>
+      <div class="step-card-text">{{ t.fulltext_search_help }}</div>
     </div>
     <div class="step-card">
       <div class="step-card-icon" style="background: rgba(160, 140, 200, 0.12); color: #a08cc8;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
       </div>
-      <div class="step-card-title">KI-Anbindung</div>
-      <div class="step-card-text"><code>AGENTS.md</code> enthält Anweisungen für angeschlossene KI-Systeme.</div>
+      <div class="step-card-title">{{ t.ai_connection }}</div>
+      <div class="step-card-text">{{ t.ai_connection_help }}</div>
     </div>
   </div>
 
-  <p class="section-label">MCP-Verbindung</p>
+  <p class="section-label">{{ t.mcp_connection }}</p>
   <div class="code-block">
     <div class="code-block-head">
       <span class="code-block-dots"><span class="code-block-dot code-block-dot--red"></span><span class="code-block-dot code-block-dot--yellow"></span><span class="code-block-dot code-block-dot--green"></span></span>
-      <span class="verb">POST</span> Streamable HTTP
+      <span class="verb">POST</span> {{ t.streamable_http }}
     </div>
     <pre><code>{{ request.base_url }}mcp
 Authorization: Bearer &lt;api-key&gt;</code></pre>
@@ -403,7 +403,7 @@ Authorization: Bearer &lt;api-key&gt;</code></pre>
   <div class="code-block">
     <div class="code-block-head">
       <span class="code-block-dots"><span class="code-block-dot code-block-dot--red"></span><span class="code-block-dot code-block-dot--yellow"></span><span class="code-block-dot code-block-dot--green"></span></span>
-      <span class="verb">GET</span> SSE-Transport (Legacy-Clients)
+      <span class="verb">GET</span> {{ t.legacy_clients }}
     </div>
     <pre><code>{{ request.base_url }}mcp/sse</code></pre>
   </div>
@@ -414,24 +414,24 @@ Authorization: Bearer &lt;api-key&gt;</code></pre>
 <div class="fab-menu" id="fab-menu">
   <button type="button" class="fab-menu-item" onclick="kwNewNote()">
     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
-    Neue Notiz
+    {{ t.new_note }}
   </button>
   <button type="button" class="fab-menu-item" onclick="newFileIn('')">
     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M12 18v-6"/></svg>
-    Neue Datei
+    {{ t.new_file }}
   </button>
   <button type="button" class="fab-menu-item" onclick="newFolderIn('')">
     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
-    Neuer Ordner
+    {{ t.new_folder }}
   </button>
   {% if user and user.role == 'admin' %}
   <button type="button" class="fab-menu-item" onclick="kwToggleSelectMode()">
     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/></svg>
-    Mehrfachauswahl
+    {{ t.multi_select }}
   </button>
   {% endif %}
 </div>
-<button type="button" class="fab" id="fab" onclick="kwToggleFab()" aria-label="Aktionen">
+<button type="button" class="fab" id="fab" onclick="kwToggleFab()" aria-label="{{ t.actions }}">
   <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
 </button>
 {% endif %}

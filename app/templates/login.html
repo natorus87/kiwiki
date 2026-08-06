@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="{{ lang }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Anmelden – kiwiki</title>
+  <title>{{ t.login_title }}</title>
   <link rel="icon" sizes="512x512" href="/static/kiwiki-icon.png">
   <link rel="apple-touch-icon" href="/static/kiwiki-icon.png">
   <link rel="stylesheet" href="/static/kiwiki-fonts.css?v=20260713">
@@ -202,6 +202,7 @@
       color: var(--md-on-surface-v);
     }
   </style>
+  <link rel="stylesheet" href="/static/kiwiki-polish.css?v=20260806">
   <script src="/static/kiwiki-motion.bundle.js?v=20260608" defer></script>
 </head>
 <body>
@@ -211,7 +212,7 @@
         <img src="/static/kiwiki-icon.png" alt="kiwiki" class="brand-icon">
       </div>
       <div class="brand-logo">ki<em>wiki</em><span class="caret" aria-hidden="true"></span></div>
-      <div class="brand-tagline">Dein persönlicher Wissensspeicher</div>
+      <div class="brand-tagline">{{ t.login_tagline }}</div>
     </div>
 
     {% if error %}
@@ -228,15 +229,20 @@
              autocomplete="current-password" autofocus required
              {% if error %}aria-invalid="true" aria-describedby="login-error"{% endif %}>
       <button type="submit" class="submit-btn">
-        Anmelden
+        {{ t.sign_in }}
         <svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
       </button>
     </form>
 
     <p class="hint">
-      Builtin-Key via <code>KIWIKI_USERS</code>, lokale Keys via Einstellungen<br>
-      Format: <code>user:key:role</code>
+      {{ t.login_hint }}<br>
+      {{ t.login_format }}
     </p>
+    <nav class="login-language" aria-label="{{ t.language }}">
+      <a href="?lang=de" lang="de"{% if lang == 'de' %} aria-current="true"{% endif %}>DE</a>
+      <span aria-hidden="true">/</span>
+      <a href="?lang=en" lang="en"{% if lang == 'en' %} aria-current="true"{% endif %}>EN</a>
+    </nav>
   </div>
 </body>
 </html>

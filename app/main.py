@@ -51,6 +51,7 @@ from .indexing import (
     deindex_documents as deindex_files,
     index_document as index_file,
 )
+from .i18n import UI_TRANSLATIONS, request_language, template_language_context
 from .search import init_db, reindex_all, reindex_changed, search as search_files
 from .storage import (
     _locked_paths,
@@ -85,69 +86,6 @@ logging.basicConfig(
     level=os.getenv("KIWIKI_LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
-
-_GRAPH_TRANSLATIONS = {
-    "de": {
-        "title": "Wissensgraph", "sidebar_label": "Graph-Navigation",
-        "close_sidebar": "Sidebar schließen", "tools_label": "Wissensgraph-Werkzeuge",
-        "back": "Zurück zum Wiki", "atlas_kicker": "Synapsen-Atlas",
-        "sidebar_title": "Dein Wissen in Bewegung",
-        "sidebar_intro": "Dokumente, Tags und Verweise bilden ein lebendiges Netz. Jede Linie führt zu ihrer Markdown-Quelle zurück.",
-        "legend": "Legende", "document": "Dokument", "tag": "Tag", "relation": "Bezug",
-        "controls": "Steuerung", "drag": "Ziehen", "rotate": "Raum drehen",
-        "wheel": "Mausrad / Pinch", "zoom": "Zoomen", "click": "Klick",
-        "focus": "Knoten fokussieren", "double_click": "Doppelklick",
-        "open_note": "Notiz öffnen", "walk": "Durch das Netz gehen",
-        "region": "Lokaler Wissensraum", "atlas": "Neuronaler Atlas",
-        "nodes": "Knoten", "synapses": "Synapsen", "depth": "Tiefe",
-        "reset": "Ansicht zurücksetzen", "pause": "Bewegung pausieren",
-        "canvas": "Interaktiver 3D-Wissensgraph", "connecting": "Synapsen werden verbunden",
-        "translating": "Der lokale Index wird in einen Raum übersetzt.",
-        "empty_title": "Noch keine Synapsen",
-        "empty_text": "Aktiviere die Knowledge Engine und indiziere deine Notizen, damit dein Wissensraum sichtbar wird.",
-        "reindex": "Graph neu aufbauen", "error": "Der Wissensraum ist gerade nicht erreichbar.",
-        "retry": "Erneut versuchen", "details": "Knoten-Details", "close_details": "Details schließen",
-        "follow": "Verbindungen verfolgen",
-        "help": "Ziehen dreht den Raum. Mit zwei Fingern zoomen; das Mausrad funktioniert ebenfalls. Knoten lassen sich anklicken; Enter öffnet die fokussierte Notiz.",
-        "language": "Sprache", "german": "Deutsch", "english": "Englisch",
-    },
-    "en": {
-        "title": "Knowledge graph", "sidebar_label": "Graph navigation",
-        "close_sidebar": "Close sidebar", "tools_label": "Knowledge graph tools",
-        "back": "Back to wiki", "atlas_kicker": "Synapse atlas",
-        "sidebar_title": "Your knowledge in motion",
-        "sidebar_intro": "Documents, tags and references form a living network. Every line leads back to its Markdown source.",
-        "legend": "Legend", "document": "Document", "tag": "Tag", "relation": "Relation",
-        "controls": "Controls", "drag": "Drag", "rotate": "Rotate space",
-        "wheel": "Mouse wheel / pinch", "zoom": "Zoom", "click": "Click",
-        "focus": "Focus node", "double_click": "Double-click",
-        "open_note": "Open note", "walk": "Walk through the network",
-        "region": "Local knowledge space", "atlas": "Neural Atlas",
-        "nodes": "Nodes", "synapses": "Synapses", "depth": "Depth",
-        "reset": "Reset view", "pause": "Pause motion",
-        "canvas": "Interactive 3D knowledge graph", "connecting": "Connecting synapses",
-        "translating": "The local index is being translated into space.",
-        "empty_title": "No synapses yet",
-        "empty_text": "Enable the Knowledge Engine and index your notes to make your knowledge space visible.",
-        "reindex": "Rebuild graph", "error": "The knowledge space is currently unavailable.",
-        "retry": "Try again", "details": "Node details", "close_details": "Close details",
-        "follow": "Explore connections",
-        "help": "Drag to rotate space. Use the mouse wheel or two fingers to zoom. Click nodes to inspect them; Enter opens the focused note.",
-        "language": "Language", "german": "German", "english": "English",
-    },
-}
-
-
-def _request_language(request: Request) -> tuple[str, bool]:
-    """DE/EN aus expliziter Wahl, Cookie oder Accept-Language bestimmen."""
-    selected = request.query_params.get("lang", "").lower()
-    if selected in _GRAPH_TRANSLATIONS:
-        return selected, True
-    stored = request.cookies.get("kiwiki_language", "").lower()
-    if stored in _GRAPH_TRANSLATIONS:
-        return stored, False
-    accepted = request.headers.get("Accept-Language", "").lower()
-    return ("en" if accepted.startswith("en") else "de"), False
 
 def _render_markdown_safe(content: str) -> str:
     rendered = md_lib.markdown(
@@ -323,9 +261,33 @@ app.add_middleware(RateLimitMiddleware)
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
 
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates = Jinja2Templates(
+    directory=str(TEMPLATES_DIR),
+    context_processors=[template_language_context],
+)
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+class LanguageCookieMiddleware(BaseHTTPMiddleware):
+    """Explizite Sprachwahl fuer alle folgenden UI-Aufrufe speichern."""
+
+    async def dispatch(self, request: Request, call_next):
+        language, explicitly_selected = request_language(request)
+        response = await call_next(request)
+        if explicitly_selected:
+            response.set_cookie(
+                "kiwiki_language",
+                language,
+                max_age=365 * 24 * 3600,
+                httponly=True,
+                samesite="strict",
+                secure=request.url.scheme == "https",
+            )
+        return response
+
+
+app.add_middleware(LanguageCookieMiddleware)
 
 
 # ---------------------------------------------------------------------------
@@ -384,8 +346,11 @@ class WebAuthMiddleware(BaseHTTPMiddleware):
         record = session_store.lookup_session(token) if token else None
         if record is None:
             if request.headers.get("HX-Request"):
+                language, _explicit = request_language(request)
+                copy = UI_TRANSLATIONS[language]
                 return HTMLResponse(
-                    '<div class="error">Sitzung abgelaufen. <a href="/login">Neu anmelden</a></div>',
+                    f'<div class="error">{html.escape(copy["session_expired"])} '
+                    f'<a href="/login">{html.escape(copy["sign_in_again"])}</a></div>',
                     status_code=401,
                 )
             return RedirectResponse(url="/login", status_code=302)
@@ -421,6 +386,12 @@ def _session_user(request: Request) -> User | None:
         return None
     set_user_ns(record.username)
     return User(username=record.username, role=current_role)
+
+
+def _ui_text(request: Request, key: str) -> str:
+    """Lokalisierte Servermeldung fuer HTML-Fragmente liefern."""
+    language, _explicit = request_language(request)
+    return str(UI_TRANSLATIONS[language][key])
 
 
 # ---------------------------------------------------------------------------
@@ -495,7 +466,7 @@ async def login_submit(request: Request, api_key: str = Form(...)) -> HTMLRespon
     if len(api_key) > 256:
         return templates.TemplateResponse(
             request=request, name="login.html",
-            context={"error": "API-Key zu lang"},
+            context={"error": _ui_text(request, "login_key_too_long")},
             status_code=400,
         )
     users_map = parse_users()
@@ -503,14 +474,14 @@ async def login_submit(request: Request, api_key: str = Form(...)) -> HTMLRespon
     if match is None:
         return templates.TemplateResponse(
             request=request, name="login.html",
-            context={"error": "Ungültiger API-Key"},
+            context={"error": _ui_text(request, "login_invalid_key")},
             status_code=401,
         )
     username, role = match
     if not is_valid_username(username):
         return templates.TemplateResponse(
             request=request, name="login.html",
-            context={"error": "Benutzername enthält ungültige Zeichen für Namespace"},
+            context={"error": _ui_text(request, "login_invalid_username")},
             status_code=400,
         )
     set_user_ns(username)
@@ -563,18 +534,11 @@ async def knowledge_page(request: Request) -> HTMLResponse:
     user = _session_user(request)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
-    language, explicitly_selected = _request_language(request)
-    response = templates.TemplateResponse(
+    return templates.TemplateResponse(
         request=request,
         name="knowledge.html",
-        context={"user": user, "lang": language, "t": _GRAPH_TRANSLATIONS[language]},
+        context={"user": user},
     )
-    if explicitly_selected:
-        response.set_cookie(
-            "kiwiki_language", language, max_age=365 * 24 * 3600,
-            httponly=True, samesite="strict", secure=request.url.scheme == "https",
-        )
-    return response
 
 
 @app.get("/editor", response_class=HTMLResponse)
@@ -599,7 +563,7 @@ async def editor(request: Request, path: str = "") -> HTMLResponse:
             initial_content = ""
         except Exception:
             logging.exception("Failed to load file %r into editor", path)
-            load_error = "Datei konnte nicht geladen werden."
+            load_error = _ui_text(request, "file_load_failed")
     return templates.TemplateResponse(
         request=request, name="editor.html",
         context={
@@ -713,7 +677,7 @@ async def ui_files(request: Request, path: str = ".") -> HTMLResponse:
         return HTMLResponse(f'<div class="error">{html.escape(str(exc))}</div>')
     except Exception:
         logging.exception("Failed to render file tree for path %r", path)
-        return HTMLResponse('<div class="error">Ordner konnte nicht geladen werden.</div>')
+        return HTMLResponse(f'<div class="error">{html.escape(_ui_text(request, "folder_load_failed"))}</div>')
 
 
 @app.get("/ui/file", response_class=HTMLResponse)
@@ -754,12 +718,18 @@ async def ui_file(request: Request, path: str) -> HTMLResponse:
             },
         )
     except FileNotFoundError:
-        return HTMLResponse('<div class="content-inner"><div class="empty-state error-state"><h2>Datei nicht gefunden</h2><p>Die ausgewählte Datei existiert nicht mehr oder wurde verschoben.</p></div></div>')
+        return HTMLResponse(
+            '<div class="content-inner"><div class="empty-state error-state">'
+            f'<h2>{html.escape(_ui_text(request, "file_not_found"))}</h2>'
+            f'<p>{html.escape(_ui_text(request, "file_not_found_help"))}</p></div></div>'
+        )
     except ValueError as exc:
         return HTMLResponse(f'<div class="content-inner"><div class="error">{html.escape(str(exc))}</div></div>')
     except Exception:
         logging.exception("Failed to render file view for path %r", path)
-        return HTMLResponse('<div class="content-inner"><div class="error">Datei konnte nicht geladen werden.</div></div>')
+        return HTMLResponse(
+            f'<div class="content-inner"><div class="error">{html.escape(_ui_text(request, "file_load_failed"))}</div></div>'
+        )
 
 
 @app.post("/ui/search", response_class=HTMLResponse)
@@ -777,7 +747,7 @@ async def ui_search(request: Request) -> HTMLResponse:
         )
     except Exception:
         logging.exception("Search failed for query %r", query)
-        return HTMLResponse('<div class="error">Suche fehlgeschlagen.</div>')
+        return HTMLResponse(f'<div class="error">{html.escape(_ui_text(request, "search_failed"))}</div>')
 
 
 @app.get("/ui/recent", response_class=HTMLResponse)
@@ -868,7 +838,7 @@ async def ui_tags(request: Request) -> HTMLResponse:
             context={"tags": tag_items, "user": user},
         )
     except Exception:
-        return HTMLResponse('<div class="error">Fehler beim Laden der Tags</div>')
+        return HTMLResponse(f'<div class="error">{html.escape(_ui_text(request, "tags_load_failed"))}</div>')
 
 
 @app.get("/ui/search-history", response_class=HTMLResponse)
@@ -892,7 +862,7 @@ async def ui_file_history(request: Request, path: str = "") -> HTMLResponse:
     """B7: Git file history page."""
     user = _session_user(request)
     if not path:
-        return HTMLResponse('<div class="error">Kein Dateipfad angegeben</div>')
+        return HTMLResponse(f'<div class="error">{html.escape(_ui_text(request, "missing_history_path"))}</div>')
     try:
         import subprocess
         root = user_root()
@@ -918,7 +888,7 @@ async def ui_file_history(request: Request, path: str = "") -> HTMLResponse:
         )
     except Exception:
         logging.exception("Failed to load git history for path %r", path)
-        return HTMLResponse('<div class="error">Historie konnte nicht geladen werden.</div>')
+        return HTMLResponse(f'<div class="error">{html.escape(_ui_text(request, "history_load_failed"))}</div>')
 
 
 @app.post("/ui/rename", response_class=HTMLResponse)
@@ -930,7 +900,7 @@ async def ui_rename(
     old_path = form.get("old_path", "").strip()
     new_path = form.get("new_path", "").strip()
     if not old_path or not new_path:
-        return HTMLResponse('<div class="error">Ungültige Parameter</div>', status_code=400)
+        return HTMLResponse(f'<div class="error">{html.escape(_ui_text(request, "invalid_parameters"))}</div>', status_code=400)
     try:
         from .storage import move_file as _move_file
         validate_markdown_content_path(new_path)
@@ -942,7 +912,7 @@ async def ui_rename(
         return HTMLResponse(f'<div class="error">{html.escape(str(exc))}</div>', status_code=400)
     except Exception:
         logging.exception("Failed to rename %r to %r", old_path, new_path)
-        return HTMLResponse('<div class="error">Umbenennen fehlgeschlagen.</div>', status_code=400)
+        return HTMLResponse(f'<div class="error">{html.escape(_ui_text(request, "rename_failed"))}</div>', status_code=400)
 
 
 @app.post("/ui/export")

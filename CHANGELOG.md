@@ -7,10 +7,29 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- **Zentrale deutsch-englische Produktoberfläche** — Eine gemeinsame Sprachauflösung berücksichtigt explizite
+  Auswahl, persistiertes Cookie und `Accept-Language`. Seiten, HTMX-Fragmente, Browserdialoge, Toasts, ARIA-Texte,
+  Editor und Benutzerverwaltung verwenden denselben vollständigen DE/EN-Katalog.
+- **Kiwiki UI-System** — Ein schlankes, selbst gehostetes Polish-Layer bündelt Abstände, Kontrollhöhen,
+  Fokuszustände, Ebenen, Radien sowie responsive Touch-Ziele und führt Dashboard, Explorer, Editor,
+  Einstellungen, Login und Neural Atlas gestalterisch zusammen.
+
+### Changed
+- **Ruhigere Informationshierarchie** — Primäre Aktionen, Formfelder, Sidebar-Navigation und Inhaltsflächen folgen
+  einer konsistenten Editorial-Workspace-Sprache mit stabilen Zuständen statt dekorativer Hover-Bewegung.
+
 ### Fixed
 - **Neural Atlas action buttons stay aligned on touch devices** — Reset and motion controls no longer move vertically
   when mobile browsers retain a sticky hover state after tapping. Their circular boxes and SVG icons now use explicit,
   identical dimensions so both controls remain level in German and English layouts.
+- **Sidebar filter icon stays inside the input** — The search icon is now positioned within the filter field on
+  desktop and mobile instead of consuming a separate toolbar column.
+
+### Tests
+- **Lokalisierungs- und UI-Verträge** — Neue Server- und statische Regressionstests sichern beide Sprachen,
+  persistierte Sprachwahl, identische Katalogschlüssel, lokalisierte Fehlerfragmente, Cache-Busting sowie Fokus-,
+  Touch-, Viewport- und Reduced-Motion-Grundlagen. Der Browser-Smoke-Test prüft den englischen Kernablauf.
 
 ## [3.1.1] - 2026-08-03
 

@@ -1,5 +1,5 @@
 <div class="content-inner file-content-inner">
-  <nav class="breadcrumb" aria-label="Pfadnavigation">
+  <nav class="breadcrumb" aria-label="{{ t.path_navigation }}">
     <button type="button" class="breadcrumb-item breadcrumb-root">Wiki</button>
     {% set parts = path.split('/') %}
     {% set ns = namespace(accum='') %}
@@ -21,37 +21,37 @@
         <h1 class="file-title">{{ title }}</h1>
         <div class="file-path-row">
           <span class="file-path">{{ path }}</span>
-          <button type="button" class="btn-copy-path" onclick="kwCopyPath({{ path|tojson|forceescape }})" title="Pfad kopieren">
+          <button type="button" class="btn-copy-path" onclick="kwCopyPath({{ path|tojson|forceescape }})" title="{{ t.copy_path }}" aria-label="{{ t.copy_path }}">
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
           </button>
         </div>
         <div class="file-meta">
-          {% if updated %}Aktualisiert: {{ updated }}{% endif %}
+          {% if updated %}{{ t.updated }}: {{ updated }}{% endif %}
           {% if updated and (owner or tags) %} · {% endif %}
-          {% if owner %}Autor: {{ owner }}{% endif %}
+          {% if owner %}{{ t.author }}: {{ owner }}{% endif %}
           {% if owner and tags %} · {% endif %}
           {% if tags %}
-            Tags:
+            {{ t.tags }}:
             {% for tag in tags %}
-              <button type="button" class="tag" onclick="kwSearchTag({{ tag|tojson|forceescape }})" title="Nach Tag '{{ tag }}' suchen">{{ tag }}</button>
+              <button type="button" class="tag" onclick="kwSearchTag({{ tag|tojson|forceescape }})" title="{{ t.search_tag.format(tag=tag) }}">{{ tag }}</button>
             {% endfor %}
           {% endif %}
-          {% if not updated and not owner and not tags %}Keine Metadaten{% endif %}
+          {% if not updated and not owner and not tags %}{{ t.no_metadata }}{% endif %}
         </div>
       </div>
       <div class="file-actions">
         {% if user and user.role in ['write', 'admin'] %}
         <button type="button" class="btn btn-ghost" onclick="openEditor({{ path|tojson|forceescape }})">
-          {{ svg_edit|safe }} Bearbeiten
+          {{ svg_edit|safe }} {{ t.edit }}
         </button>
         {% endif %}
-        <button type="button" class="btn btn-ghost" onclick="kwExportFile({{ path|tojson|forceescape }})" title="Als Markdown herunterladen">
+        <button type="button" class="btn btn-ghost" onclick="kwExportFile({{ path|tojson|forceescape }})" title="{{ t.download_markdown }}">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Export
+          {{ t.export }}
         </button>
         {% if can_delete %}
           <button type="button" class="btn btn-danger" onclick="deleteFile({{ path|tojson|forceescape }})">
-            {{ svg_trash|safe }} Löschen
+            {{ svg_trash|safe }} {{ t.delete }}
           </button>
         {% endif %}
       </div>

@@ -1,5 +1,5 @@
 <div class="content-inner">
-  <h2>Letzte Suchen</h2>
+  <h2>{{ t.last_searches }}</h2>
   {% if history %}
   <ul class="search-history-list">
     {% for h in history %}
@@ -7,13 +7,13 @@
       <a href="/?search={{ h.query|urlencode }}" class="kw-search-link" data-search-query="{{ h.query }}">
         {{ h.query }}
       </a>
-      <span class="search-history-meta">{{ h.result_count }} Treffer</span>
+      <span class="search-history-meta">{{ h.result_count }} {{ t.hits }}</span>
     </li>
     {% endfor %}
   </ul>
   {% else %}
   <div class="empty-state">
-    <p>Noch keine Suchen durchgeführt.</p>
+    <p>{{ t.no_searches }}</p>
   </div>
   {% endif %}
 </div>

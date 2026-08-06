@@ -92,12 +92,12 @@
 {% endblock %}
 
 {% block sidebar %}
-<aside class="sidebar collapsed" aria-label="Dateien" aria-hidden="true" inert>
+<aside class="sidebar collapsed" aria-label="{{ t.files }}" aria-hidden="true" inert>
 
   <!-- Mobile-only: Kopfleiste mit Logo + Schließen-Button -->
   <div class="mobile-sidebar-header">
     <span class="mobile-sidebar-logo">ki<em>wiki</em></span>
-    <button type="button" class="mobile-close-btn" onclick="closeSidebar()" aria-label="Sidebar schließen">
+    <button type="button" class="mobile-close-btn" onclick="closeSidebar()" aria-label="{{ t.close_sidebar }}">
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
   </div>
@@ -105,13 +105,13 @@
   <div class="sidebar-toolbar">
     <button type="button" class="sidebar-btn" onclick="window.location.href='/'">
       <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-      Zurück
+      {{ t.back }}
     </button>
   </div>
   <nav class="file-tree" id="file-tree"
-       aria-label="Dateien. Rechtsklick oder langes Drücken öffnet Aktionen."
+       aria-label="{{ t.files_help }}"
        hx-get="/ui/files?path=." hx-trigger="load" hx-swap="innerHTML">
-    <div class="tree-loading" role="status" aria-live="polite">Lade…</div>
+    <div class="tree-loading" role="status" aria-live="polite">{{ t.loading }}</div>
   </nav>
   {% include "partials/sidebar_account.html" %}
 </aside>
@@ -119,31 +119,31 @@
 
 {% block content %}
 <div class="editor-bar">
-  <label for="file-path" class="sr-only">Dateipfad</label>
+  <label for="file-path" class="sr-only">{{ t.file_path }}</label>
   <input type="text" id="file-path" class="editor-path"
-         placeholder="Dateipfad, z. B. notes/meine-notiz.md"
+         placeholder="{{ t.file_path }}, z. B. notes/meine-notiz.md"
          value="{{ file_path }}">
 
   <button type="button" class="btn btn-primary" onclick="saveFile()">
     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>
-    Speichern
+    {{ t.save }}
   </button>
 
   <button type="button" class="btn btn-ghost" id="cancel-edit-btn" onclick="cancelEdit()">
     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-    Abbrechen
+    {{ t.cancel }}
   </button>
 
   {% if user and user.role == 'admin' %}
   <button type="button" class="btn btn-danger" onclick="deleteCurrentFile()">
     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-    Löschen
+    {{ t.delete }}
   </button>
   {% endif %}
 
   <a href="/" class="btn btn-ghost">
     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
-    Zurück
+    {{ t.back }}
   </a>
 
   <span class="editor-hint">Ctrl+S</span>
@@ -151,11 +151,11 @@
 
 <div id="tui-editor-wrap"></div>
 {% if load_error %}
-<div class="error editor-load-error" role="alert">Datei konnte nicht geladen werden: {{ load_error }}</div>
+<div class="error editor-load-error" role="alert">{{ t.editor_load_error }}: {{ load_error }}</div>
 {% endif %}
 
 <!-- Floating save button (mobile) -->
-<button type="button" class="fab-save" onclick="saveFile()" aria-label="Speichern">
+<button type="button" class="fab-save" onclick="saveFile()" aria-label="{{ t.save }}">
   <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>
 </button>
 
@@ -169,15 +169,15 @@
 
   function labelEditorControls() {
     const labels = {
-      heading: 'Überschrift', bold: 'Fett', italic: 'Kursiv', strike: 'Durchgestrichen',
-      hr: 'Trennlinie', quote: 'Zitat', ul: 'Unsortierte Liste', ol: 'Sortierte Liste',
-      task: 'Aufgabenliste', indent: 'Einrücken', outdent: 'Ausrücken', table: 'Tabelle',
-      link: 'Link', code: 'Inline-Code', codeblock: 'Codeblock',
+      heading: kwText('heading'), bold: kwText('bold'), italic: kwText('italic'), strike: kwText('strike'),
+      hr: kwText('horizontalRule'), quote: kwText('quote'), ul: kwText('unorderedList'), ol: kwText('orderedList'),
+      task: kwText('taskList'), indent: kwText('indent'), outdent: kwText('outdent'), table: kwText('table'),
+      link: kwText('link'), code: kwText('inlineCode'), codeblock: kwText('codeBlock'),
     };
     document.querySelectorAll('#tui-editor-wrap button').forEach(function(button) {
       if (button.getAttribute('aria-label') || button.textContent.trim()) return;
       const key = Array.from(button.classList).find(function(name) { return labels[name]; });
-      const label = button.getAttribute('title') || (key && labels[key]) || 'Editor-Aktion';
+      const label = button.getAttribute('title') || (key && labels[key]) || kwText('editorAction');
       button.setAttribute('aria-label', label);
     });
   }
@@ -185,7 +185,7 @@
   function initKiwikiEditor() {
     const editorWrap = document.getElementById('tui-editor-wrap');
     if (!window.toastui || !window.toastui.Editor) {
-      editorWrap.innerHTML = '<div class="error editor-load-error" role="alert">Editor konnte nicht geladen werden.</div>';
+      editorWrap.innerHTML = '<div class="error editor-load-error" role="alert">' + escapeHtml(kwText('editorUnavailable')) + '</div>';
       return;
     }
     editor = new toastui.Editor({
@@ -196,7 +196,7 @@
       previewStyle: window.matchMedia('(max-width: 768px)').matches ? 'tab' : 'vertical',
       theme: 'dark',
       usageStatistics: false,
-      placeholder: 'Schreibe Markdown hier…',
+      placeholder: kwText('markdownPlaceholder'),
       toolbarItems: [
         ['heading', 'bold', 'italic', 'strike'],
         ['hr', 'quote'],
@@ -235,7 +235,7 @@
   }
 
   function saveFile() {
-    if (!editor) { kwToast('Editor ist noch nicht bereit.', { type: 'error' }); return; }
+    if (!editor) { kwToast(kwText('editorNotReady'), { type: 'error' }); return; }
     const path = pathInput.value.trim() || 'notes/untitled.md';
     fetch('/api/file', {
       method: 'PUT',
@@ -247,17 +247,17 @@
         pathInput.value = path;
         __lastSavedMarkdown = editor.getMarkdown();
         __pathChanged = false;
-        kwToast('Gespeichert: ' + path);
+        kwToast(kwText('saved') + ': ' + path);
         htmx.ajax('GET', '/ui/files?path=.', { target: '#file-tree', swap: 'innerHTML' });
-      } else r.json().then(d => kwToast('Fehler: ' + (d.detail || r.status), { type: 'error' }));
+      } else r.json().then(d => kwToast(kwText('error') + ': ' + (d.detail || r.status), { type: 'error' }));
     })
-    .catch(e => kwToast('Netzwerkfehler: ' + e, { type: 'error' }));
+    .catch(e => kwToast(kwText('networkError') + ': ' + e, { type: 'error' }));
   }
 
   function cancelEdit() {
     if (!editor) { window.location.href = initialPath ? '/editor?path=' + encodeURIComponent(initialPath) : '/'; return; }
     const dirty = (pathInput.value.trim() !== initialPath) || (editor.getMarkdown() !== __lastSavedMarkdown);
-    if (dirty && !confirm('Ungespeicherte Änderungen verwerfen?')) return;
+    if (dirty && !confirm(kwText('discardChanges'))) return;
     if (initialPath) {
       window.location.href = '/editor?path=' + encodeURIComponent(initialPath);
     } else {
@@ -267,7 +267,7 @@
 
   function deleteCurrentFile() {
     const path = pathInput.value.trim();
-    if (!path) { kwToast('Kein Dateipfad gesetzt.', { type: 'error' }); return; }
+    if (!path) { kwToast(kwText('missingFilePath'), { type: 'error' }); return; }
     if (typeof deleteFile === 'function') deleteFile(path);
   }
 

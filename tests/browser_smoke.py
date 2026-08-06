@@ -404,6 +404,18 @@ def _run_browser_checks() -> None:
         assert sidebar.evaluate("element => element.getBoundingClientRect().width") == 0
         assert account_menu.get_attribute("aria-hidden") == "true"
 
+        page.goto(f"{BASE_URL}/?lang=en", wait_until="networkidle")
+        assert page.locator("html").get_attribute("lang") == "en"
+        assert page.get_by_role("button", name="New note").is_visible()
+        assert page.get_by_placeholder("Search…").is_visible()
+        assert any(
+            cookie["name"] == "kiwiki_language" and cookie["value"] == "en"
+            for cookie in page.context.cookies()
+        )
+        page.get_by_role("button", name="Menu").click()
+        page.locator('.tree-row[data-kind="dir"][data-path="notes"] .file-item').click(button="right")
+        assert page.locator(".kw-context-menu").get_attribute("aria-label") == "Actions for notes"
+
         browser.close()
 
 

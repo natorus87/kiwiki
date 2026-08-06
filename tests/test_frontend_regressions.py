@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from app.main import templates
+from app.i18n import UI_TRANSLATIONS
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -25,6 +26,7 @@ def test_breadcrumb_pfade_werden_nicht_in_inline_javascript_eingebettet():
         can_delete=False,
         svg_edit="",
         svg_trash="",
+        t=UI_TRANSLATIONS["de"],
     )
 
     assert "onclick=\"toggleFolderByName" not in body
@@ -58,7 +60,7 @@ def test_layout_erlaubt_zoom_und_laesst_editor_assets_aus_normalen_seiten():
 def test_geschlossene_sidebar_ist_initial_fuer_a11y_versteckt():
     for template_name in ("app/templates/index.html", "app/templates/editor.html"):
         template = _read(template_name)
-        assert '<aside class="sidebar collapsed" aria-label="Dateien" aria-hidden="true" inert>' in template
+        assert '<aside class="sidebar collapsed" aria-label="{{ t.files }}" aria-hidden="true" inert>' in template
 
     script = _read("app/static/kiwiki.js")
     assert "function kwSetSidebarAccessibility" in script
@@ -137,7 +139,7 @@ def test_mehrfachloeschung_verwendet_einen_batch_request():
     assert "body: JSON.stringify({ paths: paths })" in batch_delete
     assert "result.index_cleanup_pending" in batch_delete
     assert "for (" not in batch_delete
-    assert "/static/kiwiki.js?v=20260803-desktop-menu" in layout
+    assert "/static/kiwiki.js?v=20260806-ui-polish" in layout
 
 
 def test_desktop_sidebar_breite_respektiert_collapsed_zustand_und_drag_abbruch():
@@ -151,6 +153,38 @@ def test_desktop_sidebar_breite_respektiert_collapsed_zustand_und_drag_abbruch()
     assert "resizer.addEventListener('lostpointercapture', endDrag)" in script
     assert "window.addEventListener('blur', endDrag)" in script
     assert "resizer.addEventListener('mousedown', startDrag)" not in script
+
+
+def test_astryx_inspirierter_feinschliff_bleibt_selbst_gehostet_und_tokenbasiert():
+    """Der UI-Polish braucht weder React noch externe Assets und nutzt feste Primitive."""
+    layout = _read("app/templates/layout.html")
+    login = _read("app/templates/login.html")
+    polish_path = ROOT / "app/static/kiwiki-polish.css"
+    assert polish_path.exists()
+    polish = polish_path.read_text(encoding="utf-8")
+
+    assert "/static/kiwiki-polish.css?v=20260806" in layout
+    assert "/static/kiwiki-polish.css?v=20260806" in login
+    assert "--space-1: 4px" in polish
+    assert "--control-height: 40px" in polish
+    assert "--touch-target: 44px" in polish
+    assert ":focus-visible" in polish
+    assert "100dvh" in polish
+    assert "@media (hover: hover) and (pointer: fine)" in polish
+    assert "@media (prefers-reduced-motion: reduce)" in polish
+    assert ".recent-empty" in polish
+    assert ".sidebar-language" in polish
+    assert "https://" not in polish
+    assert "react" not in polish.lower()
+
+
+def test_sidebar_filter_icon_is_embedded_in_the_input_field():
+    polish = _read("app/static/kiwiki-polish.css")
+
+    assert ".tree-filter-wrap {\n  position: relative;" in polish
+    assert ".tree-filter-icon {\n  position: absolute;" in polish
+    assert "pointer-events: none;" in polish
+    assert ".tree-filter {\n  padding-inline: 2.15rem var(--space-3);" in polish
 
 
 def test_editor_controls_erhalten_zugaengliche_namen():
