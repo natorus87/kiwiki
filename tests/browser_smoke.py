@@ -267,6 +267,24 @@ def _run_browser_checks() -> None:
         )
         assert bright_pixels > 100
 
+        action_buttons = page.locator(".knowledge-icon-button")
+        assert action_buttons.count() == 2
+        button_boxes = action_buttons.evaluate_all(
+            "buttons => buttons.map(button => { const rect = button.getBoundingClientRect(); return { top: rect.top, width: rect.width, height: rect.height }; })"
+        )
+        assert abs(button_boxes[0]["top"] - button_boxes[1]["top"]) < 0.25
+        assert button_boxes[0]["width"] == button_boxes[0]["height"]
+        assert button_boxes[1]["width"] == button_boxes[1]["height"]
+        page.locator("#knowledge-reset").hover()
+        page.wait_for_function(
+            "() => getComputedStyle(document.querySelector('#knowledge-reset')).transform === 'none'",
+            timeout=1000,
+        )
+        hovered_button_tops = action_buttons.evaluate_all(
+            "buttons => buttons.map(button => button.getBoundingClientRect().top)"
+        )
+        assert hovered_button_tops[0] == hovered_button_tops[1]
+
         canvas = page.locator("#knowledge-graph")
         canvas.evaluate("element => { element.setPointerCapture = () => {}; }")
         canvas.dispatch_event("pointerdown", {"pointerId": 1, "pointerType": "touch", "clientX": 100, "clientY": 400})
@@ -278,6 +296,11 @@ def _run_browser_checks() -> None:
         canvas.dispatch_event("pointerup", {"pointerId": 2, "pointerType": "touch", "clientX": 150, "clientY": 400})
         canvas.dispatch_event("pointerup", {"pointerId": 1, "pointerType": "touch", "clientX": 100, "clientY": 400})
         page.locator("#knowledge-reset").click()
+        tapped_button_boxes = action_buttons.evaluate_all(
+            "buttons => buttons.map(button => { const rect = button.getBoundingClientRect(); return { top: rect.top, width: rect.width, height: rect.height }; })"
+        )
+        assert abs(tapped_button_boxes[0]["top"] - tapped_button_boxes[1]["top"]) < 0.25
+        assert tapped_button_boxes == button_boxes
         assert page.locator("#knowledge-depth").inner_text() == "100%"
         page.evaluate(
             """() => {

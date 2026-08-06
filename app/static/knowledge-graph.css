@@ -57,15 +57,16 @@
 .knowledge-stats { display: flex; align-items: center; gap: 24px; }
 .knowledge-stats span { color: var(--md-outline); font-size: 11px; white-space: nowrap; }
 .knowledge-stats strong { color: var(--md-on-surface); font: 600 13px var(--font-mono); }
-.knowledge-actions { justify-self: end; display: flex; gap: 8px; }
+.knowledge-actions { justify-self: end; display: flex; align-items: center; gap: 8px; }
 .knowledge-icon-button {
-  width: 36px; height: 36px; display: grid; place-items: center;
+  width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center;
+  padding: 0; line-height: 0; appearance: none;
   color: var(--md-on-surface-v); background: transparent;
   border: 1px solid var(--md-outline-v); border-radius: 50%; cursor: pointer;
-  transition: color var(--t), border-color var(--t), background var(--t), transform var(--t);
+  transition: color var(--t), border-color var(--t), background var(--t);
 }
-.knowledge-icon-button:hover { color: var(--md-primary); border-color: var(--md-primary-border); background: var(--md-primary-dim2); transform: translateY(-1px); }
-.knowledge-icon-button svg { width: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.knowledge-icon-button:hover { color: var(--md-primary); border-color: var(--md-primary-border); background: var(--md-primary-dim2); }
+.knowledge-icon-button svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .knowledge-icon-button[aria-pressed="true"] { color: var(--md-warm); border-color: rgba(214, 171, 109, .4); }
 
 .knowledge-viewport { position: relative; min-height: 0; overflow: hidden; isolation: isolate; }

@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- **Neural Atlas action buttons stay aligned on touch devices** — Reset and motion controls no longer move vertically
+  when mobile browsers retain a sticky hover state after tapping. Their circular boxes and SVG icons now use explicit,
+  identical dimensions so both controls remain level in German and English layouts.
+
 ## [3.1.1] - 2026-08-03
 
 ### Fixed
