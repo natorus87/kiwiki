@@ -35,7 +35,7 @@ Two users can never read each other's files, search each other's index, or share
    - `title`, `path`, `updated`, `owner`, `tags`
    - `rendered` — sanitized HTML
    - `user` — the authenticated user (used by the template's role guard)
-   - `can_delete` — admin flag for the delete button
+   - `can_delete` — write-or-admin flag for the delete button
    - `svg_edit`, `svg_trash` — pre-rendered icon strings
 7. The partial is swapped into `#main-content` by HTMX (`loadFile()` in `kiwiki.js`)
 
