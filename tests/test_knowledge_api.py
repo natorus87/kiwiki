@@ -82,7 +82,7 @@ def test_disabled_status_does_not_create_database(monkeypatch, tmp_path):
     assert not list(tmp_path.rglob("knowledge.sqlite*"))
 
 
-def test_knowledge_endpoints_enforce_read_and_admin_roles(monkeypatch):
+def test_knowledge_endpoints_enforce_read_and_write_roles(monkeypatch):
     _configure_users(monkeypatch)
     monkeypatch.setenv("KIWIKI_KNOWLEDGE_ENABLED", "true")
 
@@ -97,15 +97,15 @@ def test_knowledge_endpoints_enforce_read_and_admin_roles(monkeypatch):
             "/api/knowledge/reindex",
             headers=_headers("writer-key"),
         )
-        admin_reindex = client.post(
+        reader_reindex = client.post(
             "/api/knowledge/reindex",
-            headers=_headers("alice-key"),
+            headers=_headers("reader-key"),
         )
 
     assert unauthenticated.status_code == 401
     assert reader_search.status_code == 200, reader_search.text
-    assert writer_reindex.status_code == 403
-    assert admin_reindex.status_code == 202, admin_reindex.text
+    assert writer_reindex.status_code == 202, writer_reindex.text
+    assert reader_reindex.status_code == 403
 
 
 def test_enabled_status_search_and_reindex_are_tenant_isolated(monkeypatch):
@@ -217,7 +217,7 @@ def test_knowledge_mcp_dispatch_reports_disabled_status(monkeypatch):
     assert result["result"]["structuredContent"]["status"] == "disabled"
 
 
-def test_knowledge_mcp_reindex_requires_admin(monkeypatch):
+def test_knowledge_mcp_reindex_requires_write(monkeypatch):
     from app.mcp_server import _handle_message
 
     _configure_users(monkeypatch)
@@ -230,9 +230,9 @@ def test_knowledge_mcp_reindex_requires_admin(monkeypatch):
     }
 
     denied = asyncio.run(_handle_message(body, User(username="reader", role="read")))
-    accepted = asyncio.run(_handle_message(body, User(username="alice", role="admin")))
+    accepted = asyncio.run(_handle_message(body, User(username="writer", role="write")))
 
     assert denied["result"]["isError"] is True
-    assert "Admin" in denied["result"]["content"][0]["text"]
+    assert "Write" in denied["result"]["content"][0]["text"]
     assert accepted["result"].get("isError") is not True
     assert accepted["result"]["structuredContent"]["status"] in {"queued", "running"}
