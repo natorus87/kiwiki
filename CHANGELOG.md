@@ -20,6 +20,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   einer konsistenten Editorial-Workspace-Sprache mit stabilen Zuständen statt dekorativer Hover-Bewegung.
 
 ### Fixed
+- **Write-Benutzer können ihren eigenen Wissensraum vollständig pflegen** — `delete_file` und
+  `knowledge_reindex` benötigen nun nur noch die `write`-Rolle. Dieselbe Regel gilt für REST-Endpunkte,
+  Kontextmenüs, Batch-Löschen, Editor und Atlas-UI; Benutzerverwaltung bleibt ausschließlich `admin`.
 - **Neural Atlas action buttons stay aligned on touch devices** — Reset and motion controls no longer move vertically
   when mobile browsers retain a sticky hover state after tapping. Their circular boxes and SVG icons now use explicit,
   identical dimensions so both controls remain level in German and English layouts.
