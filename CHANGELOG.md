@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-08-08
+
 ### Added
 - **Zentrale deutsch-englische Produktoberfläche** — Eine gemeinsame Sprachauflösung berücksichtigt explizite
   Auswahl, persistiertes Cookie und `Accept-Language`. Seiten, HTMX-Fragmente, Browserdialoge, Toasts, ARIA-Texte,
@@ -344,7 +346,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **Container:** Docker + docker-compose
 - **Orchestration:** Helm charts for Kubernetes
 
-[Unreleased]: https://github.com/natorus87/kiwiki/compare/v3.1.1...HEAD
+[Unreleased]: https://github.com/natorus87/kiwiki/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/natorus87/kiwiki/compare/v3.1.1...v3.2.0
 [3.1.1]: https://github.com/natorus87/kiwiki/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/natorus87/kiwiki/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/natorus87/kiwiki/compare/v2.6.0...v3.0.0
