@@ -88,7 +88,7 @@
       <span class="empty-neuron" aria-hidden="true"></span>
       <h2>{{ t.empty_title }}</h2>
       <p>{{ t.empty_text }}</p>
-      {% if user.role == 'admin' %}
+      {% if user.role in ['write', 'admin'] %}
       <button type="button" id="knowledge-reindex" class="btn btn-primary">{{ t.reindex }}</button>
       {% endif %}
     </div>
