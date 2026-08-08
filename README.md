@@ -169,8 +169,8 @@ Roles:
 | Role | Permissions |
 |---|---|
 | `read` | Read files and search |
-| `write` | Read plus create, edit, move, and reindex |
-| `admin` | Full access, including delete and user management |
+| `write` | Read plus create, edit, move, delete own files, and reindex the personal knowledge graph |
+| `admin` | Write access plus user management |
 
 ## ChatGPT and MCP
 
@@ -242,13 +242,13 @@ The MCP server exposes tools for common wiki workflows, grouped by required role
 
 ### Write (write role or admin)
 
-`write_file` · `append_file` · `write_many` · `chunked_write` · `create_note` · `move_file` · `edit` · `update_frontmatter` · `build_index` · `sort` · `move_folder` · `replace_many` · `upsert_note` · `reindex_all` · `git_commit` · `template` · `rename` · `batch_tag`
+`write_file` · `append_file` · `write_many` · `chunked_write` · `create_note` · `delete_file` · `move_file` · `edit` · `update_frontmatter` · `build_index` · `sort` · `move_folder` · `replace_many` · `upsert_note` · `reindex_all` · `knowledge_reindex` · `git_commit` · `template` · `rename` · `batch_tag`
 
 For autonomous agents, prefer `write_many` when updating several files and `chunked_write` when a large file or flaky client payload limit makes a single `write_file` / `append_file` call unreliable. Ordinary create, update, append, and index-refresh operations do not require confirmation; clients should ask before deleting files or running destructive reorganizations. `chunked_write` keeps temporary chunks in process memory for `KIWIKI_MCP_UPLOAD_TTL_SECONDS` (default `3600`) and limits each upload with `KIWIKI_MCP_MAX_UPLOAD_BYTES` (default `10485760`) and `KIWIKI_MCP_MAX_UPLOAD_CHUNKS` (default `1000`); aggregate staging is additionally capped by `KIWIKI_MCP_MAX_STAGED_UPLOADS` and `KIWIKI_MCP_MAX_STAGED_BYTES`.
 
 ### Admin (admin role only)
 
-`delete_file`
+User management tools.
 
 The server exposes 49 tools. JSON-RPC batches are limited to 25 requests,
 list-valued tool arguments to 50 entries, and OAuth authorization codes expire
@@ -261,7 +261,7 @@ after five minutes.
 | `Tab` | First focus reveals the **Skip-Link**, then header → sidebar → content | Available on every page |
 | `Esc` | Close mobile sidebar, search dropdown, account menu, modal, or context menu | Auto-detects open layer |
 | `Ctrl/Cmd + S` | Save current note in Editor | Also works from the FAB on mobile |
-| `dd` | Delete active file (admin) / folder | Pressed consecutively within 600 ms |
+| `dd` | Delete active file or folder | Requires `write` role; pressed consecutively within 600 ms |
 | `mm` | Move active item | Works on files and folders |
 | `ee` | Edit active file in editor | Requires `write` role |
 | `rr` | Rename active item (inline) | Works on files and folders |
