@@ -494,7 +494,7 @@ function kwContextActions(ctx) {
       actions.push({ label: kwText('move'), run: function() { moveItem(ctx.path, false); } });
       actions.push({ label: kwText('rename'), run: function() { kwInlineRename(ctx.path); } });
     }
-    if (kwCanAdmin()) {
+    if (kwCanWrite()) {
       actions.push({ label: kwText('delete'), danger: true, run: function() { deleteFile(ctx.path); } });
     }
   } else if (ctx.kind === 'dir') {
@@ -506,7 +506,7 @@ function kwContextActions(ctx) {
       actions.push({ label: kwText('move'), run: function() { moveItem(ctx.path, true); } });
       actions.push({ label: kwText('rename'), run: function() { kwInlineRename(ctx.path); } });
     }
-    if (kwCanAdmin()) {
+    if (kwCanWrite()) {
       actions.push({ label: kwText('deleteFolder'), danger: true, run: function() { deleteFolder(ctx.path); } });
     }
   } else if (ctx.kind === 'root') {
@@ -1478,8 +1478,8 @@ function kwExportFile(path) {
     var path = active.dataset.path;
     var row = active.closest('.tree-row');
     var kind = row && row.dataset.kind;
-    if (buffer === 'dd' && kind === 'file' && kwCanAdmin()) { deleteFile(path); buffer = ''; }
-    else if (buffer === 'dd' && kind === 'dir' && kwCanAdmin()) { deleteFolder(path); buffer = ''; }
+    if (buffer === 'dd' && kind === 'file' && kwCanWrite()) { deleteFile(path); buffer = ''; }
+    else if (buffer === 'dd' && kind === 'dir' && kwCanWrite()) { deleteFolder(path); buffer = ''; }
     else if (buffer === 'mm') { moveItem(path, kind === 'dir'); buffer = ''; }
     else if (buffer === 'ee' && kind === 'file' && kwCanWrite()) { openEditor(path); buffer = ''; }
     else if (buffer === 'rr') { kwInlineRename(path); buffer = ''; }
