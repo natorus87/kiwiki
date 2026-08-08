@@ -1,6 +1,6 @@
 """Shared constants for the kiwiki application."""
 
-APP_VERSION = "3.1.1"
+APP_VERSION = "3.2.0"
 
 # Basis-Direktiven ohne form-action: der globale Wert ist 'self', die
 # /oauth/authorize-Seite braucht pro Request eine engere Ausnahme fuer die
