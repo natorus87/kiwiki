@@ -683,7 +683,7 @@ async def ui_files(request: Request, path: str = ".") -> HTMLResponse:
 @app.get("/ui/file", response_class=HTMLResponse)
 async def ui_file(request: Request, path: str) -> HTMLResponse:
     user = _session_user(request)
-    can_delete = user and ROLE_HIERARCHY.get(user.role, -1) >= ROLE_HIERARCHY["admin"]
+    can_delete = user and ROLE_HIERARCHY.get(user.role, -1) >= ROLE_HIERARCHY["write"]
     try:
         fc = read_file(path)
         rendered = _render_markdown_safe(fc.content)
@@ -1076,7 +1076,7 @@ async def api_knowledge_graph(
 
 
 @app.post("/api/knowledge/reindex", status_code=202)
-async def api_knowledge_reindex(user: User = Depends(require_role("admin"))):
+async def api_knowledge_reindex(user: User = Depends(require_role("write"))):
     from .knowledge.service import rebuild_current_workspace
 
     return await run_in_threadpool(rebuild_current_workspace)
@@ -1222,7 +1222,7 @@ async def api_delete_user(username: str, user: User = Depends(require_role("admi
 
 
 @app.delete("/api/folder")
-async def api_delete_folder(path: str, user: User = Depends(require_role("admin"))):
+async def api_delete_folder(path: str, user: User = Depends(require_role("write"))):
     try:
         validate_content_folder_path(path)
         from .storage import safe_path
@@ -1243,7 +1243,7 @@ async def api_delete_folder(path: str, user: User = Depends(require_role("admin"
 
 
 @app.delete("/api/file")
-async def api_delete_file(path: str, user: User = Depends(require_role("admin"))):
+async def api_delete_file(path: str, user: User = Depends(require_role("write"))):
     try:
         validate_markdown_content_path(path)
         index_clean = await run_in_threadpool(_delete_file_and_deindex, path)
@@ -1293,7 +1293,7 @@ def _delete_files_and_deindex(paths: list[str]) -> tuple[list[str], list[str], l
 
 
 @app.delete("/api/files")
-async def api_delete_files(req: DeleteFilesRequest, user: User = Depends(require_role("admin"))):
+async def api_delete_files(req: DeleteFilesRequest, user: User = Depends(require_role("write"))):
     """Loescht mehrere Notizen in einem Request, damit ein Batch nur einmal rate-limitiert wird."""
     paths = list(dict.fromkeys(req.paths))
     try:
