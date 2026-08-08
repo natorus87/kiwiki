@@ -805,7 +805,7 @@ TOOLS = [
     },
     {
         "name": "delete_file",
-        "description": "Permanently deletes a markdown file and removes it from the search index. Requires admin role.",
+        "description": "Permanently deletes a markdown file from the authenticated user's workspace and removes it from the search index. Requires write role.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1397,7 +1397,7 @@ TOOLS = [
     },
     {
         "name": "knowledge_reindex",
-        "description": "Queues an idempotent knowledge reconcile for the current tenant. Requires admin role.",
+        "description": "Queues an idempotent knowledge reconcile for the authenticated user's workspace. Requires write role.",
         "inputSchema": {"type": "object", "properties": {}, "required": []},
     },
 ]
@@ -2993,7 +2993,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         return json.dumps(knowledge_status(), ensure_ascii=False)
 
     if name == "knowledge_reindex":
-        _need_admin()
+        _need_write()
         from .knowledge.service import rebuild_current_workspace
 
         return json.dumps(rebuild_current_workspace(), ensure_ascii=False)
@@ -3012,7 +3012,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         return json.dumps({"path": path, "status": "created"}, ensure_ascii=False)
 
     if name == "delete_file":
-        _need_admin()
+        _need_write()
         path = args["path"]
         delete_file(path)
         _deindex_markdown(path)
