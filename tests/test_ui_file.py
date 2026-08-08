@@ -55,8 +55,8 @@ def test_ui_file_zeigt_edit_button_fuer_admin(tmp_path, monkeypatch):
     assert "deleteFile(" in body
 
 
-def test_ui_file_zeigt_edit_button_fuer_write(tmp_path, monkeypatch):
-    """Write-Rolle sieht Edit + Export, aber KEIN Delete."""
+def test_ui_file_zeigt_edit_und_delete_button_fuer_write(tmp_path, monkeypatch):
+    """Write-Rolle kann ihre isolierte Datei editieren und loeschen."""
     from app.tenancy import ensure_user_workspace
 
     monkeypatch.setenv("KIWIKI_USERS", "alice:writekey:write")
@@ -72,7 +72,7 @@ def test_ui_file_zeigt_edit_button_fuer_write(tmp_path, monkeypatch):
     )
     assert "openEditor(" in body, "Edit-Button fehlt fuer write-Rolle (Regressionsschutz)"
     assert "kwExportFile(" in body
-    assert "deleteFile(" not in body
+    assert "deleteFile(" in body
 
 
 def test_ui_file_zeigt_kein_edit_button_fuer_read(tmp_path, monkeypatch):
