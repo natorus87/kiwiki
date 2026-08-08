@@ -999,7 +999,7 @@ class TestToolDispatch:
         assert result["result"]["isError"] is True
         assert "Permission denied" in result["result"]["content"][0]["text"]
 
-    async def test_read_without_admin(self, _setup_users):
+    async def test_read_without_write(self, _setup_users):
         from app import mcp_server
 
         original_parse = mcp_server.parse_users
@@ -1014,7 +1014,28 @@ class TestToolDispatch:
             result = await _handle_message(body, User(username="alice", role="read"))
             assert "result" in result
             assert result["result"]["isError"] is True
-            assert "Admin permission required" in result["result"]["content"][0]["text"]
+            assert "Write permission required" in result["result"]["content"][0]["text"]
+        finally:
+            mcp_server.parse_users = original_parse
+
+    async def test_write_role_can_delete_own_file(self, active_user, _setup_users):
+        from app import mcp_server
+
+        path = active_user / "notes" / "delete-me.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# Delete me\n", encoding="utf-8")
+        original_parse = mcp_server.parse_users
+        mcp_server.parse_users = lambda: {"tok1": ("alice", "write")}
+        try:
+            body = {
+                "jsonrpc": "2.0",
+                "id": 14,
+                "method": "tools/call",
+                "params": {"name": "delete_file", "arguments": {"path": "notes/delete-me.md"}},
+            }
+            result = await _handle_message(body, User(username="alice", role="write"))
+            assert result["result"].get("isError") is not True
+            assert not path.exists()
         finally:
             mcp_server.parse_users = original_parse
 
