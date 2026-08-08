@@ -75,8 +75,8 @@ def test_delete_reports_success_when_only_index_cleanup_fails(monkeypatch):
     assert search("GeheimesAltesSuchwort") == []
 
 
-def test_batch_delete_requires_admin_role(monkeypatch):
-    """Eine Write-Rolle darf den destruktiven Batch-Endpunkt nicht verwenden."""
+def test_batch_delete_allows_write_role_for_own_notes(monkeypatch):
+    """Eine Write-Rolle darf ihre isolierten Notizen im Batch loeschen."""
     from app.tenancy import ensure_user_workspace
 
     monkeypatch.setenv("KIWIKI_USERS", "writer:write-key:write")
@@ -93,8 +93,9 @@ def test_batch_delete_requires_admin_role(monkeypatch):
             json={"paths": ["notes/demo.md"]},
         )
 
-    assert response.status_code == 403
-    assert note.exists()
+    assert response.status_code == 200, response.text
+    assert response.json()["deleted"] == ["notes/demo.md"]
+    assert not note.exists()
 
 
 def test_batch_delete_deindexes_all_paths_in_one_transaction(monkeypatch):
