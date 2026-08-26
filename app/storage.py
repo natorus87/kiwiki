@@ -100,6 +100,20 @@ def validate_content_folder_path(path: str) -> None:
         raise ValueError("System paths under .kiwiki are not writable")
 
 
+def validate_content_read_path(path: str) -> None:
+    """Validate paths accepted from public read APIs.
+
+    Das Schreib-Pendant sperrt `.kiwiki` seit jeher; ohne diese Funktion konnten
+    Lesewerkzeuge (find, read_lines, file_info) die internen SQLite- und
+    Audit-Dateien desselben Namespaces trotzdem ausliefern.
+    """
+    parts = _path_parts(path)
+    if not parts:
+        raise ValueError("Empty path")
+    if ".kiwiki" in parts:
+        raise ValueError("System paths under .kiwiki are not readable")
+
+
 def _atomic_write_text(file_path: Path, content: str) -> None:
     """UTF-8-Inhalt crash-sicher im selben Verzeichnis ersetzen."""
     tenant_lock = _TENANT_WRITE_LOCKS[hash(str(user_root().resolve())) % len(_TENANT_WRITE_LOCKS)]
