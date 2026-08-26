@@ -35,9 +35,26 @@ class ExtractedDocument:
 
 
 def _bounded_strings(value, maximum: int = 100) -> tuple[str, ...]:
+    """Begrenzte, duplikatfreie Stringliste aus Frontmatter-Werten.
+
+    Die Deduplizierung ist Pflicht, nicht Kosmetik: der Indexer leitet
+    `relations.id` aus (path, predicate, value) ab. Ein doppelter Tag erzeugte
+    sonst zwei INSERTs mit identischem Primaerschluessel und liess die
+    Indexierung des Dokuments dauerhaft scheitern.
+    """
     if not isinstance(value, list):
         return ()
-    return tuple(str(item)[:200] for item in value[:maximum] if str(item).strip())
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in value:
+        text = str(item)[:200]
+        if not text.strip() or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+        if len(result) >= maximum:
+            break
+    return tuple(result)
 
 
 def _resolve_link(source_path: str, raw_target: str) -> str | None:
