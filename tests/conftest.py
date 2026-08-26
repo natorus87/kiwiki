@@ -26,10 +26,28 @@ def _clear_process_local_state() -> None:
                 middleware._windows.clear()
             middleware = getattr(middleware, "app", None)
 
+    rate_mod = sys.modules.get("app.rate_limiter")
+    if rate_mod is not None:
+        rate_mod._failed_key_attempts.clear()
+
     mcp_mod = sys.modules.get("app.mcp_server")
     if mcp_mod is not None:
         for name in ("_sse_sessions", "_oauth_clients", "_oauth_codes", "_grep_jobs", "_chunked_writes"):
             getattr(mcp_mod, name).clear()
+
+    # Der Session-Store haelt seinen Zustand ebenfalls prozesslokal. Ohne dieses
+    # Zuruecksetzen bleibt eine in Test A per /login erzeugte Session in Test B
+    # gueltig, obwohl KIWIKI_DATA_DIR dann auf ein anderes tmp_path zeigt.
+    session_mod = sys.modules.get("app.session_store")
+    if session_mod is not None:
+        session_mod._sessions.clear()
+        session_mod._loaded = False
+
+    # Suchindex-Caches sind an konkrete DB-Pfade gebunden, die pro Test wechseln.
+    search_mod = sys.modules.get("app.search")
+    if search_mod is not None:
+        search_mod.close_pool()
+        search_mod._initialized_dbs.clear()
 
 
 @pytest.fixture(autouse=True)
