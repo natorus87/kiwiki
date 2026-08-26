@@ -139,7 +139,7 @@ def test_mehrfachloeschung_verwendet_einen_batch_request():
     assert "body: JSON.stringify({ paths: paths })" in batch_delete
     assert "result.index_cleanup_pending" in batch_delete
     assert "for (" not in batch_delete
-    assert "/static/kiwiki.js?v=20260806-ui-polish" in layout
+    assert "/static/kiwiki.js?v=20260824-export-paths" in layout
 
 
 def test_desktop_sidebar_breite_respektiert_collapsed_zustand_und_drag_abbruch():
@@ -192,3 +192,14 @@ def test_editor_controls_erhalten_zugaengliche_namen():
 
     assert "function labelEditorControls" in editor
     assert "setAttribute('aria-label'" in editor
+
+
+def test_export_sendet_ein_formularfeld_je_pfad():
+    """Regression: paths.join(',') zerlegte serverseitig Dateinamen mit Komma."""
+    script = _read("app/static/kiwiki.js")
+
+    export_fn = script.split("function kwExportSelected(")[1].split("\nfunction ")[0]
+
+    assert "input.name = 'path'" in export_fn
+    assert "paths.join(',')" not in export_fn
+    assert "paths.forEach(" in export_fn
