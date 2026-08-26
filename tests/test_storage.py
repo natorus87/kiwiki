@@ -414,3 +414,34 @@ class TestFolderOps:
     def test_data_root_nicht_loeschbar(self, active_user):
         with pytest.raises(ValueError, match="Cannot delete the data root"):
             delete_folder("")
+
+
+class TestReadPathValidation:
+    """validate_content_read_path() — Systemdateien auch lesend sperren.
+
+    Die Schreibpruefung sperrt `.kiwiki` seit jeher; ohne ein Lese-Pendant
+    konnten MCP-Werkzeuge index.sqlite und agent_log.jsonl ausliefern.
+    """
+
+    def test_kiwiki_pfade_werden_abgelehnt(self):
+        import pytest
+
+        from app.storage import validate_content_read_path
+
+        for path in (".kiwiki/agent_log.jsonl", ".kiwiki/index.sqlite", "notes/../.kiwiki/x"):
+            with pytest.raises(ValueError, match="not readable"):
+                validate_content_read_path(path)
+
+    def test_normale_pfade_bleiben_erlaubt(self):
+        from app.storage import validate_content_read_path
+
+        validate_content_read_path("notes/a.md")
+        validate_content_read_path("projects/unterordner/b.md")
+
+    def test_leerer_pfad_wird_abgelehnt(self):
+        import pytest
+
+        from app.storage import validate_content_read_path
+
+        with pytest.raises(ValueError, match="Empty path"):
+            validate_content_read_path("")
