@@ -48,6 +48,22 @@ def _get_pooled_conn(db_path: str) -> sqlite3.Connection:
         return conn
 
 
+def _drop_pooled_conn(db_path: str) -> None:
+    """Verbindungen auf einen ersetzten DB-Pfad schliessen.
+
+    Eine gepoolte Connection zeigt nach dem Loeschen der Datei weiterhin auf die
+    alte Inode. Schreibzugriffe landen dann in einer Datei, die niemand mehr
+    liest.
+    """
+    with _pool_lock:
+        stale = [key for key in _pool if key[0] == db_path]
+        for key in stale:
+            try:
+                _pool.pop(key).close()
+            except Exception:
+                logger.debug("Could not close stale pooled connection for %s", db_path, exc_info=True)
+
+
 def close_pool() -> None:
     """Close all pooled connections (call on shutdown)."""
     with _pool_lock:
@@ -81,6 +97,14 @@ def init_db() -> None:
     Uses CREATE TABLE IF NOT EXISTS for idempotency. Skips the schema check
     entirely once a given namespace's DB has been initialized this process."""
     db_path = str(_db_file())
+    # Der Cache darf nur greifen, solange die Datei von damals noch da ist.
+    # Wird ein Workspace geloescht und neu angelegt (z. B. Rollback in
+    # api_create_user), zeigte der Eintrag sonst auf eine verschwundene DB und
+    # verhinderte, dass die Tabellen je wieder erzeugt werden.
+    if not Path(db_path).exists():
+        with _initialized_dbs_lock:
+            _initialized_dbs.discard(db_path)
+        _drop_pooled_conn(db_path)
     with _initialized_dbs_lock:
         if db_path in _initialized_dbs:
             return
@@ -279,9 +303,16 @@ def search(query: str) -> list[SearchResult]:
             except sqlite3.OperationalError:
                 rows = []
         results = _to_results(rows)
-        # If FTS found nothing, try a path/title LIKE search as last resort
+        # If FTS found nothing, try a path/title LIKE search as last resort.
+        # Auch dieser Zweig muss OperationalError abfangen — sonst schlaegt eine
+        # fehlende oder beschaedigte Tabelle bis zum Aufrufer durch, waehrend der
+        # FTS-Zweig darueber sie sauber behandelt.
         if not results:
-            results = _to_results(_path_rows(conn, query))
+            try:
+                results = _to_results(_path_rows(conn, query))
+            except sqlite3.OperationalError:
+                logger.warning("Search fallback unavailable for %r", query, exc_info=True)
+                return []
 
         # E3: Record search in history (skip tag: and empty queries)
         if query.strip() and not query.strip().startswith("tag:"):
