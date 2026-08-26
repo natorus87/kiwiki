@@ -7,6 +7,45 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Security
+- **Dateihistorie bleibt im eigenen Namespace** — `/ui/history` validiert den `path`-Parameter jetzt mit derselben
+  Prüfung wie die MCP-Werkzeuge. Zuvor gelangte ein Pfad wie `../<anderer-user>/notes/x.md` ungefiltert in
+  `git log`; lag oberhalb des Benutzerverzeichnisses ein Repository, gab die Ansicht fremde Commit-Metadaten preis.
+- **Hintergrund-Greps sind an ihren Besitzer gebunden** — `grep_status` liefert Ergebnisse nur noch an den Benutzer
+  aus, der den Job gestartet hat. Fremde Job-IDs verhalten sich wie unbekannte.
+- **Fehlversuche am OAuth-Formular haben ein eigenes Budget** — `POST /oauth/authorize` prüft denselben API-Key wie
+  `/login`, liegt aber im großzügigeren `oauth`-Tier. Fehlgeschlagene Eingaben zählen nun gegen ein separates Limit
+  (`KIWIKI_KEY_ATTEMPT_LIMIT`, Standard 5/Minute), ohne den Connector-Handshake zu drosseln.
+- **Interne Dateien sind auch lesend gesperrt** — `find`, `read_lines` und `file_info` schließen `.kiwiki` aus,
+  passend zur bereits bestehenden Schreibsperre.
+
+### Changed
+- **BREAKING: Listen-Werkzeuge liefern ein Objekt statt eines Arrays** — `list_files`, `search`, `sort`,
+  `list_all_files`, `recent_files`, `tag_index` und `search_history` geben ihre Ergebnisse jetzt unter dem
+  Schlüssel `items` zurück (`{"items": [...]}`). Die MCP-Spezifikation lässt für `outputSchema` und
+  `structuredContent` nur Objekte zu; strikt validierende Clients verwarfen die bisherigen Array-Antworten.
+  Integrationen, die `content[0].text` direkt als Array auswerten, müssen angepasst werden.
+
+### Fixed
+- **Notizen mit doppeltem Tag brechen den Wissensindex nicht mehr** — Frontmatter-Listen werden vor der
+  Indexierung dedupliziert. Zuvor erzeugte `tags: [python, python]` zwei Relationen mit identischem
+  Primärschlüssel; das Dokument blieb nach drei Fehlversuchen dauerhaft unindexiert und der Tenant-Status
+  meldete `degraded`.
+- **Speichern während der Indexierung geht nicht mehr verloren** — Ein Job wird nur noch abgeschlossen, wenn er
+  tatsächlich noch läuft. Wurde eine Datei währenddessen erneut gespeichert, verwarf der Abschluss bisher die
+  nachgereihte Revision, und der Wissensindex blieb bis zum Neustart veraltet.
+- **Suche erholt sich von einem entfernten Index** — `init_db()` erkennt eine verschwundene Datenbank und legt
+  Tabellen sowie Verbindungen neu an; der LIKE-Fallback fängt SQLite-Fehler ebenso ab wie der FTS-Pfad. Zuvor
+  blieb die Suche eines Benutzers nach einem Workspace-Rollback bis zum Prozessneustart defekt.
+- **Sitzungen folgen dem konfigurierten Datenverzeichnis** — Der Ablageort von `sessions.json` wird zur Laufzeit
+  aufgelöst statt beim Import eingefroren, und das Laden vom Datenträger läuft vollständig unter Sperre.
+- **Export verträgt Kommas im Dateinamen** — Die Auswahl wird als ein Formularfeld je Pfad übertragen; zuvor
+  zerfiel `notes/Meeting, Q4.md` in zwei unbrauchbare Fragmente und fehlte kommentarlos im Ergebnis.
+- **`template` meldet ungültige Eingaben** — Ein unbekannter `template_type` und ein Titel ohne verwertbare
+  Zeichen führen zu einer klaren Fehlermeldung statt zu einer leeren Notiz beziehungsweise zu `-.md`.
+- **Hintergrund-Greps bleiben referenziert** — Die Task wird festgehalten, damit sie nicht mitten im Lauf
+  eingesammelt wird und der Job dauerhaft auf `running` stehen bleibt.
+
 ## [3.2.0] - 2026-08-08
 
 ### Added
