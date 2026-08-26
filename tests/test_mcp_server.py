@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import subprocess
+import time
 from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlparse
 
@@ -492,13 +493,15 @@ class TestToolDefinitions:
             assert "destructiveHint" in tool["annotations"]
 
     def test_output_schemas_sind_definiert(self):
+        """MCP laesst fuer outputSchema nur Objekt-Schemas zu.
+
+        Listen-Tools huellen ihr Ergebnis daher in {"items": [...]} statt ein
+        Array-Schema zu deklarieren, das strikte Clients verwerfen wuerden.
+        """
         for tool in TOOLS:
             schema = tool["outputSchema"]
-            assert schema["type"] in {"object", "array"}
-            if schema["type"] == "object":
-                assert "properties" in schema or "additionalProperties" in schema
-            if schema["type"] == "array":
-                assert "items" in schema
+            assert schema["type"] == "object", f"{tool['name']} deklariert {schema['type']}"
+            assert "properties" in schema or "additionalProperties" in schema
 
     def test_read_only_tools(self):
         assert "read_file" in _READ_ONLY_TOOLS
@@ -757,7 +760,11 @@ class TestToolDispatch:
                 "method": "tools/call",
                 "params": {"name": "recent_files", "arguments": {"limit": 5}},
             }, User(username="alice", role="admin"))
-            assert any(item["path"] == "notes/b.md" for item in recent["result"]["structuredContent"])
+            # Listen-Tools liefern ihre Ergebnisse laut MCP-Spec als Objekt unter "items".
+            assert any(
+                item["path"] == "notes/b.md"
+                for item in recent["result"]["structuredContent"]["items"]
+            )
 
             tags = await _handle_message({
                 "jsonrpc": "2.0",
@@ -765,7 +772,7 @@ class TestToolDispatch:
                 "method": "tools/call",
                 "params": {"name": "tag_index", "arguments": {}},
             }, User(username="alice", role="admin"))
-            tag_map = {item["tag"]: item for item in tags["result"]["structuredContent"]}
+            tag_map = {item["tag"]: item for item in tags["result"]["structuredContent"]["items"]}
             assert tag_map["python"]["count"] == 2
         finally:
             mcp_server.parse_users = original_parse
@@ -1193,3 +1200,125 @@ class TestMcpCapacityLimits:
 
         assert completed["status"] == "completed"
         assert completed["result"]["total_shown"] == 1
+
+
+class TestReviewRegressions:
+    """Funde aus dem Vollreview vom 2026-08-24."""
+
+    @pytest.mark.asyncio
+    async def test_template_lehnt_unbekannten_typ_ab(self, active_user):
+        """Regression: ein unbekannter template_type legte still eine leere Notiz an."""
+        user = User(username="alice", role="write")
+        with pytest.raises(ValueError, match="Unknown template_type"):
+            await _dispatch("template", {"template_type": "gibtsnicht", "title": "Test"}, user)
+
+    @pytest.mark.asyncio
+    async def test_template_lehnt_titel_ohne_slug_ab(self, active_user):
+        """Regression: '!!! ???' erzeugte die Datei '-.md' — create_note lehnt denselben Titel ab."""
+        user = User(username="alice", role="write")
+        with pytest.raises(ValueError, match="valid slug"):
+            await _dispatch("template", {"template_type": "bug", "title": "!!! ???"}, user)
+
+    @pytest.mark.asyncio
+    async def test_template_legt_gueltige_notiz_an(self, active_user):
+        user = User(username="alice", role="write")
+        result = json.loads(await _dispatch("template", {"template_type": "bug", "title": "Login kaputt"}, user))
+        assert result["path"] == "notes/bugs/login-kaputt.md"
+
+        # 'adr' bleibt ein Alias auf 'decision'
+        alias = json.loads(await _dispatch("template", {"template_type": "adr", "title": "DB Wahl"}, user))
+        assert alias["path"] == "decisions/db-wahl.md"
+        assert alias["template_type"] == "decision"
+
+    @pytest.mark.asyncio
+    async def test_find_und_read_lines_verschweigen_kiwiki(self, active_user, tmp_file):
+        """Regression: Lesewerkzeuge lieferten interne SQLite- und Audit-Dateien aus."""
+        user = User(username="alice", role="read")
+        tmp_file("notes/a.md", "---\ntitle: A\n---\n\nA")
+        internal = active_user / ".kiwiki" / "agent_log.jsonl"
+        internal.parent.mkdir(parents=True, exist_ok=True)
+        internal.write_text('{"tool": "geheim"}\n', encoding="utf-8")
+
+        found = json.loads(await _dispatch("find", {"pattern": "*"}, user))
+        assert not [match for match in found["matches"] if ".kiwiki" in match]
+
+        for tool in ("read_lines", "file_info"):
+            with pytest.raises(ValueError, match="not readable"):
+                await _dispatch(tool, {"path": ".kiwiki/agent_log.jsonl"}, user)
+
+    @pytest.mark.asyncio
+    async def test_grep_status_gibt_fremde_jobs_nicht_heraus(self, active_user):
+        """Regression: _grep_jobs ist prozessglobal und band Ergebnisse an keinen Tenant.
+
+        Die Treffer enthalten Dateipfade samt Zeileninhalten — eine geleakte
+        job_id haette einem anderen Benutzer Einblick gegeben.
+        """
+        from app import mcp_server
+
+        alice = User(username="alice", role="write")
+        bob = User(username="bob", role="write")
+        mcp_server._grep_jobs["job-1"] = {
+            "status": "completed",
+            "created_at": time.time(),
+            "result": {"matches": [{"file": "notes/geheim.md", "text": "VERTRAULICH"}]},
+            "owner": "alice",
+        }
+
+        own = json.loads(await _dispatch("grep_status", {"job_id": "job-1"}, alice))
+        assert own["status"] == "completed"
+
+        foreign = json.loads(await _dispatch("grep_status", {"job_id": "job-1"}, bob))
+        assert foreign["status"] == "not_found"
+        assert foreign["result"] is None
+
+    @pytest.mark.asyncio
+    async def test_hintergrund_grep_haelt_seine_task_referenz(self, active_user, tmp_file):
+        """Regression: eine unreferenzierte Task kann der GC mitten im Lauf einsammeln,
+        der Job bliebe dann dauerhaft auf 'running' und belegte seinen Slot."""
+        from app import mcp_server
+
+        user = User(username="alice", role="write")
+        tmp_file("notes/a.md", "---\ntitle: A\n---\n\nTREFFER")
+
+        started = json.loads(await _dispatch("grep", {"pattern": "TREFFER", "background": True}, user))
+        assert mcp_server._grep_tasks, "keine starke Referenz auf die laufende Task"
+
+        for _ in range(60):
+            await asyncio.sleep(0.05)
+            if mcp_server._grep_jobs[started["job_id"]]["status"] == "completed":
+                break
+        status = json.loads(await _dispatch("grep_status", {"job_id": started["job_id"]}, user))
+        assert status["status"] == "completed"
+        assert not mcp_server._grep_tasks, "abgeschlossene Task wurde nicht aufgeraeumt"
+
+    @pytest.mark.asyncio
+    async def test_listen_tools_liefern_ein_objekt(self, active_user, tmp_file):
+        """MCP laesst fuer structuredContent nur Objekte zu — Listen kommen unter 'items'."""
+        user = User(username="alice", role="admin")
+        tmp_file("notes/a.md", "---\ntitle: A\ntags: [python]\n---\n\nInhalt")
+
+        for tool, args in (
+            ("list_files", {}),
+            ("search", {"query": "Inhalt"}),
+            ("list_all_files", {}),
+            ("recent_files", {"limit": 5}),
+            ("tag_index", {}),
+            ("search_history", {}),
+        ):
+            payload = json.loads(await _dispatch(tool, args, user))
+            assert isinstance(payload, dict), f"{tool} liefert kein Objekt"
+            assert isinstance(payload["items"], list), f"{tool} hat kein items-Array"
+
+    @pytest.mark.asyncio
+    async def test_structured_content_bleibt_ein_objekt(self, active_user, tmp_file):
+        user = User(username="alice", role="admin")
+        tmp_file("notes/a.md", "---\ntitle: A\n---\n\nInhalt")
+
+        result = await _handle_message({
+            "jsonrpc": "2.0",
+            "id": 99,
+            "method": "tools/call",
+            "params": {"name": "list_files", "arguments": {}},
+        }, user)
+
+        assert isinstance(result["result"]["structuredContent"], dict)
