@@ -55,6 +55,7 @@ from .storage import (
     read_file,
     safe_path,
     update_frontmatter,
+    validate_content_read_path,
     validate_markdown_content_path,
     write_file,
 )
@@ -120,6 +121,9 @@ _AGENT_LOG_SAFE_ARG_KEYS = {
 
 # E2: Async grep jobs — background grep with polling.
 _grep_jobs: dict[str, dict] = {}
+# Starke Referenzen auf laufende Hintergrund-Greps (siehe asyncio-Doku zu
+# create_task: der Loop haelt Tasks nur schwach).
+_grep_tasks: set[asyncio.Task] = set()
 _grep_job_counter = 0
 _GREP_JOBS_MAX = 50
 _GREP_JOB_TTL = 600  # 10 minutes
@@ -488,8 +492,19 @@ async def oauth_authorize_submit(request: Request):
     code_challenge_method = form.get("code_challenge_method", "")
     resource = form.get("resource", "")
 
+    from .rate_limiter import register_failed_key_attempt, reset_failed_key_attempts
+
     users_map = parse_users()
     if not apikey or _lookup_api_key(users_map, apikey) is None:
+        # Dieses Formular prueft denselben API-Key wie /login. Fehlversuche
+        # zaehlen daher gegen ein eigenes Budget, sonst waere der Umweg ueber
+        # OAuth der bequemere Weg zum Durchprobieren von Keys.
+        if register_failed_key_attempt(request):
+            return JSONResponse(
+                {"error": "too_many_requests", "error_description": "Zu viele fehlgeschlagene Versuche."},
+                status_code=429,
+                headers={"Retry-After": "60", **_OAUTH_NO_STORE_HEADERS},
+            )
         # Redirect back to form with error
         params = urlencode({
             "redirect_uri": redirect_uri,
@@ -501,6 +516,8 @@ async def oauth_authorize_submit(request: Request):
             "error": "invalid_key",
         })
         return JSONResponse(None, status_code=302, headers={"Location": f"/oauth/authorize?{params}"})
+
+    reset_failed_key_attempts(request)
 
     if not redirect_uri:
         return HTMLResponse("<p>Autorisiert. Du kannst dieses Fenster schließen.</p>")
@@ -1598,16 +1615,31 @@ _TAG_ENTRY_SCHEMA = {
     "additionalProperties": False,
 }
 
+def _list_output_schema(item_schema: dict) -> dict:
+    """Listenergebnisse in ein Objekt-Schema huellen.
+
+    Die MCP-Spezifikation laesst fuer `outputSchema` und `structuredContent` nur
+    Objekte zu. Tools, die natuerlicherweise eine Liste liefern, geben sie
+    deshalb unter dem Schluessel `items` zurueck.
+    """
+    return {
+        "type": "object",
+        "properties": {"items": {"type": "array", "items": item_schema}},
+        "required": ["items"],
+        "additionalProperties": False,
+    }
+
+
 _OUTPUT_SCHEMAS = {
     "read_index": _STRING_MAP_SCHEMA,
-    "list_files": {"type": "array", "items": _FILE_INFO_SCHEMA},
+    "list_files": _list_output_schema(_FILE_INFO_SCHEMA),
     "read_file": _FILE_CONTENT_SCHEMA,
     "fetch": _FILE_CONTENT_SCHEMA,
     "write_file": _STATUS_SCHEMA,
     "append_file": _STATUS_SCHEMA,
     "write_many": _BATCH_WRITE_SCHEMA,
     "chunked_write": _CHUNKED_WRITE_SCHEMA,
-    "search": {"type": "array", "items": _SEARCH_RESULT_SCHEMA},
+    "search": _list_output_schema(_SEARCH_RESULT_SCHEMA),
     "create_note": _STATUS_SCHEMA,
     "delete_file": _STATUS_SCHEMA,
     "move_file": {
@@ -1644,8 +1676,8 @@ _OUTPUT_SCHEMAS = {
         "required": ["status", "sections"],
         "additionalProperties": False,
     },
-    "sort": {"type": "array", "items": _MOVE_RESULT_SCHEMA},
-    "list_all_files": {"type": "array", "items": _ALL_FILE_SCHEMA},
+    "sort": _list_output_schema(_MOVE_RESULT_SCHEMA),
+    "list_all_files": _list_output_schema(_ALL_FILE_SCHEMA),
     "grep": {
         "type": "object",
         "properties": {
@@ -1711,7 +1743,7 @@ _OUTPUT_SCHEMAS = {
         "required": ["path", "total_lines", "lines"],
         "additionalProperties": False,
     },
-    "recent_files": {"type": "array", "items": _RECENT_FILE_SCHEMA},
+    "recent_files": _list_output_schema(_RECENT_FILE_SCHEMA),
     "backlinks": {
         "type": "object",
         "properties": {
@@ -1786,7 +1818,7 @@ _OUTPUT_SCHEMAS = {
         "required": ["path", "related", "count"],
         "additionalProperties": False,
     },
-    "tag_index": {"type": "array", "items": _TAG_ENTRY_SCHEMA},
+    "tag_index": _list_output_schema(_TAG_ENTRY_SCHEMA),
     "reindex_all": {
         "type": "object",
         "properties": {
@@ -1941,18 +1973,15 @@ _OUTPUT_SCHEMAS = {
         "required": ["path", "summary", "word_count", "headings", "key_facts"],
         "additionalProperties": False,
     },
-    "search_history": {
-        "type": "array",
-        "items": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "timestamp": {"type": "number"},
-                "result_count": {"type": "integer"},
-            },
-            "required": ["query", "timestamp", "result_count"],
+    "search_history": _list_output_schema({
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "timestamp": {"type": "number"},
+            "result_count": {"type": "integer"},
         },
-    },
+        "required": ["query", "timestamp", "result_count"],
+    }),
     "dead_link_check": {
         "type": "object",
         "properties": {
@@ -2389,10 +2418,19 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
             text = await _dispatch(tool_name, arguments, user)
             # B6: Log tool call to agent tracker
             _log_agent_call(user, tool_name, arguments, success=True)
-            return _rpc_ok(req_id, {
-                "content": [{"type": "text", "text": text}],
-                "structuredContent": json.loads(text),
-            })
+            result: dict = {"content": [{"type": "text", "text": text}]}
+            # structuredContent ist laut MCP-Spec ein Objekt. Ein nicht-objekt
+            # Ergebnis wird weggelassen statt schemawidrig ausgeliefert; ein
+            # Parse-Fehler darf den bereits ausgefuehrten Tool-Aufruf nicht
+            # nachtraeglich als Fehlschlag erscheinen lassen.
+            try:
+                parsed = json.loads(text)
+            except ValueError:
+                logger.warning("Tool %s returned non-JSON output", tool_name)
+                parsed = None
+            if isinstance(parsed, dict):
+                result["structuredContent"] = parsed
+            return _rpc_ok(req_id, result)
         except PermissionError as exc:
             _log_agent_call(user, tool_name, arguments, success=False, error=type(exc).__name__)
             return _rpc_ok(req_id, {
@@ -2890,7 +2928,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
     if name == "list_files":
         _need_read()
         items = list_files(args.get("path", "."))
-        return json.dumps([i.model_dump() for i in items], ensure_ascii=False, indent=2)
+        return json.dumps({"items": [i.model_dump() for i in items]}, ensure_ascii=False, indent=2)
 
     if name in ("read_file", "fetch"):
         _need_read()
@@ -2945,7 +2983,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
     if name == "search":
         _need_read()
         results = fts_search(args["query"])
-        return json.dumps([r.model_dump() for r in results], ensure_ascii=False, indent=2)
+        return json.dumps({"items": [r.model_dump() for r in results]}, ensure_ascii=False, indent=2)
 
     if name == "knowledge_search":
         _need_read()
@@ -3113,12 +3151,12 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                 results.append({"src": src, "dst": dst, "status": "moved"})
             except Exception as exc:
                 results.append({"src": src, "dst": dst, "status": "error", "error": str(exc)})
-        return json.dumps(results, ensure_ascii=False, indent=2)
+        return json.dumps({"items": results}, ensure_ascii=False, indent=2)
 
     if name == "list_all_files":
         _need_read()
         items = list_all_files(args.get("path", "."))
-        return json.dumps(items, ensure_ascii=False, indent=2)
+        return json.dumps({"items": items}, ensure_ascii=False, indent=2)
 
     if name == "grep":
         _need_read()
@@ -3234,7 +3272,16 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             if len(_grep_jobs) >= _GREP_JOBS_MAX:
                 raise ValueError("Too many grep jobs; retry after completed jobs expire")
             job_id = secrets.token_urlsafe(12)
-            _grep_jobs[job_id] = {"status": "running", "created_at": time.time(), "result": None}
+            # Der Owner gehoert zwingend in den Job: _grep_jobs ist prozessglobal,
+            # und die Treffer enthalten Dateipfade samt Zeileninhalten. Ohne diese
+            # Bindung koennte jeder Tenant mit einer fremden job_id die Ergebnisse
+            # eines anderen abrufen.
+            _grep_jobs[job_id] = {
+                "status": "running",
+                "created_at": time.time(),
+                "result": None,
+                "owner": user.username if user else "",
+            }
 
             async def _finish_background_scan() -> None:
                 try:
@@ -3244,8 +3291,14 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                     logger.exception("Background grep job %s failed", job_id)
                     _grep_jobs[job_id]["result"] = {"error": type(exc).__name__}
                     _grep_jobs[job_id]["status"] = "completed"
+                finally:
+                    _grep_tasks.discard(asyncio.current_task())
 
-            asyncio.create_task(_finish_background_scan())
+            # Referenz halten: der Event-Loop haelt Tasks nur schwach, eine
+            # unreferenzierte Task kann mitten im Scan eingesammelt werden und
+            # liesse den Job dauerhaft auf "running" stehen.
+            task = asyncio.create_task(_finish_background_scan())
+            _grep_tasks.add(task)
             return json.dumps({"status": "running", "job_id": job_id}, ensure_ascii=False)
 
         result = await _run_scan()
@@ -3262,12 +3315,15 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         results = []
         files = sorted(root.rglob("*")) if root.is_dir() else [root]
         for filepath in files:
+            if ".kiwiki" in filepath.parts:
+                continue
             if filepath.is_file() and fnmatch.fnmatch(filepath.name, pattern):
                 results.append(str(filepath.relative_to(user_root())))
         return json.dumps({"matches": results, "count": len(results)}, ensure_ascii=False, indent=2)
 
     if name == "file_info":
         _need_read()
+        validate_content_read_path(args["path"])
         filepath = safe_path(args["path"])
         if not filepath.exists():
             raise FileNotFoundError(f"File not found: {args['path']!r}")
@@ -3287,6 +3343,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
 
     if name == "read_lines":
         _need_read()
+        validate_content_read_path(args["path"])
         filepath = safe_path(args["path"])
         if not filepath.exists():
             raise FileNotFoundError(f"File not found: {args['path']!r}")
@@ -3314,7 +3371,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         if not include_system:
             files = [p for p in files if _rel_path(p) not in {"index.md", "AGENTS.md"}]
         files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        return json.dumps([_file_summary(p) for p in files[:limit]], ensure_ascii=False, indent=2)
+        return json.dumps({"items": [_file_summary(p) for p in files[:limit]]}, ensure_ascii=False, indent=2)
 
     if name == "backlinks":
         _need_read()
@@ -3513,7 +3570,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             for tag in file_tags:
                 tags.setdefault(str(tag), []).append(rel)
         result = [{"tag": tag, "count": len(files), "files": sorted(files)} for tag, files in sorted(tags.items())]
-        return json.dumps(result, ensure_ascii=False, indent=2)
+        return json.dumps({"items": result}, ensure_ascii=False, indent=2)
 
     if name == "reindex_all":
         _need_write()
@@ -3636,10 +3693,18 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             "meeting": "notes/meetings", "decision": "decisions", "adr": "decisions",
             "review": "notes/reviews", "bug": "notes/bugs", "feature": "notes/features",
         }
+        if template_type not in folder_map:
+            raise ValueError(
+                f"Unknown template_type {template_type!r}; expected one of {sorted(folder_map)}"
+            )
         folder = args.get("folder") or folder_map.get(template_type, "notes")
         today = date.today().isoformat()
         slug = title.lower().replace(" ", "-").replace("/", "-")
         slug = "".join(c for c in slug if c.isalnum() or c in "-_")[:60]
+        # Gleicher Guard wie in storage.create_note: ein Titel ohne alphanumerische
+        # Zeichen ergaebe sonst Dateinamen wie "-.md".
+        if not slug.strip("-_"):
+            raise ValueError("Title does not produce a valid slug")
         path = f"{folder}/{slug}.md"
         i = 2
         while safe_path(path).exists():
@@ -3655,7 +3720,9 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         }
         if template_type == "adr":
             template_type = "decision"
-        content = templates.get(template_type, "")
+        content = templates.get(template_type) or ""
+        if not content:
+            raise ValueError(f"No template body defined for {template_type!r}")
         write_file(path, content)
         _index_markdown(path)
         return json.dumps({"path": path, "status": "created", "template_type": template_type}, ensure_ascii=False)
@@ -3896,7 +3963,7 @@ nav{{margin-bottom:2rem}}section{{margin-bottom:3rem;border-bottom:1px solid #ee
         from .search import get_search_history
         limit = max(1, min(int(args.get("limit", 10)), 100))
         history = get_search_history(limit)
-        return json.dumps(history, ensure_ascii=False, indent=2)
+        return json.dumps({"items": history}, ensure_ascii=False, indent=2)
 
     # ── E5: Dead Link Check ──────────────────────────────────────────────────
     if name == "dead_link_check":
@@ -3936,6 +4003,10 @@ nav{{margin-bottom:2rem}}section{{margin-bottom:3rem;border-bottom:1px solid #ee
         _prune_grep_jobs()
         job_id = args.get("job_id", "")
         job = _grep_jobs.get(job_id)
+        # Fremde Jobs verhalten sich wie nicht existierende — kein Hinweis darauf,
+        # dass die job_id gueltig ist.
+        if job is not None and job.get("owner") != (user.username if user else ""):
+            job = None
         if job is None:
             return json.dumps({"status": "not_found", "job_id": job_id, "result": None}, ensure_ascii=False)
         if job["status"] == "running":
