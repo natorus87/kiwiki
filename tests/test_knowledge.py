@@ -178,3 +178,100 @@ def test_identical_paths_are_isolated_in_per_tenant_databases(tmp_path: Path) ->
     assert alice_db.execute("SELECT title FROM documents").fetchall() == [("Alice geheim",)]
     assert bob_db.execute("SELECT title FROM documents").fetchall() == [("Bob geheim",)]
     assert alice_db.execute("PRAGMA database_list").fetchone()[2] != bob_db.execute("PRAGMA database_list").fetchone()[2]
+
+
+def test_duplicate_frontmatter_tags_do_not_break_indexing(tmp_path: Path) -> None:
+    """Regression: `tags: [python, python]` liess die Indexierung dauerhaft scheitern.
+
+    relations.id wird aus (path, predicate, value) abgeleitet und ist
+    Primaerschluessel — ein doppelter Tag erzeugte zwei INSERTs mit identischer
+    ID, die Transaktion rollte zurueck, und der Job landete nach drei Versuchen
+    endgueltig auf `failed`.
+    """
+    from app.knowledge.db import open_database
+    from app.knowledge.indexer import upsert_document
+
+    workspace = tmp_path / "alice"
+    (workspace / "notes").mkdir(parents=True)
+    (workspace / "notes" / "dup.md").write_text(
+        '---\ntitle: "Dup"\ntags: ["python", "python", "ml"]\nrelated: ["a.md", "a.md"]\n---\n\nInhalt\n',
+        encoding="utf-8",
+    )
+    connection = open_database(workspace)
+    try:
+        upsert_document(connection, workspace, "notes/dup.md")
+        tags = [
+            row[0]
+            for row in connection.execute(
+                "SELECT object_value FROM relations WHERE predicate='tagged_with' ORDER BY object_value"
+            )
+        ]
+        assert tags == ["ml", "python"]
+    finally:
+        connection.close()
+
+
+def test_extract_deduplicates_bounded_strings() -> None:
+    from app.knowledge.extract import extract_document
+
+    extracted = extract_document("notes/a.md", '---\ntags: ["a", "a", "b"]\n---\n\nText\n')
+
+    assert extracted.tags == ("a", "b")
+
+
+def test_completing_a_job_keeps_a_requeued_revision(tmp_path: Path) -> None:
+    """Regression: ein waehrend der Verarbeitung erneut gespeichertes Dokument
+    verlor seine neue Revision, weil complete_job() bedingungslos per Pfad loeschte."""
+    from app.knowledge.db import open_database
+    from app.knowledge.jobs import claim_jobs, complete_job, enqueue_job
+
+    connection = open_database(tmp_path / "alice")
+    try:
+        enqueue_job(connection, "notes/a.md", "upsert", 100)
+        claim_jobs(connection, 25)                        # Worker -> running
+        enqueue_job(connection, "notes/a.md", "upsert", 200)   # erneutes Speichern
+        complete_job(connection, "notes/a.md")            # alter Job meldet fertig
+
+        row = connection.execute(
+            "SELECT state, revision FROM knowledge_jobs WHERE path = ?", ("notes/a.md",)
+        ).fetchone()
+        assert row is not None, "nachgereihte Revision wurde verworfen"
+        assert (row[0], row[1]) == ("pending", 200)
+    finally:
+        connection.close()
+
+
+def test_completing_a_running_job_removes_it(tmp_path: Path) -> None:
+    from app.knowledge.db import open_database
+    from app.knowledge.jobs import claim_jobs, complete_job, enqueue_job
+
+    connection = open_database(tmp_path / "alice")
+    try:
+        enqueue_job(connection, "notes/b.md", "upsert", 300)
+        claim_jobs(connection, 25)
+        complete_job(connection, "notes/b.md")
+
+        assert connection.execute(
+            "SELECT 1 FROM knowledge_jobs WHERE path = ?", ("notes/b.md",)
+        ).fetchone() is None
+    finally:
+        connection.close()
+
+
+def test_failing_a_requeued_job_keeps_the_fresh_attempt_counter(tmp_path: Path) -> None:
+    from app.knowledge.db import open_database
+    from app.knowledge.jobs import claim_jobs, enqueue_job, fail_job
+
+    connection = open_database(tmp_path / "alice")
+    try:
+        enqueue_job(connection, "notes/c.md", "upsert", 100)
+        claim_jobs(connection, 25)
+        enqueue_job(connection, "notes/c.md", "upsert", 200)   # setzt attempts zurueck
+        fail_job(connection, "notes/c.md", RuntimeError("alt"))
+
+        state, attempts = connection.execute(
+            "SELECT state, attempts FROM knowledge_jobs WHERE path = ?", ("notes/c.md",)
+        ).fetchone()
+        assert (state, attempts) == ("pending", 0)
+    finally:
+        connection.close()
