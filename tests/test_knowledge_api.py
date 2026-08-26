@@ -182,7 +182,7 @@ def test_knowledge_mcp_tool_definitions_have_bounded_schemas_and_annotations():
             "openWorldHint": False,
         }
         assert tool["inputSchema"]["type"] == "object"
-        assert tool["outputSchema"]["type"] in {"object", "array"}
+        assert tool["outputSchema"]["type"] == "object"
 
     search_schema = definitions["knowledge_search"]["inputSchema"]
     assert search_schema["properties"]["query"]["maxLength"] <= 512
