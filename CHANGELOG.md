@@ -20,7 +20,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   passend zur bereits bestehenden Schreibsperre.
 
 ### Changed
-- **BREAKING: Listen-Werkzeuge liefern ein Objekt statt eines Arrays** — `list_files`, `search`, `sort`,
+- **BREAKING: `search` und `fetch` folgen dem OpenAI-Connector-Kontrakt** — `search` liefert
+  `{"results": [{"id", "title", "text", "url"}]}`, `fetch` liefert `{"id", "title", "text", "url", "metadata"}`.
+  Die `id` ist der Notizpfad und lässt sich unverändert an `fetch` weiterreichen; `url` zitiert über
+  `KIWIKI_BASE_URL` auf `/ui/file`. Ohne gesetzte Basis-URL bleibt der Link relativ, da im Werkzeug-Dispatcher
+  kein Request zur Verfügung steht. `read_file` behält sein bisheriges Format und ist von der Änderung nicht
+  betroffen.
+- **BREAKING: Listen-Werkzeuge liefern ein Objekt statt eines Arrays** — `list_files`, `sort`,
   `list_all_files`, `recent_files`, `tag_index` und `search_history` geben ihre Ergebnisse jetzt unter dem
   Schlüssel `items` zurück (`{"items": [...]}`). Die MCP-Spezifikation lässt für `outputSchema` und
   `structuredContent` nur Objekte zu; strikt validierende Clients verwarfen die bisherigen Array-Antworten.
