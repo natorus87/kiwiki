@@ -1297,9 +1297,9 @@ class TestReviewRegressions:
         user = User(username="alice", role="admin")
         tmp_file("notes/a.md", "---\ntitle: A\ntags: [python]\n---\n\nInhalt")
 
+        # search und fetch folgen dem OpenAI-Kontrakt und werden separat geprueft.
         for tool, args in (
             ("list_files", {}),
-            ("search", {"query": "Inhalt"}),
             ("list_all_files", {}),
             ("recent_files", {"limit": 5}),
             ("tag_index", {}),
@@ -1322,3 +1322,86 @@ class TestReviewRegressions:
         }, user)
 
         assert isinstance(result["result"]["structuredContent"], dict)
+
+
+class TestOpenAIConnectorContract:
+    """search und fetch muessen dem ChatGPT-/Deep-Research-Kontrakt folgen.
+
+    Siehe developers.openai.com/api/docs/mcp: search liefert {"results": [...]}
+    mit id/title/url je Treffer, fetch liefert id/title/text/url (metadata
+    optional). Die id ist der Notizpfad und wird unveraendert an fetch gereicht.
+    """
+
+    @pytest.mark.asyncio
+    async def test_search_liefert_results_mit_id_title_url(self, monkeypatch, active_user, tmp_file):
+        monkeypatch.setenv("KIWIKI_BASE_URL", "https://wiki.example.com")
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/quartal.md", "---\ntitle: Quartalsbericht\n---\n\nUmsatz gestiegen")
+        from app.search import index_file, init_db
+
+        init_db()
+        index_file(rel)
+
+        payload = json.loads(await _dispatch("search", {"query": "Umsatz"}, user))
+
+        assert set(payload) == {"results"}
+        treffer = payload["results"]
+        assert treffer, "kein Treffer fuer den indizierten Begriff"
+        assert treffer[0]["id"] == rel
+        assert treffer[0]["title"] == "Quartalsbericht"
+        assert treffer[0]["url"] == "https://wiki.example.com/ui/file?path=notes%2Fquartal.md"
+
+    @pytest.mark.asyncio
+    async def test_fetch_liefert_id_title_text_url_metadata(self, monkeypatch, active_user, tmp_file):
+        monkeypatch.setenv("KIWIKI_BASE_URL", "https://wiki.example.com")
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/quartal.md", "---\ntitle: Quartalsbericht\nowner: alice\n---\n\nUmsatz gestiegen")
+
+        payload = json.loads(await _dispatch("fetch", {"id": rel}, user))
+
+        assert payload["id"] == rel
+        assert payload["title"] == "Quartalsbericht"
+        assert "Umsatz gestiegen" in payload["text"]
+        assert payload["url"] == "https://wiki.example.com/ui/file?path=notes%2Fquartal.md"
+        assert payload["metadata"]["owner"] == "alice"
+
+    @pytest.mark.asyncio
+    async def test_such_id_laesst_sich_direkt_an_fetch_reichen(self, monkeypatch, active_user, tmp_file):
+        """Der Kreis muss sich schliessen: search.id ist ein gueltiges fetch.id."""
+        monkeypatch.setenv("KIWIKI_BASE_URL", "https://wiki.example.com")
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/mit komma, test.md", "---\ntitle: Komma\n---\n\nSUCHBEGRIFF hier")
+        from app.search import index_file, init_db
+
+        init_db()
+        index_file(rel)
+
+        gefunden = json.loads(await _dispatch("search", {"query": "SUCHBEGRIFF"}, user))["results"]
+        geholt = json.loads(await _dispatch("fetch", {"id": gefunden[0]["id"]}, user))
+
+        assert "SUCHBEGRIFF" in geholt["text"]
+        # Sonderzeichen im Pfad muessen in der Zitier-URL kodiert sein
+        assert " " not in geholt["url"] and "," not in geholt["url"]
+
+    @pytest.mark.asyncio
+    async def test_fetch_ohne_basis_url_bleibt_relativ(self, monkeypatch, active_user, tmp_file):
+        monkeypatch.delenv("KIWIKI_BASE_URL", raising=False)
+        from app import mcp_server
+
+        monkeypatch.setattr(mcp_server, "_BASE_URL", "")
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/a.md", "---\ntitle: A\n---\n\nText")
+
+        payload = json.loads(await _dispatch("fetch", {"id": rel}, user))
+
+        assert payload["url"] == "/ui/file?path=notes%2Fa.md"
+
+    @pytest.mark.asyncio
+    async def test_read_file_behaelt_sein_eigenes_format(self, active_user, tmp_file):
+        """read_file ist nicht Teil des OpenAI-Kontrakts und bleibt unveraendert."""
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/a.md", "---\ntitle: A\n---\n\nText")
+
+        payload = json.loads(await _dispatch("read_file", {"path": rel}, user))
+
+        assert set(payload) == {"path", "frontmatter", "content"}
