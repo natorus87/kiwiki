@@ -26,7 +26,7 @@ import time
 import uuid
 from datetime import datetime
 from typing import AsyncGenerator
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote, urlencode, urlparse
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
@@ -183,8 +183,23 @@ def _log_agent_call(user: "User | None", tool: str, args: dict, success: bool, e
         pass
 
 
+def _configured_base_url() -> str:
+    """Konfigurierte oeffentliche Basis-URL, zur Laufzeit aufgeloest."""
+    return os.getenv("KIWIKI_BASE_URL", _BASE_URL).rstrip("/")
+
+
 def _base_url(request: Request) -> str:
-    return _BASE_URL or str(request.base_url).rstrip("/")
+    return _configured_base_url() or str(request.base_url).rstrip("/")
+
+
+def _document_url(path: str) -> str:
+    """Zitierfaehige URL einer Notiz.
+
+    OpenAI-Connectors nutzen dieses Feld fuer Quellenangaben. Ohne gesetztes
+    KIWIKI_BASE_URL bleibt nur ein relativer Link — ausserhalb des Dispatchers
+    steht kein Request zur Verfuegung, aus dem sich der Host ableiten liesse.
+    """
+    return f"{_configured_base_url()}/ui/file?path={quote(str(path), safe='')}"
 
 
 def validate_oauth_config() -> None:
@@ -707,14 +722,15 @@ TOOLS = [
     {
         "name": "fetch",
         "description": (
-            "Fetches one markdown file by path and returns its frontmatter and content. "
-            "This is a read-only alias for read_file, named for ChatGPT and Deep Research connector conventions."
+            "Fetches one markdown file and returns it as id, title, text, url and metadata. "
+            "Follows the ChatGPT and Deep Research connector contract; the id is the note path "
+            "returned by search."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Relative path to the .md file"},
-                "id": {"type": "string", "description": "Optional alias for path, used by some MCP clients"},
+                "id": {"type": "string", "description": "Note id as returned by search (the relative path)"},
+                "path": {"type": "string", "description": "Alias for id, accepted for direct callers"},
             },
             "required": [],
         },
@@ -794,7 +810,10 @@ TOOLS = [
     },
     {
         "name": "search",
-        "description": "Full-text search over all markdown files using SQLite FTS5.",
+        "description": (
+            "Full-text search over all markdown files using SQLite FTS5. Returns results with "
+            "id, title, text and url; pass an id to fetch to read the full note."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {"query": {"type": "string"}},
@@ -1634,12 +1653,47 @@ _OUTPUT_SCHEMAS = {
     "read_index": _STRING_MAP_SCHEMA,
     "list_files": _list_output_schema(_FILE_INFO_SCHEMA),
     "read_file": _FILE_CONTENT_SCHEMA,
-    "fetch": _FILE_CONTENT_SCHEMA,
+    "fetch": {
+        # OpenAI-Connector-Kontrakt: id/title/text/url, metadata optional.
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "title": {"type": "string"},
+            "text": {"type": "string"},
+            "url": {"type": "string"},
+            "metadata": {"type": "object", "additionalProperties": True},
+        },
+        "required": ["id", "title", "text", "url"],
+        "additionalProperties": False,
+    },
     "write_file": _STATUS_SCHEMA,
     "append_file": _STATUS_SCHEMA,
     "write_many": _BATCH_WRITE_SCHEMA,
     "chunked_write": _CHUNKED_WRITE_SCHEMA,
-    "search": _list_output_schema(_SEARCH_RESULT_SCHEMA),
+    "search": {
+        # OpenAI-Connector-Kontrakt (developers.openai.com/api/docs/mcp):
+        # Top-Level "results", je Treffer id/title/url. "text" ist optional,
+        # hilft Deep Research aber bei der Relevanzbewertung.
+        "type": "object",
+        "properties": {
+            "results": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "text": {"type": "string"},
+                        "url": {"type": "string"},
+                    },
+                    "required": ["id", "title", "url"],
+                    "additionalProperties": False,
+                },
+            }
+        },
+        "required": ["results"],
+        "additionalProperties": False,
+    },
     "create_note": _STATUS_SCHEMA,
     "delete_file": _STATUS_SCHEMA,
     "move_file": {
@@ -2564,7 +2618,7 @@ async def mcp_sse(request: Request):
     queue: asyncio.Queue = asyncio.Queue(maxsize=_SSE_QUEUE_MAX_MESSAGES)
     _sse_sessions[session_id] = (queue, user)
 
-    base_url = _BASE_URL or str(request.base_url).rstrip("/")
+    base_url = _base_url(request)
     endpoint_url = f"{base_url}/mcp/messages?sessionId={session_id}"
 
     async def event_stream() -> AsyncGenerator[str, None]:
@@ -2930,7 +2984,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         items = list_files(args.get("path", "."))
         return json.dumps({"items": [i.model_dump() for i in items]}, ensure_ascii=False, indent=2)
 
-    if name in ("read_file", "fetch"):
+    if name == "read_file":
         _need_read()
         path = args.get("path") or args.get("id")
         if not path:
@@ -2938,6 +2992,26 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         fc = read_file(path)
         return json.dumps(
             {"path": fc.path, "frontmatter": fc.frontmatter, "content": fc.content},
+            ensure_ascii=False, indent=2,
+        )
+
+    if name == "fetch":
+        # OpenAI-Connector-Kontrakt: id/title/text/url, metadata optional.
+        # Die id ist der Notizpfad — genau der Wert, den search als id liefert.
+        _need_read()
+        path = args.get("id") or args.get("path")
+        if not path:
+            raise ValueError("Missing required argument: id")
+        fc = read_file(path)
+        metadata = {key: value for key, value in (fc.frontmatter or {}).items()}
+        return json.dumps(
+            {
+                "id": fc.path,
+                "title": str(metadata.get("title") or os.path.splitext(os.path.basename(fc.path))[0]),
+                "text": fc.content,
+                "url": _document_url(fc.path),
+                "metadata": {key: str(value) for key, value in metadata.items()},
+            },
             ensure_ascii=False, indent=2,
         )
 
@@ -2981,9 +3055,25 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         return json.dumps(_stage_chunked_write(args, user), ensure_ascii=False, indent=2)
 
     if name == "search":
+        # OpenAI-Connector-Kontrakt: {"results": [{id, title, url}, ...]}.
+        # `text` ist nicht verpflichtend, hilft Deep Research aber bei der
+        # Relevanzbewertung, ohne die Notiz vollstaendig zu laden.
         _need_read()
         results = fts_search(args["query"])
-        return json.dumps({"items": [r.model_dump() for r in results]}, ensure_ascii=False, indent=2)
+        return json.dumps(
+            {
+                "results": [
+                    {
+                        "id": result.path,
+                        "title": result.title,
+                        "text": result.snippet,
+                        "url": _document_url(result.path),
+                    }
+                    for result in results
+                ]
+            },
+            ensure_ascii=False, indent=2,
+        )
 
     if name == "knowledge_search":
         _need_read()
