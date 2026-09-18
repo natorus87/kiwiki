@@ -26,7 +26,7 @@ import time
 import uuid
 from datetime import datetime
 from typing import AsyncGenerator
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote, urlencode, urlparse
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
@@ -43,6 +43,8 @@ from .mcp_git import validate_git_revision as _validate_git_revision
 from .indexing import deindex_document, index_document
 from .search import get_db, init_db, reindex_all, search as fts_search
 from .storage import (
+    fm_str,
+    fm_tags,
     _read_frontmatter_only,
     append_file,
     create_note,
@@ -55,6 +57,7 @@ from .storage import (
     read_file,
     safe_path,
     update_frontmatter,
+    validate_content_read_path,
     validate_markdown_content_path,
     write_file,
 )
@@ -65,8 +68,11 @@ from .constants import APP_VERSION, NH3_ATTRS, NH3_TAGS
 router = APIRouter()
 logger = logging.getLogger("kiwiki.mcp")
 
-SUPPORTED_PROTOCOL_VERSIONS = {"2025-03-26", "2024-11-05"}
-MCP_PROTOCOL_VERSION = "2025-03-26"
+SUPPORTED_PROTOCOL_VERSIONS = {"2025-06-18", "2025-03-26", "2024-11-05"}
+# 2025-06-18 ist die Revision, die outputSchema und structuredContent definiert —
+# beides liefert kiwiki. Aeltere Clients bekommen weiterhin die von ihnen
+# angefragte Revision zurueck.
+MCP_PROTOCOL_VERSION = "2025-06-18"
 
 # Base URL for constructing SSE callback URLs — must match the public address.
 # Falls back to the request's own base_url if not set.
@@ -120,6 +126,9 @@ _AGENT_LOG_SAFE_ARG_KEYS = {
 
 # E2: Async grep jobs — background grep with polling.
 _grep_jobs: dict[str, dict] = {}
+# Starke Referenzen auf laufende Hintergrund-Greps (siehe asyncio-Doku zu
+# create_task: der Loop haelt Tasks nur schwach).
+_grep_tasks: set[asyncio.Task] = set()
 _grep_job_counter = 0
 _GREP_JOBS_MAX = 50
 _GREP_JOB_TTL = 600  # 10 minutes
@@ -179,8 +188,35 @@ def _log_agent_call(user: "User | None", tool: str, args: dict, success: bool, e
         pass
 
 
+def _configured_base_url() -> str:
+    """Konfigurierte oeffentliche Basis-URL, zur Laufzeit aufgeloest."""
+    return os.getenv("KIWIKI_BASE_URL", _BASE_URL).rstrip("/")
+
+
 def _base_url(request: Request) -> str:
-    return _BASE_URL or str(request.base_url).rstrip("/")
+    return _configured_base_url() or str(request.base_url).rstrip("/")
+
+
+def _document_url(path: str) -> str:
+    """Zitierfaehige URL einer Notiz.
+
+    OpenAI-Connectors nutzen dieses Feld fuer Quellenangaben. Ohne gesetztes
+    KIWIKI_BASE_URL bleibt nur ein relativer Link — ausserhalb des Dispatchers
+    steht kein Request zur Verfuegung, aus dem sich der Host ableiten liesse.
+    """
+    return f"{_configured_base_url()}/ui/file?path={quote(str(path), safe='')}"
+
+
+def _metadata_value(value) -> str:
+    """Frontmatter-Wert als lesbaren String fuer fetch.metadata.
+
+    Der OpenAI-Connector erwartet flache String-Werte. str() auf eine Liste
+    liefert die Python-Repraesentation ("['python']") und damit einen Wert,
+    den kein Client sinnvoll anzeigen kann.
+    """
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(item) for item in value)
+    return str(value)
 
 
 def validate_oauth_config() -> None:
@@ -488,8 +524,19 @@ async def oauth_authorize_submit(request: Request):
     code_challenge_method = form.get("code_challenge_method", "")
     resource = form.get("resource", "")
 
+    from .rate_limiter import register_failed_key_attempt, reset_failed_key_attempts
+
     users_map = parse_users()
     if not apikey or _lookup_api_key(users_map, apikey) is None:
+        # Dieses Formular prueft denselben API-Key wie /login. Fehlversuche
+        # zaehlen daher gegen ein eigenes Budget, sonst waere der Umweg ueber
+        # OAuth der bequemere Weg zum Durchprobieren von Keys.
+        if register_failed_key_attempt(request):
+            return JSONResponse(
+                {"error": "too_many_requests", "error_description": "Zu viele fehlgeschlagene Versuche."},
+                status_code=429,
+                headers={"Retry-After": "60", **_OAUTH_NO_STORE_HEADERS},
+            )
         # Redirect back to form with error
         params = urlencode({
             "redirect_uri": redirect_uri,
@@ -501,6 +548,8 @@ async def oauth_authorize_submit(request: Request):
             "error": "invalid_key",
         })
         return JSONResponse(None, status_code=302, headers={"Location": f"/oauth/authorize?{params}"})
+
+    reset_failed_key_attempts(request)
 
     if not redirect_uri:
         return HTMLResponse("<p>Autorisiert. Du kannst dieses Fenster schließen.</p>")
@@ -690,14 +739,15 @@ TOOLS = [
     {
         "name": "fetch",
         "description": (
-            "Fetches one markdown file by path and returns its frontmatter and content. "
-            "This is a read-only alias for read_file, named for ChatGPT and Deep Research connector conventions."
+            "Fetches one markdown file and returns it as id, title, text, url and metadata. "
+            "Follows the ChatGPT and Deep Research connector contract; the id is the note path "
+            "returned by search."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Relative path to the .md file"},
-                "id": {"type": "string", "description": "Optional alias for path, used by some MCP clients"},
+                "id": {"type": "string", "description": "Note id as returned by search (the relative path)"},
+                "path": {"type": "string", "description": "Alias for id, accepted for direct callers"},
             },
             "required": [],
         },
@@ -777,7 +827,10 @@ TOOLS = [
     },
     {
         "name": "search",
-        "description": "Full-text search over all markdown files using SQLite FTS5.",
+        "description": (
+            "Full-text search over all markdown files using SQLite FTS5. Returns results with "
+            "id, title, text and url; pass an id to fetch to read the full note."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {"query": {"type": "string"}},
@@ -1508,9 +1561,10 @@ _ALL_FILE_SCHEMA = {
         "path": {"type": "string"},
         "title": {"type": "string"},
         "updated": {"type": "string"},
+        "created": {"type": "string"},
         "tags": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["path", "title", "updated", "tags"],
+    "required": ["path", "title", "updated", "created", "tags"],
     "additionalProperties": False,
 }
 
@@ -1598,16 +1652,85 @@ _TAG_ENTRY_SCHEMA = {
     "additionalProperties": False,
 }
 
+def _list_output_schema(item_schema: dict) -> dict:
+    """Listenergebnisse in ein Objekt-Schema huellen.
+
+    Die MCP-Spezifikation laesst fuer `outputSchema` und `structuredContent` nur
+    Objekte zu. Tools, die natuerlicherweise eine Liste liefern, geben sie
+    deshalb unter dem Schluessel `items` zurueck.
+    """
+    return {
+        "type": "object",
+        "properties": {"items": {"type": "array", "items": item_schema}},
+        "required": ["items"],
+        "additionalProperties": False,
+    }
+
+
+# Eine Relation aus knowledge.relations. Die Tabelle erzwingt
+# CHECK((object_id IS NULL) != (object_value IS NULL)): genau eines der beiden
+# Felder traegt das Objekt, das andere ist null. Deshalb sind "entity_id" und
+# "value" nullable, aber immer beide vorhanden. Der heutige Extraktor erzeugt
+# ausschliesslich Literal-Relationen (tagged_with, related_to), also durchweg
+# entity_id=null — die Spalte object_id bleibt fuer Entitaet-zu-Entitaet.
+_KNOWLEDGE_FACT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "predicate": {"type": "string"},
+        "entity_id": {"type": ["string", "null"]},
+        "value": {"type": ["string", "null"]},
+        "source": {"type": "string", "description": "Pfad der Notiz, aus der die Relation stammt"},
+    },
+    "required": ["predicate", "entity_id", "value", "source"],
+    "additionalProperties": False,
+}
+
+
 _OUTPUT_SCHEMAS = {
     "read_index": _STRING_MAP_SCHEMA,
-    "list_files": {"type": "array", "items": _FILE_INFO_SCHEMA},
+    "list_files": _list_output_schema(_FILE_INFO_SCHEMA),
     "read_file": _FILE_CONTENT_SCHEMA,
-    "fetch": _FILE_CONTENT_SCHEMA,
+    "fetch": {
+        # OpenAI-Connector-Kontrakt: id/title/text/url, metadata optional.
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "title": {"type": "string"},
+            "text": {"type": "string"},
+            "url": {"type": "string"},
+            "metadata": {"type": "object", "additionalProperties": True},
+        },
+        "required": ["id", "title", "text", "url"],
+        "additionalProperties": False,
+    },
     "write_file": _STATUS_SCHEMA,
     "append_file": _STATUS_SCHEMA,
     "write_many": _BATCH_WRITE_SCHEMA,
     "chunked_write": _CHUNKED_WRITE_SCHEMA,
-    "search": {"type": "array", "items": _SEARCH_RESULT_SCHEMA},
+    "search": {
+        # OpenAI-Connector-Kontrakt (developers.openai.com/api/docs/mcp):
+        # Top-Level "results", je Treffer id/title/url. "text" ist optional,
+        # hilft Deep Research aber bei der Relevanzbewertung.
+        "type": "object",
+        "properties": {
+            "results": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "text": {"type": "string"},
+                        "url": {"type": "string"},
+                    },
+                    "required": ["id", "title", "url"],
+                    "additionalProperties": False,
+                },
+            }
+        },
+        "required": ["results"],
+        "additionalProperties": False,
+    },
     "create_note": _STATUS_SCHEMA,
     "delete_file": _STATUS_SCHEMA,
     "move_file": {
@@ -1644,8 +1767,8 @@ _OUTPUT_SCHEMAS = {
         "required": ["status", "sections"],
         "additionalProperties": False,
     },
-    "sort": {"type": "array", "items": _MOVE_RESULT_SCHEMA},
-    "list_all_files": {"type": "array", "items": _ALL_FILE_SCHEMA},
+    "sort": _list_output_schema(_MOVE_RESULT_SCHEMA),
+    "list_all_files": _list_output_schema(_ALL_FILE_SCHEMA),
     "grep": {
         "type": "object",
         "properties": {
@@ -1711,7 +1834,7 @@ _OUTPUT_SCHEMAS = {
         "required": ["path", "total_lines", "lines"],
         "additionalProperties": False,
     },
-    "recent_files": {"type": "array", "items": _RECENT_FILE_SCHEMA},
+    "recent_files": _list_output_schema(_RECENT_FILE_SCHEMA),
     "backlinks": {
         "type": "object",
         "properties": {
@@ -1786,7 +1909,7 @@ _OUTPUT_SCHEMAS = {
         "required": ["path", "related", "count"],
         "additionalProperties": False,
     },
-    "tag_index": {"type": "array", "items": _TAG_ENTRY_SCHEMA},
+    "tag_index": _list_output_schema(_TAG_ENTRY_SCHEMA),
     "reindex_all": {
         "type": "object",
         "properties": {
@@ -1862,7 +1985,19 @@ _OUTPUT_SCHEMAS = {
         "required": ["total_files", "total_words", "total_chars", "files_by_folder", "top_tags", "most_recent_files", "oldest_files"],
         "additionalProperties": False,
     },
-    "template": _STATUS_SCHEMA,
+    "template": {
+        # Eigenes Schema statt _STATUS_SCHEMA: template liefert zusaetzlich den
+        # tatsaechlich verwendeten Typ zurueck ("adr" wird auf "decision"
+        # abgebildet), und _STATUS_SCHEMA verbietet jedes weitere Feld.
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "status": {"type": "string"},
+            "template_type": {"type": "string"},
+        },
+        "required": ["path", "status", "template_type"],
+        "additionalProperties": False,
+    },
     "validate_links": {
         "type": "object",
         "properties": {
@@ -1941,18 +2076,15 @@ _OUTPUT_SCHEMAS = {
         "required": ["path", "summary", "word_count", "headings", "key_facts"],
         "additionalProperties": False,
     },
-    "search_history": {
-        "type": "array",
-        "items": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "timestamp": {"type": "number"},
-                "result_count": {"type": "integer"},
-            },
-            "required": ["query", "timestamp", "result_count"],
+    "search_history": _list_output_schema({
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "timestamp": {"type": "number"},
+            "result_count": {"type": "integer"},
         },
-    },
+        "required": ["query", "timestamp", "result_count"],
+    }),
     "dead_link_check": {
         "type": "object",
         "properties": {
@@ -1992,10 +2124,71 @@ _OUTPUT_SCHEMAS = {
         "required": ["status", "results"],
         "additionalProperties": False,
     },
-    "entity_details": {"type": "object", "additionalProperties": True},
-    "entity_neighbors": {"type": "object", "additionalProperties": True},
-    "fact_timeline": {"type": "object", "additionalProperties": True},
-    "explain_relation": {"type": "object", "additionalProperties": True},
+    "entity_details": {
+        # "entity" fehlt, solange die Wissensmaschine aus ist, und ist null,
+        # wenn die id unbekannt ist — beides unterscheidbar zu halten ist der
+        # Sinn der Unterscheidung zwischen "nicht vorhanden" und "nichts gefunden".
+        "type": "object",
+        "properties": {
+            "status": {"type": "string", "enum": ["disabled", "ready"]},
+            "entity": {
+                "type": ["object", "null"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "kind": {"type": "string"},
+                    "name": {"type": "string"},
+                },
+                "required": ["id", "kind", "name"],
+                "additionalProperties": False,
+            },
+        },
+        "required": ["status"],
+        "additionalProperties": False,
+    },
+    "entity_neighbors": {
+        # "depth" liefert der Server nur im aktiven Zustand; der Wert ist die
+        # auf 1..3 geklemmte Anfrage, nicht die ungepruefte Eingabe.
+        "type": "object",
+        "properties": {
+            "status": {"type": "string", "enum": ["disabled", "ready"]},
+            "depth": {"type": "integer", "minimum": 1, "maximum": 3},
+            "neighbors": {"type": "array", "items": _KNOWLEDGE_FACT_SCHEMA},
+        },
+        "required": ["status", "neighbors"],
+        "additionalProperties": False,
+    },
+    "fact_timeline": {
+        "type": "object",
+        "properties": {
+            "status": {"type": "string", "enum": ["disabled", "ready"]},
+            "facts": {"type": "array", "items": _KNOWLEDGE_FACT_SCHEMA},
+        },
+        "required": ["status", "facts"],
+        "additionalProperties": False,
+    },
+    "explain_relation": {
+        "type": "object",
+        "properties": {
+            "status": {"type": "string", "enum": ["disabled", "ready"]},
+            "relation": {
+                # "value" ist null, wenn die Relation auf eine Entitaet statt auf
+                # einen Literalwert zeigt (siehe _KNOWLEDGE_FACT_SCHEMA).
+                "type": ["object", "null"],
+                "properties": {
+                    "predicate": {"type": "string"},
+                    "value": {"type": ["string", "null"]},
+                    "source": {"type": "string"},
+                    "revision": {"type": "integer", "minimum": 0},
+                    "extraction": {"type": "string"},
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                },
+                "required": ["predicate", "value", "source", "revision", "extraction", "confidence"],
+                "additionalProperties": False,
+            },
+        },
+        "required": ["status"],
+        "additionalProperties": False,
+    },
     "knowledge_status": {
         "type": "object",
         "properties": {
@@ -2008,7 +2201,17 @@ _OUTPUT_SCHEMAS = {
         "required": ["status", "enabled", "documents", "pending", "failed"],
         "additionalProperties": False,
     },
-    "knowledge_reindex": {"type": "object", "additionalProperties": True},
+    "knowledge_reindex": {
+        # "queued" heisst: der Abgleich ist eingereiht, nicht abgeschlossen.
+        # Den Fortschritt liefert knowledge_status.
+        "type": "object",
+        "properties": {
+            "status": {"type": "string", "enum": ["disabled", "queued"]},
+            "enabled": {"type": "boolean"},
+        },
+        "required": ["status", "enabled"],
+        "additionalProperties": False,
+    },
 }
 
 _READ_ONLY_TOOLS = {
@@ -2169,8 +2372,20 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
     if method in ("notifications/initialized", "initialized"):
         return None if _is_notification(body) else _rpc_ok(req_id, {})
 
+    # Ping ist in jeder MCP-Revision Pflicht: der Empfaenger muss umgehend mit
+    # einer leeren Antwort reagieren. Ohne Handler lief der Keepalive in
+    # "Method not found" (HTTP 404) und Clients verwarfen die Sitzung.
+    if method == "ping":
+        return None if _is_notification(body) else _rpc_ok(req_id, {})
+
     if method == "tools/list":
         return _rpc_ok(req_id, {"tools": TOOLS})
+
+    # kiwiki bietet keine URI-Templates an. Clients fragen die Liste im
+    # Discovery trotzdem ab; -32601 wird dort als HTTP 404 ausgeliefert und
+    # laesst den Server defekt aussehen.
+    if method == "resources/templates/list":
+        return _rpc_ok(req_id, {"resourceTemplates": []})
 
     # ── B1: MCP Resources ────────────────────────────────────────────────────
     if method == "resources/list":
@@ -2389,10 +2604,19 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
             text = await _dispatch(tool_name, arguments, user)
             # B6: Log tool call to agent tracker
             _log_agent_call(user, tool_name, arguments, success=True)
-            return _rpc_ok(req_id, {
-                "content": [{"type": "text", "text": text}],
-                "structuredContent": json.loads(text),
-            })
+            result: dict = {"content": [{"type": "text", "text": text}]}
+            # structuredContent ist laut MCP-Spec ein Objekt. Ein nicht-objekt
+            # Ergebnis wird weggelassen statt schemawidrig ausgeliefert; ein
+            # Parse-Fehler darf den bereits ausgefuehrten Tool-Aufruf nicht
+            # nachtraeglich als Fehlschlag erscheinen lassen.
+            try:
+                parsed = json.loads(text)
+            except ValueError:
+                logger.warning("Tool %s returned non-JSON output", tool_name)
+                parsed = None
+            if isinstance(parsed, dict):
+                result["structuredContent"] = parsed
+            return _rpc_ok(req_id, result)
         except PermissionError as exc:
             _log_agent_call(user, tool_name, arguments, success=False, error=type(exc).__name__)
             return _rpc_ok(req_id, {
@@ -2526,7 +2750,7 @@ async def mcp_sse(request: Request):
     queue: asyncio.Queue = asyncio.Queue(maxsize=_SSE_QUEUE_MAX_MESSAGES)
     _sse_sessions[session_id] = (queue, user)
 
-    base_url = _BASE_URL or str(request.base_url).rstrip("/")
+    base_url = _base_url(request)
     endpoint_url = f"{base_url}/mcp/messages?sessionId={session_id}"
 
     async def event_stream() -> AsyncGenerator[str, None]:
@@ -2607,9 +2831,9 @@ def _file_summary(path) -> dict:
     stat = path.stat()
     try:
         meta = _read_frontmatter_only(rel)
-        title = meta.get("title", path.stem)
-        updated = meta.get("updated", "")
-        tags = meta.get("tags", [])
+        title = fm_str(meta.get("title"), path.stem)
+        updated = fm_str(meta.get("updated"))
+        tags = fm_tags(meta.get("tags"))
     except Exception:
         title = path.stem
         updated = ""
@@ -2618,7 +2842,7 @@ def _file_summary(path) -> dict:
         "path": rel,
         "title": title,
         "updated": updated,
-        "tags": tags if isinstance(tags, list) else [],
+        "tags": tags,
         "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
         "size_bytes": stat.st_size,
     }
@@ -2648,10 +2872,8 @@ def _resolve_local_link(source_rel: str, link: str) -> str | None:
 
 def _frontmatter_title_and_tags(path: str) -> tuple[str, list[str], dict]:
     meta = _read_frontmatter_only(path)
-    tags = meta.get("tags", [])
-    if not isinstance(tags, list):
-        tags = []
-    return meta.get("title", os.path.splitext(os.path.basename(path))[0]), tags, meta
+    default_title = os.path.splitext(os.path.basename(path))[0]
+    return fm_str(meta.get("title"), default_title), fm_tags(meta.get("tags")), meta
 
 
 def _index_markdown(path: str) -> None:
@@ -2890,9 +3112,9 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
     if name == "list_files":
         _need_read()
         items = list_files(args.get("path", "."))
-        return json.dumps([i.model_dump() for i in items], ensure_ascii=False, indent=2)
+        return json.dumps({"items": [i.model_dump() for i in items]}, ensure_ascii=False, indent=2)
 
-    if name in ("read_file", "fetch"):
+    if name == "read_file":
         _need_read()
         path = args.get("path") or args.get("id")
         if not path:
@@ -2900,6 +3122,26 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         fc = read_file(path)
         return json.dumps(
             {"path": fc.path, "frontmatter": fc.frontmatter, "content": fc.content},
+            ensure_ascii=False, indent=2,
+        )
+
+    if name == "fetch":
+        # OpenAI-Connector-Kontrakt: id/title/text/url, metadata optional.
+        # Die id ist der Notizpfad — genau der Wert, den search als id liefert.
+        _need_read()
+        path = args.get("id") or args.get("path")
+        if not path:
+            raise ValueError("Missing required argument: id")
+        fc = read_file(path)
+        metadata = {key: value for key, value in (fc.frontmatter or {}).items()}
+        return json.dumps(
+            {
+                "id": fc.path,
+                "title": str(metadata.get("title") or os.path.splitext(os.path.basename(fc.path))[0]),
+                "text": fc.content,
+                "url": _document_url(fc.path),
+                "metadata": {key: _metadata_value(value) for key, value in metadata.items()},
+            },
             ensure_ascii=False, indent=2,
         )
 
@@ -2943,9 +3185,25 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         return json.dumps(_stage_chunked_write(args, user), ensure_ascii=False, indent=2)
 
     if name == "search":
+        # OpenAI-Connector-Kontrakt: {"results": [{id, title, url}, ...]}.
+        # `text` ist nicht verpflichtend, hilft Deep Research aber bei der
+        # Relevanzbewertung, ohne die Notiz vollstaendig zu laden.
         _need_read()
         results = fts_search(args["query"])
-        return json.dumps([r.model_dump() for r in results], ensure_ascii=False, indent=2)
+        return json.dumps(
+            {
+                "results": [
+                    {
+                        "id": result.path,
+                        "title": result.title,
+                        "text": result.snippet,
+                        "url": _document_url(result.path),
+                    }
+                    for result in results
+                ]
+            },
+            ensure_ascii=False, indent=2,
+        )
 
     if name == "knowledge_search":
         _need_read()
@@ -3113,12 +3371,12 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                 results.append({"src": src, "dst": dst, "status": "moved"})
             except Exception as exc:
                 results.append({"src": src, "dst": dst, "status": "error", "error": str(exc)})
-        return json.dumps(results, ensure_ascii=False, indent=2)
+        return json.dumps({"items": results}, ensure_ascii=False, indent=2)
 
     if name == "list_all_files":
         _need_read()
         items = list_all_files(args.get("path", "."))
-        return json.dumps(items, ensure_ascii=False, indent=2)
+        return json.dumps({"items": items}, ensure_ascii=False, indent=2)
 
     if name == "grep":
         _need_read()
@@ -3234,7 +3492,16 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             if len(_grep_jobs) >= _GREP_JOBS_MAX:
                 raise ValueError("Too many grep jobs; retry after completed jobs expire")
             job_id = secrets.token_urlsafe(12)
-            _grep_jobs[job_id] = {"status": "running", "created_at": time.time(), "result": None}
+            # Der Owner gehoert zwingend in den Job: _grep_jobs ist prozessglobal,
+            # und die Treffer enthalten Dateipfade samt Zeileninhalten. Ohne diese
+            # Bindung koennte jeder Tenant mit einer fremden job_id die Ergebnisse
+            # eines anderen abrufen.
+            _grep_jobs[job_id] = {
+                "status": "running",
+                "created_at": time.time(),
+                "result": None,
+                "owner": user.username if user else "",
+            }
 
             async def _finish_background_scan() -> None:
                 try:
@@ -3244,8 +3511,14 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                     logger.exception("Background grep job %s failed", job_id)
                     _grep_jobs[job_id]["result"] = {"error": type(exc).__name__}
                     _grep_jobs[job_id]["status"] = "completed"
+                finally:
+                    _grep_tasks.discard(asyncio.current_task())
 
-            asyncio.create_task(_finish_background_scan())
+            # Referenz halten: der Event-Loop haelt Tasks nur schwach, eine
+            # unreferenzierte Task kann mitten im Scan eingesammelt werden und
+            # liesse den Job dauerhaft auf "running" stehen.
+            task = asyncio.create_task(_finish_background_scan())
+            _grep_tasks.add(task)
             return json.dumps({"status": "running", "job_id": job_id}, ensure_ascii=False)
 
         result = await _run_scan()
@@ -3262,12 +3535,15 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         results = []
         files = sorted(root.rglob("*")) if root.is_dir() else [root]
         for filepath in files:
+            if ".kiwiki" in filepath.parts:
+                continue
             if filepath.is_file() and fnmatch.fnmatch(filepath.name, pattern):
                 results.append(str(filepath.relative_to(user_root())))
         return json.dumps({"matches": results, "count": len(results)}, ensure_ascii=False, indent=2)
 
     if name == "file_info":
         _need_read()
+        validate_content_read_path(args["path"])
         filepath = safe_path(args["path"])
         if not filepath.exists():
             raise FileNotFoundError(f"File not found: {args['path']!r}")
@@ -3287,6 +3563,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
 
     if name == "read_lines":
         _need_read()
+        validate_content_read_path(args["path"])
         filepath = safe_path(args["path"])
         if not filepath.exists():
             raise FileNotFoundError(f"File not found: {args['path']!r}")
@@ -3314,7 +3591,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         if not include_system:
             files = [p for p in files if _rel_path(p) not in {"index.md", "AGENTS.md"}]
         files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        return json.dumps([_file_summary(p) for p in files[:limit]], ensure_ascii=False, indent=2)
+        return json.dumps({"items": [_file_summary(p) for p in files[:limit]]}, ensure_ascii=False, indent=2)
 
     if name == "backlinks":
         _need_read()
@@ -3513,7 +3790,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             for tag in file_tags:
                 tags.setdefault(str(tag), []).append(rel)
         result = [{"tag": tag, "count": len(files), "files": sorted(files)} for tag, files in sorted(tags.items())]
-        return json.dumps(result, ensure_ascii=False, indent=2)
+        return json.dumps({"items": result}, ensure_ascii=False, indent=2)
 
     if name == "reindex_all":
         _need_write()
@@ -3636,10 +3913,18 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             "meeting": "notes/meetings", "decision": "decisions", "adr": "decisions",
             "review": "notes/reviews", "bug": "notes/bugs", "feature": "notes/features",
         }
+        if template_type not in folder_map:
+            raise ValueError(
+                f"Unknown template_type {template_type!r}; expected one of {sorted(folder_map)}"
+            )
         folder = args.get("folder") or folder_map.get(template_type, "notes")
         today = date.today().isoformat()
         slug = title.lower().replace(" ", "-").replace("/", "-")
         slug = "".join(c for c in slug if c.isalnum() or c in "-_")[:60]
+        # Gleicher Guard wie in storage.create_note: ein Titel ohne alphanumerische
+        # Zeichen ergaebe sonst Dateinamen wie "-.md".
+        if not slug.strip("-_"):
+            raise ValueError("Title does not produce a valid slug")
         path = f"{folder}/{slug}.md"
         i = 2
         while safe_path(path).exists():
@@ -3655,7 +3940,9 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         }
         if template_type == "adr":
             template_type = "decision"
-        content = templates.get(template_type, "")
+        content = templates.get(template_type) or ""
+        if not content:
+            raise ValueError(f"No template body defined for {template_type!r}")
         write_file(path, content)
         _index_markdown(path)
         return json.dumps({"path": path, "status": "created", "template_type": template_type}, ensure_ascii=False)
@@ -3794,7 +4081,9 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         updated = []
         for path in files:
             meta = _read_frontmatter_only(path)
-            existing_tags = list(meta.get("tags", []))
+            # list() auf einen Skalar ergaebe aus "python" sechs einzelne
+            # Buchstaben — und schriebe sie als Tags in die Notiz zurueck.
+            existing_tags = fm_tags(meta.get("tags"))
             if mode == "replace":
                 new_tags = tags
             else:
@@ -3896,7 +4185,7 @@ nav{{margin-bottom:2rem}}section{{margin-bottom:3rem;border-bottom:1px solid #ee
         from .search import get_search_history
         limit = max(1, min(int(args.get("limit", 10)), 100))
         history = get_search_history(limit)
-        return json.dumps(history, ensure_ascii=False, indent=2)
+        return json.dumps({"items": history}, ensure_ascii=False, indent=2)
 
     # ── E5: Dead Link Check ──────────────────────────────────────────────────
     if name == "dead_link_check":
@@ -3936,10 +4225,16 @@ nav{{margin-bottom:2rem}}section{{margin-bottom:3rem;border-bottom:1px solid #ee
         _prune_grep_jobs()
         job_id = args.get("job_id", "")
         job = _grep_jobs.get(job_id)
+        # Fremde Jobs verhalten sich wie nicht existierende — kein Hinweis darauf,
+        # dass die job_id gueltig ist.
+        if job is not None and job.get("owner") != (user.username if user else ""):
+            job = None
+        # "result" ist optional. Ein null-Wert wuerde das eigene outputSchema
+        # ("type": "object") verletzen, deshalb bleibt der Schluessel hier weg.
         if job is None:
-            return json.dumps({"status": "not_found", "job_id": job_id, "result": None}, ensure_ascii=False)
+            return json.dumps({"status": "not_found", "job_id": job_id}, ensure_ascii=False)
         if job["status"] == "running":
-            return json.dumps({"status": "running", "job_id": job_id, "result": None}, ensure_ascii=False)
+            return json.dumps({"status": "running", "job_id": job_id}, ensure_ascii=False)
         return json.dumps({"status": "completed", "job_id": job_id, "result": job["result"]}, ensure_ascii=False, indent=2)
 
     raise ValueError(f"Unknown tool: {name!r}")

@@ -223,3 +223,87 @@ def test_layout_hat_main_landmark_und_skip_link(tmp_path, monkeypatch):
     assert '<main class="content-area" id="main-content" tabindex="-1">' in body
     assert 'class="skip-link' in body
     assert 'href="#main-content"' in body
+
+
+def _client_for(users: tuple[tuple[str, str, str], ...], key: str) -> TestClient:
+    """Baut die User-Map auf und liefert einen eingeloggten TestClient."""
+    import os
+
+    os.environ["KIWIKI_USERS"] = ",".join(f"{u}:{k}:{r}" for u, k, r in users)
+    from app import auth as auth_mod
+    from app import user_store as user_store_mod
+
+    auth_mod._PARSE_DIAG_LOGGED = False
+    user_store_mod._PARSE_DIAG_LOGGED = False
+    user_store_mod._LOCAL_DIAG_LOGGED = False
+    user_store_mod._MERGE_DIAG_LOGGED = False
+
+    client = TestClient(app)
+    client.post("/login", data={"api_key": key}, follow_redirects=False)
+    return client
+
+
+def test_ui_history_lehnt_pfad_traversal_ab():
+    """Regression: der path-Parameter landete ungeprueft in `git log`.
+
+    Lag oberhalb des Benutzerverzeichnisses ein Repository, gab
+    /ui/history?path=../<user>/notes/x.md fremde Commit-Metadaten preis.
+    """
+    client = _client_for((("alice", "key-alice", "admin"),), "key-alice")
+
+    resp = client.get("/ui/history?path=../bob/notes/secret.md")
+
+    assert resp.status_code == 400
+    assert "traversal" in resp.text.lower()
+
+
+def test_ui_history_akzeptiert_eigenen_pfad():
+    client = _client_for((("alice", "key-alice", "admin"),), "key-alice")
+
+    resp = client.get("/ui/history?path=notes/a.md")
+
+    assert resp.status_code == 200
+    assert "traversal" not in resp.text.lower()
+
+
+def test_ui_export_vertraegt_komma_im_dateinamen():
+    """Regression: die kommaseparierte Pfadliste zerlegte Dateinamen mit Komma.
+
+    'notes/Meeting, Q4.md' zerfiel in zwei unbrauchbare Fragmente; beide
+    read_file()-Aufrufe scheiterten still und die Datei fehlte im Export.
+    """
+    client = _client_for((("alice", "key-alice", "admin"),), "key-alice")
+
+    from app.storage import write_file
+    from app.tenancy import set_user_ns
+
+    set_user_ns("alice")
+    write_file("notes/Meeting, Q4.md", "---\ntitle: Q4\n---\n\nQUARTALSZAHLEN\n")
+    write_file("notes/normal.md", "---\ntitle: N\n---\n\nNORMALTEXT\n")
+
+    resp = client.post("/ui/export", data={"path": ["notes/Meeting, Q4.md", "notes/normal.md"]})
+
+    assert resp.status_code == 200
+    assert "QUARTALSZAHLEN" in resp.text
+    assert "NORMALTEXT" in resp.text
+
+
+def test_ui_export_akzeptiert_weiterhin_die_alte_form():
+    client = _client_for((("alice", "key-alice", "admin"),), "key-alice")
+
+    from app.storage import write_file
+    from app.tenancy import set_user_ns
+
+    set_user_ns("alice")
+    write_file("notes/normal.md", "---\ntitle: N\n---\n\nNORMALTEXT\n")
+
+    resp = client.post("/ui/export", data={"paths": "notes/normal.md"})
+
+    assert resp.status_code == 200
+    assert "NORMALTEXT" in resp.text
+
+
+def test_ui_export_ohne_pfade_ist_ein_fehler():
+    client = _client_for((("alice", "key-alice", "admin"),), "key-alice")
+
+    assert client.post("/ui/export", data={}).status_code == 400

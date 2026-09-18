@@ -1,11 +1,12 @@
 import logging
+import math
 import os
 import tempfile
 import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import date, datetime, time as time_cls, timezone
 import frontmatter
 from .models import FileInfo, FileContent
 from .tenancy import BASE_DATA_DIR, user_root
@@ -100,6 +101,20 @@ def validate_content_folder_path(path: str) -> None:
         raise ValueError("System paths under .kiwiki are not writable")
 
 
+def validate_content_read_path(path: str) -> None:
+    """Validate paths accepted from public read APIs.
+
+    Das Schreib-Pendant sperrt `.kiwiki` seit jeher; ohne diese Funktion konnten
+    Lesewerkzeuge (find, read_lines, file_info) die internen SQLite- und
+    Audit-Dateien desselben Namespaces trotzdem ausliefern.
+    """
+    parts = _path_parts(path)
+    if not parts:
+        raise ValueError("Empty path")
+    if ".kiwiki" in parts:
+        raise ValueError("System paths under .kiwiki are not readable")
+
+
 def _atomic_write_text(file_path: Path, content: str) -> None:
     """UTF-8-Inhalt crash-sicher im selben Verzeichnis ersetzen."""
     tenant_lock = _TENANT_WRITE_LOCKS[hash(str(user_root().resolve())) % len(_TENANT_WRITE_LOCKS)]
@@ -184,6 +199,65 @@ def safe_path(path: str) -> Path:
     return normalized
 
 
+def _normalize_metadata(value):
+    """YAML-Werte auf JSON-taugliche Typen zuruecksetzen.
+
+    PyYAML liest unquotierte ISO-Daten (``created: 2026-01-01``) als
+    ``datetime.date``. Solche Werte landen ueber FileContent.frontmatter
+    direkt in json.dumps() und in Sortierungen — beides scheitert dort mit
+    TypeError. Die Normalisierung passiert an der einzigen Stelle, an der
+    Frontmatter geparst wird, damit Lese- und Schreibpfad dasselbe sehen.
+    """
+    if isinstance(value, (datetime, date, time_cls)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _normalize_metadata(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_normalize_metadata(item) for item in value]
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        # JSON kennt weder NaN noch Infinity. json.dumps() schreibt die Literale
+        # trotzdem und macht die Antwort damit fuer jeden strikten Parser
+        # unlesbar — als String bleibt der Wert erhalten und gueltig.
+        return str(value)
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def fm_str(value, default: str = "") -> str:
+    """Frontmatter-Wert als String, wie ihn die Werkzeug-Schemas deklarieren.
+
+    `title: 2026` ist gueltiges YAML und ergibt ein int. Ungeprueft weitergereicht
+    verletzt es `{"type": "string"}` und laesst einen validierenden Client die
+    komplette Antwort verwerfen — nicht nur den betroffenen Eintrag.
+    """
+    if value is None or value == "":
+        return default
+    return value if isinstance(value, str) else str(value)
+
+
+def fm_tags(value) -> list[str]:
+    """Frontmatter-Tags als Stringliste.
+
+    `tags: python` ist ein Skalar, keine Liste. Ihn zu verwerfen verliert den Tag,
+    ihn per list() zu zerlegen macht aus "python" sechs einzelne Buchstaben.
+    """
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, (list, tuple, set)):
+        return [fm_str(item) for item in value if fm_str(item)]
+    if value is None:
+        return []
+    return [fm_str(value)]
+
+
+def _load_post(source, *, is_text: bool = False) -> frontmatter.Post:
+    """Frontmatter parsen und die Metadaten normalisieren."""
+    post = frontmatter.loads(source) if is_text else frontmatter.load(source)
+    post.metadata = _normalize_metadata(post.metadata)
+    return post
+
+
 def _read_frontmatter_only(path: str) -> dict:
     """Extract frontmatter metadata without reading the full file content.
 
@@ -211,8 +285,7 @@ def _read_frontmatter_only(path: str) -> dict:
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             raw = f.read(_FRONTMATTER_READ_LIMIT)
-        post = frontmatter.loads(raw)
-        metadata = post.metadata
+        metadata = _load_post(raw, is_text=True).metadata
     except Exception:
         logger.warning("Failed to parse frontmatter for %r", path, exc_info=True)
         return {}
@@ -232,7 +305,7 @@ def read_file(path: str) -> FileContent:
     if not file_path.is_file():
         raise ValueError(f"Not a file: {path}")
     with open(file_path, "r", encoding="utf-8") as f:
-        post = frontmatter.load(f)
+        post = _load_post(f)
     return FileContent(
         path=path,
         content=post.content,
@@ -256,7 +329,7 @@ def write_file(path: str, content: str, expected_revision: int | None = None) ->
                 f"Write conflict for {path!r}: expected revision {expected_revision}, "
                 f"current revision is {current_revision}"
             )
-        post = frontmatter.loads(content) if content else frontmatter.Post("")
+        post = _load_post(content, is_text=True) if content else frontmatter.Post("")
         post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
         _atomic_write_text(file_path, frontmatter.dumps(post))
         revision = file_path.stat().st_mtime_ns
@@ -276,7 +349,7 @@ def append_file(path: str, content: str) -> FileContent:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {path}")
         with open(file_path, "r", encoding="utf-8") as f:
-            post = frontmatter.load(f)
+            post = _load_post(f)
         post.content += "\n" + content
         post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
         _atomic_write_text(file_path, frontmatter.dumps(post))
@@ -324,7 +397,7 @@ def list_files(path: str = ".") -> list[FileInfo]:
             mtime_str = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat().split("T")[0]
             try:
                 meta = _read_frontmatter_only(rel_path)
-                updated = meta.get("updated", mtime_str)
+                updated = fm_str(meta.get("updated"), mtime_str)
             except Exception:
                 updated = mtime_str
             items.append(
@@ -442,7 +515,7 @@ def edit_file(path: str, new_str: str, old_str: str = "") -> FileContent:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {path}")
         with open(file_path, "r", encoding="utf-8") as f:
-            post = frontmatter.load(f)
+            post = _load_post(f)
         if old_str:
             if old_str not in post.content:
                 raise ValueError(f"String not found in {path!r}")
@@ -468,7 +541,7 @@ def update_frontmatter(path: str, updates: dict) -> FileContent:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {path}")
         with open(file_path, "r", encoding="utf-8") as f:
-            post = frontmatter.load(f)
+            post = _load_post(f)
         post.metadata.update(updates)
         post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
         _atomic_write_text(file_path, frontmatter.dumps(post))
@@ -583,10 +656,10 @@ def _scan_markdown_recursive(dir_path: Path, root: Path, items: list) -> None:
             rel_path = os.path.relpath(entry.path, root)
             try:
                 meta = _read_frontmatter_only(rel_path)
-                title = meta.get("title", Path(entry.name).stem)
-                updated = meta.get("updated", "")
-                created = meta.get("created", "")
-                tags = meta.get("tags", [])
+                title = fm_str(meta.get("title"), Path(entry.name).stem)
+                updated = fm_str(meta.get("updated"))
+                created = fm_str(meta.get("created"))
+                tags = fm_tags(meta.get("tags"))
             except Exception:
                 title = Path(entry.name).stem
                 updated = ""

@@ -176,11 +176,20 @@ all users share the proxy peer IP and therefore one limiter window.
 | Area | Tests | Runner |
 |---|---|---|
 | Auth, storage, search, MCP | `tests/test_*.py` (per module) | `pytest` |
+| MCP schema conformance | `tests/test_mcp_conformance.py` | `pytest` (needs `jsonschema`) |
 | UI rendering regression | `tests/test_ui_file.py` | `pytest` (uses `TestClient`) |
 | Browser/responsive regression | `tests/browser_smoke.py` | Playwright Chromium |
 | Lint | All `app/` and `tests/` | `ruff check app tests` |
 | Frontend bundle | `frontend/motion/` | `npm run build:motion` |
 | Container | `Dockerfile` | `docker build -t kiwiki:test .` |
+
+`tests/test_mcp_conformance.py` calls every MCP tool once and validates the result against that tool's own
+`outputSchema`. It exists because the older tests only asserted that a schema was *present* — several tools
+returned fields their schema forbade, and since protocol revision 2025-06-18 clients validate `structuredContent`
+and discard the whole response on the first mismatch. The seeded workspace deliberately uses awkward but legal
+frontmatter (`title: 2026` is an int, `tags: python` a scalar, unquoted dates become `datetime.date`, `.nan` is
+not representable in JSON), and results are parsed with a `parse_constant` hook so `NaN`/`Infinity` literals fail.
+`_TOOL_ARGS` must cover every tool — adding a tool without an entry fails the suite, so the sweep cannot rot.
 
 UI regression tests combine fast template assertions with a real Chromium smoke path. The browser gate covers mobile sidebar focus/inert behavior, zoom, stable note deep links and titles, responsive settings, and overflow. Add browser assertions whenever behavior depends on layout, focus, history, or JavaScript timing.
 

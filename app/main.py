@@ -865,9 +865,16 @@ async def ui_file_history(request: Request, path: str = "") -> HTMLResponse:
         return HTMLResponse(f'<div class="error">{html.escape(_ui_text(request, "missing_history_path"))}</div>')
     try:
         import subprocess
+
+        from .mcp_git import validate_git_path
+
+        # Ohne diese Pruefung landet ein Pfad wie "../bob/notes/x.md" direkt in
+        # `git log`. Liegt oberhalb des User-Roots ein Repository, liefert das
+        # die Historie fremder Namespaces aus. Das MCP-Pendant validiert bereits.
+        git_path = validate_git_path(path)
         root = user_root()
         result = subprocess.run(
-            ["git", "log", "-20", "--pretty=format:%H|%aI|%an|%s", "--", path],
+            ["git", "log", "-20", "--pretty=format:%H|%aI|%an|%s", "--", git_path],
             cwd=root, capture_output=True, text=True, timeout=10,
         )
         history = []
@@ -886,6 +893,8 @@ async def ui_file_history(request: Request, path: str = "") -> HTMLResponse:
             name="partials/file_history.html",
             context={"path": path, "history": history, "user": user},
         )
+    except ValueError as exc:
+        return HTMLResponse(f'<div class="error">{html.escape(str(exc))}</div>', status_code=400)
     except Exception:
         logging.exception("Failed to load git history for path %r", path)
         return HTMLResponse(f'<div class="error">{html.escape(_ui_text(request, "history_load_failed"))}</div>')
@@ -918,8 +927,13 @@ async def ui_rename(
 @app.post("/ui/export")
 async def ui_export(request: Request) -> HTMLResponse:
     form = await request.form()
-    paths_raw = form.get("paths", "")
-    paths = [p.strip() for p in paths_raw.split(",") if p.strip()]
+    # Ein Feld pro Pfad: die frueher genutzte kommaseparierte Liste zerlegte
+    # Dateinamen, die selbst ein Komma enthalten ("notes/Meeting, Q4.md"), in
+    # zwei unbrauchbare Fragmente — die Datei fehlte dann still im Export.
+    paths = [str(value).strip() for value in form.getlist("path") if str(value).strip()]
+    if not paths:
+        paths_raw = str(form.get("paths", ""))
+        paths = [p.strip() for p in paths_raw.split(",") if p.strip()]
     if not paths:
         raise HTTPException(status_code=400, detail="No paths provided")
     parts = []

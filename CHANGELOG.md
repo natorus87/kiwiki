@@ -7,6 +7,90 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-09-18
+
+### Security
+- **Dateihistorie bleibt im eigenen Namespace** — `/ui/history` validiert den `path`-Parameter jetzt mit derselben
+  Prüfung wie die MCP-Werkzeuge. Zuvor gelangte ein Pfad wie `../<anderer-user>/notes/x.md` ungefiltert in
+  `git log`; lag oberhalb des Benutzerverzeichnisses ein Repository, gab die Ansicht fremde Commit-Metadaten preis.
+- **Hintergrund-Greps sind an ihren Besitzer gebunden** — `grep_status` liefert Ergebnisse nur noch an den Benutzer
+  aus, der den Job gestartet hat. Fremde Job-IDs verhalten sich wie unbekannte.
+- **Fehlversuche am OAuth-Formular haben ein eigenes Budget** — `POST /oauth/authorize` prüft denselben API-Key wie
+  `/login`, liegt aber im großzügigeren `oauth`-Tier. Fehlgeschlagene Eingaben zählen nun gegen ein separates Limit
+  (`KIWIKI_KEY_ATTEMPT_LIMIT`, Standard 5/Minute), ohne den Connector-Handshake zu drosseln.
+- **Interne Dateien sind auch lesend gesperrt** — `find`, `read_lines` und `file_info` schließen `.kiwiki` aus,
+  passend zur bereits bestehenden Schreibsperre.
+
+### Changed
+- **Die Wissens-Werkzeuge deklarieren ihre Antwort** — `entity_details`, `entity_neighbors`, `fact_timeline`,
+  `explain_relation` und `knowledge_reindex` standen bisher auf `{"type": "object", "additionalProperties": true}`
+  und sagten damit gar nichts aus. Die Schemas benennen jetzt Felder, Typen, Wertebereiche (`depth` 1–3,
+  `confidence` 0–1) und erlaubte `status`-Werte. `entity` und `relation` sind ausdrücklich nullable: `null`
+  heißt „nachgesehen, nichts gefunden", ein fehlendes Feld heißt „Wissensmaschine aus".
+- **MCP verhandelt jetzt Revision 2025-06-18** — `outputSchema` und `structuredContent` sind erst ab dieser
+  Revision Teil der Spezifikation. kiwiki lieferte beides aus, nannte im Handshake aber `2025-03-26`; ein Client,
+  der sein Tool-Modell an der ausgehandelten Revision ausrichtet, sah dort unbekannte Felder. Clients, die
+  `2024-11-05` oder `2025-03-26` anfragen, bekommen weiterhin genau diese Revision; eine neuere Anfrage
+  (etwa `2025-11-25`) wird auf `2025-06-18` beantwortet.
+- **`fetch` liefert Listen-Metadaten lesbar** — `tags: [python, mcp]` erscheint als `"python, mcp"` statt als
+  Python-Repräsentation `"['python', 'mcp']"`.
+- **BREAKING: `search` und `fetch` folgen dem OpenAI-Connector-Kontrakt** — `search` liefert
+  `{"results": [{"id", "title", "text", "url"}]}`, `fetch` liefert `{"id", "title", "text", "url", "metadata"}`.
+  Die `id` ist der Notizpfad und lässt sich unverändert an `fetch` weiterreichen; `url` zitiert über
+  `KIWIKI_BASE_URL` auf `/ui/file`. Ohne gesetzte Basis-URL bleibt der Link relativ, da im Werkzeug-Dispatcher
+  kein Request zur Verfügung steht. `read_file` behält sein bisheriges Format und ist von der Änderung nicht
+  betroffen.
+- **BREAKING: Listen-Werkzeuge liefern ein Objekt statt eines Arrays** — `list_files`, `sort`,
+  `list_all_files`, `recent_files`, `tag_index` und `search_history` geben ihre Ergebnisse jetzt unter dem
+  Schlüssel `items` zurück (`{"items": [...]}`). Die MCP-Spezifikation lässt für `outputSchema` und
+  `structuredContent` nur Objekte zu; strikt validierende Clients verwarfen die bisherigen Array-Antworten.
+  Integrationen, die `content[0].text` direkt als Array auswerten, müssen angepasst werden.
+
+### Fixed
+- **Frei getippte Frontmatter-Werte halten die Werkzeug-Schemas ein** — `title: 2026` und `tags: python` sind
+  gültiges YAML und ergeben int bzw. Skalar. `list_all_files` und `recent_files` reichten sie ungeprüft weiter und
+  verletzten damit ihr eigenes `outputSchema`; ein validierender Client verwarf daraufhin die komplette Antwort.
+  Ein skalarer Tag wurde zudem stillschweigend verworfen statt als einelementige Liste gelesen.
+- **`batch_tag` zerlegt skalare Tags nicht mehr in Einzelbuchstaben** — `list("python")` ergab sechs Tags
+  (`p`, `y`, `t`, …) und schrieb sie in die Notiz zurück. Betroffen war jede Notiz mit `tags:` als Skalar.
+- **`template` deklariert das `template_type`-Feld, das es liefert** — das Werkzeug teilte sich `_STATUS_SCHEMA`
+  mit sechs anderen, und dieses verbot über `additionalProperties: false` jedes weitere Feld.
+- **`NaN` und `Infinity` im Frontmatter brechen die Antwort nicht mehr** — `score: .nan` landete als nacktes
+  JSON-Literal in der Ausgabe. RFC 8259 kennt beides nicht; strikte Parser scheiterten an der gesamten Antwort.
+- **`ping` wird beantwortet** — die MCP-Spezifikation verlangt in jeder Revision eine umgehende leere Antwort.
+  kiwiki lief stattdessen in `-32601 Method not found`, was als HTTP 404 ausgeliefert wurde; Clients, die mit
+  `ping` am Leben halten, verwarfen die Sitzung.
+- **Unquotierte Datumsangaben im Frontmatter brechen die Werkzeuge nicht mehr** — YAML liest `created: 2026-01-01`
+  als `datetime.date`. Dieser Wert lief bis in `json.dumps()` und in Sortierungen und ließ `read_file`,
+  `read_many`, `list_files`, `list_all_files`, `recent_files` und `statistics` mit einem internen Fehler
+  abbrechen. Die Server-Instruktionen fordern `created`/`updated` ausdrücklich ein, und `write_file` schrieb den
+  Datumswert unquotiert zurück — der Server erzeugte die unlesbare Notiz also selbst. Frontmatter wird jetzt beim
+  Parsen auf JSON-taugliche Typen normalisiert, Lese- und Schreibpfad gemeinsam.
+- **`list_all_files` hält sein eigenes `outputSchema` ein** — die Antwort enthielt `created`, das Schema verbot
+  über `additionalProperties: false` jedes weitere Feld. Strikt validierende Clients verwarfen das Ergebnis.
+- **`grep_status` liefert kein `null` mehr für `result`** — das Feld ist optional und bleibt bei `not_found` und
+  `running` weg, statt den im Schema deklarierten Objekt-Typ zu verletzen.
+- **`resources/templates/list` antwortet mit einer leeren Liste** — kiwiki bietet keine URI-Templates an, Clients
+  fragen sie im Discovery trotzdem ab. Die bisherige `-32601`-Antwort kam als HTTP 404 zurück.
+- **Notizen mit doppeltem Tag brechen den Wissensindex nicht mehr** — Frontmatter-Listen werden vor der
+  Indexierung dedupliziert. Zuvor erzeugte `tags: [python, python]` zwei Relationen mit identischem
+  Primärschlüssel; das Dokument blieb nach drei Fehlversuchen dauerhaft unindexiert und der Tenant-Status
+  meldete `degraded`.
+- **Speichern während der Indexierung geht nicht mehr verloren** — Ein Job wird nur noch abgeschlossen, wenn er
+  tatsächlich noch läuft. Wurde eine Datei währenddessen erneut gespeichert, verwarf der Abschluss bisher die
+  nachgereihte Revision, und der Wissensindex blieb bis zum Neustart veraltet.
+- **Suche erholt sich von einem entfernten Index** — `init_db()` erkennt eine verschwundene Datenbank und legt
+  Tabellen sowie Verbindungen neu an; der LIKE-Fallback fängt SQLite-Fehler ebenso ab wie der FTS-Pfad. Zuvor
+  blieb die Suche eines Benutzers nach einem Workspace-Rollback bis zum Prozessneustart defekt.
+- **Sitzungen folgen dem konfigurierten Datenverzeichnis** — Der Ablageort von `sessions.json` wird zur Laufzeit
+  aufgelöst statt beim Import eingefroren, und das Laden vom Datenträger läuft vollständig unter Sperre.
+- **Export verträgt Kommas im Dateinamen** — Die Auswahl wird als ein Formularfeld je Pfad übertragen; zuvor
+  zerfiel `notes/Meeting, Q4.md` in zwei unbrauchbare Fragmente und fehlte kommentarlos im Ergebnis.
+- **`template` meldet ungültige Eingaben** — Ein unbekannter `template_type` und ein Titel ohne verwertbare
+  Zeichen führen zu einer klaren Fehlermeldung statt zu einer leeren Notiz beziehungsweise zu `-.md`.
+- **Hintergrund-Greps bleiben referenziert** — Die Task wird festgehalten, damit sie nicht mitten im Lauf
+  eingesammelt wird und der Job dauerhaft auf `running` stehen bleibt.
+
 ## [3.2.0] - 2026-08-08
 
 ### Added
@@ -346,7 +430,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **Container:** Docker + docker-compose
 - **Orchestration:** Helm charts for Kubernetes
 
-[Unreleased]: https://github.com/natorus87/kiwiki/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/natorus87/kiwiki/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/natorus87/kiwiki/compare/v3.2.0...v4.0.0
 [3.2.0]: https://github.com/natorus87/kiwiki/compare/v3.1.1...v3.2.0
 [3.1.1]: https://github.com/natorus87/kiwiki/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/natorus87/kiwiki/compare/v3.0.0...v3.1.0

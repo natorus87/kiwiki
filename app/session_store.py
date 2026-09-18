@@ -32,9 +32,20 @@ _SESSION_TTL_SECONDS = int(os.getenv("KIWIKI_SESSION_TTL_SECONDS", str(30 * 24 *
 # authentifizierte Request einen vollen JSON-Dump der Session-Datei ausloesen.
 _SESSION_SAVE_DEBOUNCE_SECONDS = 60
 
-# Persistenz-Datei im Datenverzeichnis
+# Persistenz-Datei im Datenverzeichnis. Der Modul-Konstante liegt weiterhin der
+# Importzeit-Wert zugrunde (Tests patchen sie gezielt), der Laufzeitpfad kommt
+# aber aus _session_file(): KIWIKI_DATA_DIR kann nach dem Import gesetzt werden,
+# genau wie tenancy.base_data_dir() es fuer den Datenpfad handhabt.
 _DATA_DIR = Path(os.getenv("KIWIKI_DATA_DIR", "/data"))
 _SESSION_FILE = _DATA_DIR / "sessions.json"
+
+
+def _session_file() -> Path:
+    """Aktuellen Ablageort der Session-Datei liefern."""
+    configured = os.getenv("KIWIKI_DATA_DIR")
+    if configured and Path(configured) != _SESSION_FILE.parent:
+        return Path(configured) / "sessions.json"
+    return _SESSION_FILE
 
 # Schutz gegen parallele Schreibzugriffe
 _lock = threading.Lock()
@@ -67,18 +78,33 @@ def _now() -> float:
 
 
 def _load_from_disk() -> None:
-    """Laedt Sessions aus der JSON-Datei in den Memory-Cache."""
+    """Laedt Sessions aus der JSON-Datei in den Memory-Cache.
+
+    Laeuft vollstaendig unter `_lock` und setzt `_loaded` erst am Ende: wuerde das
+    Flag vorab gesetzt, kehrte ein paralleler Aufrufer sofort zurueck und faende
+    `_sessions` noch leer vor — ein gueltiges Cookie landete dann faelschlich auf
+    der Login-Seite. Alle Aufrufer rufen diese Funktion vor ihrem eigenen
+    `with _lock` auf, deshalb ist die Sperre hier verschachtelungsfrei.
+    """
     global _loaded
     if _loaded:
         return
-    _loaded = True
-    if not _SESSION_FILE.exists():
+    with _lock:
+        if _loaded:
+            return
+        _load_from_disk_locked()
+        _loaded = True
+
+
+def _load_from_disk_locked() -> None:
+    session_file = _session_file()
+    if not session_file.exists():
         return
     try:
-        data = json.loads(_SESSION_FILE.read_text())
+        data = json.loads(session_file.read_text())
         now = _now()
         loaded = 0
-        needs_migration = (_SESSION_FILE.stat().st_mode & 0o777) != 0o600
+        needs_migration = (session_file.stat().st_mode & 0o777) != 0o600
         for stored_key, rec in data.items():
             token = str(rec.get("token", ""))
             stored_key_is_hash = len(stored_key) == 64 and all(
@@ -108,14 +134,15 @@ def _load_from_disk() -> None:
             _save_to_disk()
         logger.info("sessions: %d active sessions loaded from disk", loaded)
     except Exception:
-        logger.warning("sessions: could not load %s, starting fresh", _SESSION_FILE, exc_info=True)
+        logger.warning("sessions: could not load %s, starting fresh", session_file, exc_info=True)
 
 
 def _save_to_disk() -> None:
     """Schreibt alle aktiven Sessions in die JSON-Datei."""
     tmp_path: Path | None = None
+    session_file = _session_file()
     try:
-        _SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        session_file.parent.mkdir(parents=True, exist_ok=True)
         data = {
             token_hash: {
                 "username": record.username,
@@ -127,7 +154,7 @@ def _save_to_disk() -> None:
         import tempfile
 
         fd, tmp_name = tempfile.mkstemp(
-            prefix=".sessions-", suffix=".json", dir=str(_SESSION_FILE.parent)
+            prefix=".sessions-", suffix=".json", dir=str(session_file.parent)
         )
         tmp_path = Path(tmp_name)
         os.fchmod(fd, 0o600)
@@ -135,12 +162,12 @@ def _save_to_disk() -> None:
             handle.write(json.dumps(data, indent=2))
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(tmp_path, _SESSION_FILE)
-        _SESSION_FILE.chmod(0o600)
+        os.replace(tmp_path, session_file)
+        session_file.chmod(0o600)
         for record in _sessions.values():
             record.persisted_expires_at = record.expires_at
     except Exception:
-        logger.warning("sessions: could not persist to %s", _SESSION_FILE, exc_info=True)
+        logger.warning("sessions: could not persist to %s", session_file, exc_info=True)
     finally:
         if tmp_path is not None and tmp_path.exists():
             tmp_path.unlink()

@@ -320,3 +320,47 @@ def test_connection_pool_verwendet_pro_thread_eigene_connection(tmp_path, active
         assert connections[0] is not connections[1]
     finally:
         close_pool()
+
+
+class TestIndexRecovery:
+    """Regression: Suche blieb nach einem Workspace-Rollback dauerhaft defekt.
+
+    `_initialized_dbs` merkte sich den DB-Pfad prozessweit. Wurde das
+    Benutzerverzeichnis geloescht und neu angelegt, uebersprang init_db() den
+    Aufbau, und jede Suche endete in `no such table: files`.
+    """
+
+    def test_init_db_legt_geloeschte_datenbank_neu_an(self, tmp_path, active_user):
+        init_db()
+        db = _db_file()
+        close_pool()
+        db.unlink()
+
+        init_db()
+
+        assert db.exists()
+        with get_db() as conn:
+            assert conn.execute(
+                "SELECT name FROM sqlite_master WHERE name='files'"
+            ).fetchone() is not None
+
+    def test_suche_wirft_nicht_bei_fehlender_tabelle(self, tmp_path, active_user):
+        init_db()
+        with get_db() as conn:
+            conn.execute("DROP TABLE files")
+            conn.commit()
+
+        # Der LIKE-Fallback lag frueher ausserhalb der Fehlerbehandlung und
+        # liess sqlite3.OperationalError bis zum Aufrufer durch.
+        assert search("beliebiger begriff") == []
+
+    def test_suche_funktioniert_nach_wiederherstellung(self, tmp_path, active_user, tmp_file):
+        init_db()
+        close_pool()
+        _db_file().unlink()
+
+        rel = tmp_file("notes/wieder.md", "---\ntitle: Wieder da\n---\n\nInhalt")
+        init_db()
+        index_file(rel)
+
+        assert any(r.path == rel for r in search("Inhalt"))

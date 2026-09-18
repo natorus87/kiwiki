@@ -193,3 +193,50 @@ async def test_rate_limited_authorize_json_client_gets_json_error():
     blocked = await mw.dispatch(req, _noop)
     assert blocked.status_code == 429
     assert blocked.headers["content-type"].startswith("application/json")
+
+
+class TestFailedKeyAttempts:
+    """Fehlversuche der API-Key-Eingabe haben ein eigenes Budget.
+
+    Regression: /oauth/authorize prueft denselben Key wie /login, liegt aber im
+    oauth-Tier (20/min statt 5/min). Damit war das OAuth-Formular der bequemere
+    Weg zum Durchprobieren von Keys als das Login-Formular.
+    """
+
+    def test_budget_greift_nach_fuenf_fehlversuchen(self):
+        from app.rate_limiter import _failed_key_attempts, register_failed_key_attempt
+
+        _failed_key_attempts.clear()
+        req = _FakeRequest("/oauth/authorize", "POST", client_host="10.9.0.1")
+
+        blocked = [register_failed_key_attempt(req) for _ in range(7)]
+
+        assert blocked[:5] == [False] * 5
+        assert all(blocked[5:])
+
+    def test_erfolg_setzt_den_zaehler_zurueck(self):
+        from app.rate_limiter import (
+            _failed_key_attempts,
+            register_failed_key_attempt,
+            reset_failed_key_attempts,
+        )
+
+        _failed_key_attempts.clear()
+        req = _FakeRequest("/oauth/authorize", "POST", client_host="10.9.0.2")
+        for _ in range(4):
+            register_failed_key_attempt(req)
+
+        reset_failed_key_attempts(req)
+
+        assert register_failed_key_attempt(req) is False
+
+    def test_quellen_zaehlen_getrennt(self):
+        from app.rate_limiter import _failed_key_attempts, register_failed_key_attempt
+
+        _failed_key_attempts.clear()
+        noisy = _FakeRequest("/oauth/authorize", "POST", client_host="10.9.0.3")
+        quiet = _FakeRequest("/oauth/authorize", "POST", client_host="10.9.0.4")
+        for _ in range(6):
+            register_failed_key_attempt(noisy)
+
+        assert register_failed_key_attempt(quiet) is False

@@ -233,3 +233,56 @@ def test_expired_session_is_pruned_by_prune_expired():
     # Direkter Aufruf von _prune_expired
     session_store._prune_expired()
     assert session_store._token_hash(record.token) not in session_store._sessions
+
+
+def test_session_file_follows_runtime_data_dir(monkeypatch, tmp_path):
+    """Regression: der Ablageort war beim Import eingefroren.
+
+    tenancy.base_data_dir() loest KIWIKI_DATA_DIR bewusst zur Laufzeit auf,
+    weil Tests und eingebettete Deployments die Variable nach dem Import setzen.
+    Der Session-Store tat das nicht und schrieb weiter nach /data/sessions.json.
+    """
+    monkeypatch.setenv("KIWIKI_DATA_DIR", str(tmp_path))
+
+    assert session_store._session_file() == tmp_path / "sessions.json"
+
+
+def test_session_is_persisted_into_the_configured_data_dir(monkeypatch, tmp_path):
+    monkeypatch.setenv("KIWIKI_DATA_DIR", str(tmp_path))
+    session_store._sessions.clear()
+    monkeypatch.setattr(session_store, "_loaded", True)
+
+    session_store.create_session("alice", "admin")
+
+    assert (tmp_path / "sessions.json").is_file()
+
+
+def test_load_from_disk_sets_loaded_only_after_filling_the_cache(monkeypatch, tmp_path):
+    """Regression: _loaded wurde vor dem Laden gesetzt.
+
+    Ein parallel eintreffender Request sah das Flag, kehrte sofort zurueck und
+    fand _sessions noch leer vor — ein gueltiges Cookie landete dann auf der
+    Login-Seite.
+    """
+    monkeypatch.setenv("KIWIKI_DATA_DIR", str(tmp_path))
+    session_store._sessions.clear()
+    monkeypatch.setattr(session_store, "_loaded", True)
+    record = session_store.create_session("alice", "admin")
+
+    session_store._sessions.clear()
+    monkeypatch.setattr(session_store, "_loaded", False)
+
+    observed = []
+    original = session_store._load_from_disk_locked
+
+    def _spy():
+        # Waehrend des Ladens darf das Flag noch nicht gesetzt sein.
+        observed.append(session_store._loaded)
+        original()
+
+    monkeypatch.setattr(session_store, "_load_from_disk_locked", _spy)
+    session_store._load_from_disk()
+
+    assert observed == [False]
+    assert session_store._loaded is True
+    assert session_store.lookup_session(record.token) is not None

@@ -77,7 +77,7 @@ All runtime configuration is done through environment variables.
 |---|---:|---|
 | `KIWIKI_DATA_DIR` | `/data` | Data directory for all wiki files |
 | `KIWIKI_USERS` | required | Built-in users in `user:key:role` format, comma-separated |
-| `KIWIKI_BASE_URL` | request URL | Public base URL used in MCP and OAuth metadata; derived from the request when empty |
+| `KIWIKI_BASE_URL` | request URL | Public base URL used in MCP and OAuth metadata and in the citation URLs of `search`/`fetch`; derived from the request when empty, but note that MCP tool results fall back to a relative URL because no request is available there |
 | `KIWIKI_LOG_LEVEL` | `INFO` | Python log level |
 | `KIWIKI_TRUST_PROXY` | `false` | Trust forwarding headers and use secure cookies behind a TLS reverse proxy |
 | `KIWIKI_TRUSTED_PROXY_CIDRS` | empty | Trusted proxy networks allowed to supply `X-Forwarded-For`; required when proxy trust is enabled |

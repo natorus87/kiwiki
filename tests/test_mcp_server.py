@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import subprocess
+import time
 from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlparse
 
@@ -492,13 +493,15 @@ class TestToolDefinitions:
             assert "destructiveHint" in tool["annotations"]
 
     def test_output_schemas_sind_definiert(self):
+        """MCP laesst fuer outputSchema nur Objekt-Schemas zu.
+
+        Listen-Tools huellen ihr Ergebnis daher in {"items": [...]} statt ein
+        Array-Schema zu deklarieren, das strikte Clients verwerfen wuerden.
+        """
         for tool in TOOLS:
             schema = tool["outputSchema"]
-            assert schema["type"] in {"object", "array"}
-            if schema["type"] == "object":
-                assert "properties" in schema or "additionalProperties" in schema
-            if schema["type"] == "array":
-                assert "items" in schema
+            assert schema["type"] == "object", f"{tool['name']} deklariert {schema['type']}"
+            assert "properties" in schema or "additionalProperties" in schema
 
     def test_read_only_tools(self):
         assert "read_file" in _READ_ONLY_TOOLS
@@ -538,8 +541,8 @@ class TestHandleMessage:
     async def test_initialize(self, _setup_auth):
         body = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
         result = await _handle_message(body, User(username="alice", role="admin"))
-        assert result["result"]["protocolVersion"] == "2025-03-26"
-        assert result["result"]["serverInfo"]["version"] == "3.2.0"
+        assert result["result"]["protocolVersion"] == "2025-06-18"
+        assert result["result"]["serverInfo"]["version"] == "4.0.0"
         assert "tools" in result["result"]["capabilities"]
         instructions = result["result"]["instructions"]
         assert "Authorization is already enforced by kiwiki" in instructions
@@ -757,7 +760,11 @@ class TestToolDispatch:
                 "method": "tools/call",
                 "params": {"name": "recent_files", "arguments": {"limit": 5}},
             }, User(username="alice", role="admin"))
-            assert any(item["path"] == "notes/b.md" for item in recent["result"]["structuredContent"])
+            # Listen-Tools liefern ihre Ergebnisse laut MCP-Spec als Objekt unter "items".
+            assert any(
+                item["path"] == "notes/b.md"
+                for item in recent["result"]["structuredContent"]["items"]
+            )
 
             tags = await _handle_message({
                 "jsonrpc": "2.0",
@@ -765,7 +772,7 @@ class TestToolDispatch:
                 "method": "tools/call",
                 "params": {"name": "tag_index", "arguments": {}},
             }, User(username="alice", role="admin"))
-            tag_map = {item["tag"]: item for item in tags["result"]["structuredContent"]}
+            tag_map = {item["tag"]: item for item in tags["result"]["structuredContent"]["items"]}
             assert tag_map["python"]["count"] == 2
         finally:
             mcp_server.parse_users = original_parse
@@ -1193,3 +1200,433 @@ class TestMcpCapacityLimits:
 
         assert completed["status"] == "completed"
         assert completed["result"]["total_shown"] == 1
+
+
+class TestReviewRegressions:
+    """Funde aus dem Vollreview vom 2026-08-24."""
+
+    @pytest.mark.asyncio
+    async def test_template_lehnt_unbekannten_typ_ab(self, active_user):
+        """Regression: ein unbekannter template_type legte still eine leere Notiz an."""
+        user = User(username="alice", role="write")
+        with pytest.raises(ValueError, match="Unknown template_type"):
+            await _dispatch("template", {"template_type": "gibtsnicht", "title": "Test"}, user)
+
+    @pytest.mark.asyncio
+    async def test_template_lehnt_titel_ohne_slug_ab(self, active_user):
+        """Regression: '!!! ???' erzeugte die Datei '-.md' — create_note lehnt denselben Titel ab."""
+        user = User(username="alice", role="write")
+        with pytest.raises(ValueError, match="valid slug"):
+            await _dispatch("template", {"template_type": "bug", "title": "!!! ???"}, user)
+
+    @pytest.mark.asyncio
+    async def test_template_legt_gueltige_notiz_an(self, active_user):
+        user = User(username="alice", role="write")
+        result = json.loads(await _dispatch("template", {"template_type": "bug", "title": "Login kaputt"}, user))
+        assert result["path"] == "notes/bugs/login-kaputt.md"
+
+        # 'adr' bleibt ein Alias auf 'decision'
+        alias = json.loads(await _dispatch("template", {"template_type": "adr", "title": "DB Wahl"}, user))
+        assert alias["path"] == "decisions/db-wahl.md"
+        assert alias["template_type"] == "decision"
+
+    @pytest.mark.asyncio
+    async def test_find_und_read_lines_verschweigen_kiwiki(self, active_user, tmp_file):
+        """Regression: Lesewerkzeuge lieferten interne SQLite- und Audit-Dateien aus."""
+        user = User(username="alice", role="read")
+        tmp_file("notes/a.md", "---\ntitle: A\n---\n\nA")
+        internal = active_user / ".kiwiki" / "agent_log.jsonl"
+        internal.parent.mkdir(parents=True, exist_ok=True)
+        internal.write_text('{"tool": "geheim"}\n', encoding="utf-8")
+
+        found = json.loads(await _dispatch("find", {"pattern": "*"}, user))
+        assert not [match for match in found["matches"] if ".kiwiki" in match]
+
+        for tool in ("read_lines", "file_info"):
+            with pytest.raises(ValueError, match="not readable"):
+                await _dispatch(tool, {"path": ".kiwiki/agent_log.jsonl"}, user)
+
+    @pytest.mark.asyncio
+    async def test_grep_status_gibt_fremde_jobs_nicht_heraus(self, active_user):
+        """Regression: _grep_jobs ist prozessglobal und band Ergebnisse an keinen Tenant.
+
+        Die Treffer enthalten Dateipfade samt Zeileninhalten — eine geleakte
+        job_id haette einem anderen Benutzer Einblick gegeben.
+        """
+        from app import mcp_server
+
+        alice = User(username="alice", role="write")
+        bob = User(username="bob", role="write")
+        mcp_server._grep_jobs["job-1"] = {
+            "status": "completed",
+            "created_at": time.time(),
+            "result": {"matches": [{"file": "notes/geheim.md", "text": "VERTRAULICH"}]},
+            "owner": "alice",
+        }
+
+        own = json.loads(await _dispatch("grep_status", {"job_id": "job-1"}, alice))
+        assert own["status"] == "completed"
+
+        foreign = json.loads(await _dispatch("grep_status", {"job_id": "job-1"}, bob))
+        assert foreign["status"] == "not_found"
+        # "result" bleibt weg statt null zu sein — null verletzt das outputSchema.
+        assert "result" not in foreign
+
+    @pytest.mark.asyncio
+    async def test_hintergrund_grep_haelt_seine_task_referenz(self, active_user, tmp_file):
+        """Regression: eine unreferenzierte Task kann der GC mitten im Lauf einsammeln,
+        der Job bliebe dann dauerhaft auf 'running' und belegte seinen Slot."""
+        from app import mcp_server
+
+        user = User(username="alice", role="write")
+        tmp_file("notes/a.md", "---\ntitle: A\n---\n\nTREFFER")
+
+        started = json.loads(await _dispatch("grep", {"pattern": "TREFFER", "background": True}, user))
+        assert mcp_server._grep_tasks, "keine starke Referenz auf die laufende Task"
+
+        for _ in range(60):
+            await asyncio.sleep(0.05)
+            if mcp_server._grep_jobs[started["job_id"]]["status"] == "completed":
+                break
+        status = json.loads(await _dispatch("grep_status", {"job_id": started["job_id"]}, user))
+        assert status["status"] == "completed"
+        assert not mcp_server._grep_tasks, "abgeschlossene Task wurde nicht aufgeraeumt"
+
+    @pytest.mark.asyncio
+    async def test_listen_tools_liefern_ein_objekt(self, active_user, tmp_file):
+        """MCP laesst fuer structuredContent nur Objekte zu — Listen kommen unter 'items'."""
+        user = User(username="alice", role="admin")
+        tmp_file("notes/a.md", "---\ntitle: A\ntags: [python]\n---\n\nInhalt")
+
+        # search und fetch folgen dem OpenAI-Kontrakt und werden separat geprueft.
+        for tool, args in (
+            ("list_files", {}),
+            ("list_all_files", {}),
+            ("recent_files", {"limit": 5}),
+            ("tag_index", {}),
+            ("search_history", {}),
+        ):
+            payload = json.loads(await _dispatch(tool, args, user))
+            assert isinstance(payload, dict), f"{tool} liefert kein Objekt"
+            assert isinstance(payload["items"], list), f"{tool} hat kein items-Array"
+
+    @pytest.mark.asyncio
+    async def test_structured_content_bleibt_ein_objekt(self, active_user, tmp_file):
+        user = User(username="alice", role="admin")
+        tmp_file("notes/a.md", "---\ntitle: A\n---\n\nInhalt")
+
+        result = await _handle_message({
+            "jsonrpc": "2.0",
+            "id": 99,
+            "method": "tools/call",
+            "params": {"name": "list_files", "arguments": {}},
+        }, user)
+
+        assert isinstance(result["result"]["structuredContent"], dict)
+
+
+class TestOpenAIConnectorContract:
+    """search und fetch muessen dem ChatGPT-/Deep-Research-Kontrakt folgen.
+
+    Siehe developers.openai.com/api/docs/mcp: search liefert {"results": [...]}
+    mit id/title/url je Treffer, fetch liefert id/title/text/url (metadata
+    optional). Die id ist der Notizpfad und wird unveraendert an fetch gereicht.
+    """
+
+    @pytest.mark.asyncio
+    async def test_search_liefert_results_mit_id_title_url(self, monkeypatch, active_user, tmp_file):
+        monkeypatch.setenv("KIWIKI_BASE_URL", "https://wiki.example.com")
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/quartal.md", "---\ntitle: Quartalsbericht\n---\n\nUmsatz gestiegen")
+        from app.search import index_file, init_db
+
+        init_db()
+        index_file(rel)
+
+        payload = json.loads(await _dispatch("search", {"query": "Umsatz"}, user))
+
+        assert set(payload) == {"results"}
+        treffer = payload["results"]
+        assert treffer, "kein Treffer fuer den indizierten Begriff"
+        assert treffer[0]["id"] == rel
+        assert treffer[0]["title"] == "Quartalsbericht"
+        assert treffer[0]["url"] == "https://wiki.example.com/ui/file?path=notes%2Fquartal.md"
+
+    @pytest.mark.asyncio
+    async def test_fetch_liefert_id_title_text_url_metadata(self, monkeypatch, active_user, tmp_file):
+        monkeypatch.setenv("KIWIKI_BASE_URL", "https://wiki.example.com")
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/quartal.md", "---\ntitle: Quartalsbericht\nowner: alice\n---\n\nUmsatz gestiegen")
+
+        payload = json.loads(await _dispatch("fetch", {"id": rel}, user))
+
+        assert payload["id"] == rel
+        assert payload["title"] == "Quartalsbericht"
+        assert "Umsatz gestiegen" in payload["text"]
+        assert payload["url"] == "https://wiki.example.com/ui/file?path=notes%2Fquartal.md"
+        assert payload["metadata"]["owner"] == "alice"
+
+    @pytest.mark.asyncio
+    async def test_such_id_laesst_sich_direkt_an_fetch_reichen(self, monkeypatch, active_user, tmp_file):
+        """Der Kreis muss sich schliessen: search.id ist ein gueltiges fetch.id."""
+        monkeypatch.setenv("KIWIKI_BASE_URL", "https://wiki.example.com")
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/mit komma, test.md", "---\ntitle: Komma\n---\n\nSUCHBEGRIFF hier")
+        from app.search import index_file, init_db
+
+        init_db()
+        index_file(rel)
+
+        gefunden = json.loads(await _dispatch("search", {"query": "SUCHBEGRIFF"}, user))["results"]
+        geholt = json.loads(await _dispatch("fetch", {"id": gefunden[0]["id"]}, user))
+
+        assert "SUCHBEGRIFF" in geholt["text"]
+        # Sonderzeichen im Pfad muessen in der Zitier-URL kodiert sein
+        assert " " not in geholt["url"] and "," not in geholt["url"]
+
+    @pytest.mark.asyncio
+    async def test_fetch_ohne_basis_url_bleibt_relativ(self, monkeypatch, active_user, tmp_file):
+        monkeypatch.delenv("KIWIKI_BASE_URL", raising=False)
+        from app import mcp_server
+
+        monkeypatch.setattr(mcp_server, "_BASE_URL", "")
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/a.md", "---\ntitle: A\n---\n\nText")
+
+        payload = json.loads(await _dispatch("fetch", {"id": rel}, user))
+
+        assert payload["url"] == "/ui/file?path=notes%2Fa.md"
+
+    @pytest.mark.asyncio
+    async def test_read_file_behaelt_sein_eigenes_format(self, active_user, tmp_file):
+        """read_file ist nicht Teil des OpenAI-Kontrakts und bleibt unveraendert."""
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/a.md", "---\ntitle: A\n---\n\nText")
+
+        payload = json.loads(await _dispatch("read_file", {"path": rel}, user))
+
+        assert set(payload) == {"path", "frontmatter", "content"}
+
+
+class TestProtokollKonformitaet:
+    """Regressionen aus dem MCP-Spec-Audit.
+
+    Ein strikt validierender Client verwirft die gesamte Antwort, sobald ein
+    einziges Feld vom deklarierten Schema abweicht. Die Tests halten die
+    Stellen fest, an denen kiwiki das getan hat.
+    """
+
+    @pytest.mark.asyncio
+    async def test_ping_antwortet_leer(self, active_user):
+        """Ping ist in jeder Revision Pflicht und darf nicht -32601 liefern."""
+        antwort = await _handle_message({"jsonrpc": "2.0", "id": 7, "method": "ping"}, None)
+
+        assert antwort == {"jsonrpc": "2.0", "id": 7, "result": {}}
+
+    @pytest.mark.asyncio
+    async def test_ping_als_notification_bleibt_ohne_antwort(self, active_user):
+        assert await _handle_message({"jsonrpc": "2.0", "method": "ping"}, None) is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "angefragt,erwartet",
+        [
+            ("2024-11-05", "2024-11-05"),
+            ("2025-03-26", "2025-03-26"),
+            ("2025-06-18", "2025-06-18"),
+            # Unbekannte Revision: der Server nennt die neueste, die er kann.
+            ("2025-11-25", "2025-06-18"),
+        ],
+    )
+    async def test_protokollversion_wird_verhandelt(self, active_user, angefragt, erwartet):
+        body = {
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": angefragt, "capabilities": {}},
+        }
+        antwort = await _handle_message(body, User(username="alice", role="admin"))
+
+        assert antwort["result"]["protocolVersion"] == erwartet
+
+    def test_default_revision_kennt_structured_output(self):
+        """outputSchema/structuredContent existieren erst ab 2025-06-18.
+
+        Wird eine aeltere Revision als Standard verhandelt, liefert kiwiki
+        Felder aus, die es in der ausgehandelten Version nicht gibt.
+        """
+        from app.mcp_server import MCP_PROTOCOL_VERSION
+
+        assert MCP_PROTOCOL_VERSION >= "2025-06-18"
+
+    @pytest.mark.asyncio
+    async def test_resource_templates_liefern_eine_liste(self, active_user):
+        """-32601 wird als HTTP 404 ausgeliefert und laesst den Server defekt aussehen."""
+        antwort = await _handle_message(
+            {"jsonrpc": "2.0", "id": 1, "method": "resources/templates/list", "params": {}},
+            User(username="alice", role="admin"),
+        )
+
+        assert antwort["result"] == {"resourceTemplates": []}
+
+    @pytest.mark.asyncio
+    async def test_grep_status_laesst_result_weg_statt_null(self, active_user):
+        """Das outputSchema deklariert result als Objekt — null verletzt es."""
+        user = User(username="alice", role="admin")
+
+        payload = json.loads(await _dispatch("grep_status", {"job_id": "unbekannt"}, user))
+
+        schema = next(t for t in TOOLS if t["name"] == "grep_status")["outputSchema"]
+        assert payload["status"] == "not_found"
+        assert "result" not in payload
+        assert set(payload) <= set(schema["properties"])
+
+    @pytest.mark.asyncio
+    async def test_list_all_files_bleibt_im_eigenen_schema(self, active_user, tmp_file):
+        """Das Schema verbot additionalProperties, die Antwort enthielt created."""
+        user = User(username="alice", role="admin")
+        tmp_file("notes/a.md", '---\ntitle: A\ncreated: "2026-01-01"\n---\n\nText')
+
+        payload = json.loads(await _dispatch("list_all_files", {}, user))
+
+        item_schema = next(
+            t for t in TOOLS if t["name"] == "list_all_files"
+        )["outputSchema"]["properties"]["items"]["items"]
+        erlaubt = set(item_schema["properties"])
+        assert payload["items"], "keine Datei gelistet"
+        for eintrag in payload["items"]:
+            assert set(eintrag) <= erlaubt, f"unerwartete Felder: {set(eintrag) - erlaubt}"
+            assert set(item_schema["required"]) <= set(eintrag)
+
+    @pytest.mark.asyncio
+    async def test_fetch_metadata_bleibt_lesbar(self, active_user, tmp_file):
+        """str() auf eine Liste liefert die Python-Repraesentation."""
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/a.md", "---\ntitle: A\ntags: [python, mcp]\n---\n\nText")
+
+        payload = json.loads(await _dispatch("fetch", {"id": rel}, user))
+
+        assert payload["metadata"]["tags"] == "python, mcp"
+
+
+class TestUnquotierteDatenImFrontmatter:
+    """YAML liest `created: 2026-01-01` als datetime.date.
+
+    Solche Werte liefen ungefiltert in json.dumps() und in Sortierungen und
+    liessen die betroffenen Werkzeuge mit einem internen Fehler abbrechen.
+    Die Server-Instruktionen fordern created/updated ausdruecklich ein, der
+    Fall ist also der Normalfall und nicht die Ausnahme.
+    """
+
+    FRONTMATTER = "---\ntitle: A\ntags: [python]\ncreated: 2026-01-01\nupdated: 2026-01-02\n---\n\nHallo Welt\n"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("tool", ["read_file", "list_all_files", "recent_files", "statistics", "list_files"])
+    async def test_werkzeuge_ueberstehen_unquotierte_daten(self, active_user, tmp_file, tool):
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/a.md", self.FRONTMATTER)
+        args = {"path": rel} if tool == "read_file" else {}
+
+        payload = json.loads(await _dispatch(tool, args, user))
+
+        assert isinstance(payload, dict)
+
+    @pytest.mark.asyncio
+    async def test_datum_wird_als_iso_string_geliefert(self, active_user, tmp_file):
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/a.md", self.FRONTMATTER)
+
+        payload = json.loads(await _dispatch("read_file", {"path": rel}, user))
+
+        assert payload["frontmatter"]["created"] == "2026-01-01"
+
+    @pytest.mark.asyncio
+    async def test_schreiben_speichert_datum_als_string(self, active_user):
+        """Sonst erzeugt der Server die defekte Datei selbst und liest sie nie wieder."""
+        from app.storage import read_file as storage_read_file
+
+        user = User(username="alice", role="admin")
+        await _dispatch("write_file", {"path": "notes/c.md", "content": self.FRONTMATTER}, user)
+
+        assert isinstance(storage_read_file("notes/c.md").frontmatter["created"], str)
+
+
+class TestFrontmatterTypenImSchema:
+    """Frontmatter ist frei getippt, die outputSchemas sind es nicht.
+
+    `title: 2026` und `tags: python` sind gültiges YAML und ergeben int bzw.
+    Skalar. Ungeprüft weitergereicht verletzen sie die deklarierten Typen, und
+    ein validierender Client verwirft die komplette Antwort — nicht nur den
+    betroffenen Eintrag. Seit Revision 2025-06-18 validieren Clients das.
+    """
+
+    FRONTMATTER = '---\ntitle: 2026\ntags: python\ncreated: "2026-01-01"\nupdated: "2026-01-02"\n---\n\nHallo\n'
+
+    @staticmethod
+    def _item_schema(tool_name: str) -> dict:
+        return next(t for t in TOOLS if t["name"] == tool_name)["outputSchema"]["properties"]["items"]["items"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("tool", ["list_all_files", "recent_files"])
+    async def test_titel_und_tags_halten_ihre_deklarierten_typen(self, active_user, tmp_file, tool):
+        user = User(username="alice", role="admin")
+        tmp_file("notes/a.md", self.FRONTMATTER)
+
+        payload = json.loads(await _dispatch(tool, {}, user))
+
+        eintraege = payload["items"]
+        assert eintraege, "keine Datei gelistet"
+        erlaubt = set(self._item_schema(tool)["properties"])
+        for eintrag in eintraege:
+            assert set(eintrag) <= erlaubt
+            assert isinstance(eintrag["title"], str), eintrag["title"]
+            assert isinstance(eintrag["updated"], str)
+            assert isinstance(eintrag["tags"], list)
+            assert all(isinstance(tag, str) for tag in eintrag["tags"])
+
+    @pytest.mark.asyncio
+    async def test_skalarer_tag_geht_nicht_verloren(self, active_user, tmp_file):
+        """Verwerfen war die alte Rettung — der Tag war danach weg."""
+        user = User(username="alice", role="admin")
+        tmp_file("notes/a.md", self.FRONTMATTER)
+
+        payload = json.loads(await _dispatch("list_all_files", {}, user))
+
+        eintrag = next(item for item in payload["items"] if item["path"] == "notes/a.md")
+        assert eintrag["tags"] == ["python"]
+
+    @pytest.mark.asyncio
+    async def test_batch_tag_zerlegt_skalare_tags_nicht_in_buchstaben(self, active_user, tmp_file):
+        """list("python") ergab sechs Tags — und schrieb sie in die Notiz zurück."""
+        from app.storage import read_file as storage_read_file
+
+        user = User(username="alice", role="admin")
+        tmp_file("notes/a.md", self.FRONTMATTER)
+
+        await _dispatch("batch_tag", {"files": ["notes/a.md"], "tags": ["neu"]}, user)
+
+        assert storage_read_file("notes/a.md").frontmatter["tags"] == ["python", "neu"]
+
+    @pytest.mark.asyncio
+    async def test_template_deklariert_was_es_liefert(self, active_user):
+        """"adr" wird auf "decision" abgebildet — der Rückgabewert sagt das."""
+        user = User(username="alice", role="admin")
+        schema = next(t for t in TOOLS if t["name"] == "template")["outputSchema"]
+
+        payload = json.loads(await _dispatch("template", {"template_type": "adr", "title": "Wahl"}, user))
+
+        assert set(payload) <= set(schema["properties"])
+        assert set(schema["required"]) <= set(payload)
+        assert payload["template_type"] == "decision"
+
+    @pytest.mark.asyncio
+    async def test_nan_und_inf_bleiben_gueltiges_json(self, active_user, tmp_file):
+        """json.dumps() schreibt NaN/Infinity als Literale — kein striktes JSON."""
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/n.md", "---\ntitle: N\nscore: .nan\nratio: .inf\n---\n\nText\n")
+
+        raw = await _dispatch("read_file", {"path": rel}, user)
+
+        def _verboten(constant):
+            raise AssertionError(f"striktes JSON kennt {constant} nicht")
+
+        payload = json.loads(raw, parse_constant=_verboten)
+        assert payload["frontmatter"]["score"] == "nan"

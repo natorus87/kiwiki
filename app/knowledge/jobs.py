@@ -66,17 +66,33 @@ def recover_running_jobs(connection: sqlite3.Connection) -> None:
 
 
 def complete_job(connection: sqlite3.Connection, path: str) -> None:
-    connection.execute("DELETE FROM knowledge_jobs WHERE path = ?", (path,))
+    """Schliesst genau den Job ab, der gerade lief.
+
+    Die `state = 'running'`-Bedingung ist entscheidend: wurde die Datei waehrend
+    der Verarbeitung erneut gespeichert, hat `enqueue_job` denselben Datensatz
+    bereits auf 'pending' mit hoeherer Revision gesetzt. Ein bedingungsloses
+    DELETE haette diese Nacharbeit verworfen und den Index dauerhaft veralten
+    lassen.
+    """
+    connection.execute("DELETE FROM knowledge_jobs WHERE path = ? AND state = 'running'", (path,))
     connection.commit()
 
 
 def fail_job(connection: sqlite3.Connection, path: str, exc: Exception) -> None:
-    row = connection.execute("SELECT attempts FROM knowledge_jobs WHERE path = ?", (path,)).fetchone()
-    attempts = int(row[0]) if row else 3
+    row = connection.execute(
+        "SELECT attempts, state FROM knowledge_jobs WHERE path = ?", (path,)
+    ).fetchone()
+    if row is None:
+        return
+    # Steht der Job nicht mehr auf 'running', wurde er zwischenzeitlich neu
+    # eingereiht. Dessen frischen Zaehler nicht mit dem alten Fehlschlag ueberschreiben.
+    if str(row[1]) != "running":
+        return
+    attempts = int(row[0])
     state = "failed" if attempts >= 3 else "pending"
     error = type(exc).__name__[:128]
     connection.execute(
-        "UPDATE knowledge_jobs SET state=?, last_error=?, updated_at=? WHERE path=?",
+        "UPDATE knowledge_jobs SET state=?, last_error=?, updated_at=? WHERE path=? AND state='running'",
         (state, error, time.time(), path),
     )
     connection.commit()

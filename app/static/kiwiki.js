@@ -1439,11 +1439,15 @@ function kwExportSelected() {
   form.method = 'POST';
   form.action = '/ui/export';
   form.style.display = 'none';
-  var input = document.createElement('input');
-  input.type = 'hidden';
-  input.name = 'paths';
-  input.value = paths.join(',');
-  form.appendChild(input);
+  // Ein Feld pro Pfad statt einer kommaseparierten Liste — sonst zerfaellt ein
+  // Dateiname mit Komma serverseitig in zwei Fragmente.
+  paths.forEach(function(path) {
+    var input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'path';
+    input.value = path;
+    form.appendChild(input);
+  });
   document.body.appendChild(form);
   form.submit();
   form.remove();
