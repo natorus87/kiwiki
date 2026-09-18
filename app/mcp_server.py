@@ -66,8 +66,11 @@ from .constants import APP_VERSION, NH3_ATTRS, NH3_TAGS
 router = APIRouter()
 logger = logging.getLogger("kiwiki.mcp")
 
-SUPPORTED_PROTOCOL_VERSIONS = {"2025-03-26", "2024-11-05"}
-MCP_PROTOCOL_VERSION = "2025-03-26"
+SUPPORTED_PROTOCOL_VERSIONS = {"2025-06-18", "2025-03-26", "2024-11-05"}
+# 2025-06-18 ist die Revision, die outputSchema und structuredContent definiert —
+# beides liefert kiwiki. Aeltere Clients bekommen weiterhin die von ihnen
+# angefragte Revision zurueck.
+MCP_PROTOCOL_VERSION = "2025-06-18"
 
 # Base URL for constructing SSE callback URLs — must match the public address.
 # Falls back to the request's own base_url if not set.
@@ -200,6 +203,18 @@ def _document_url(path: str) -> str:
     steht kein Request zur Verfuegung, aus dem sich der Host ableiten liesse.
     """
     return f"{_configured_base_url()}/ui/file?path={quote(str(path), safe='')}"
+
+
+def _metadata_value(value) -> str:
+    """Frontmatter-Wert als lesbaren String fuer fetch.metadata.
+
+    Der OpenAI-Connector erwartet flache String-Werte. str() auf eine Liste
+    liefert die Python-Repraesentation ("['python']") und damit einen Wert,
+    den kein Client sinnvoll anzeigen kann.
+    """
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(item) for item in value)
+    return str(value)
 
 
 def validate_oauth_config() -> None:
@@ -1544,9 +1559,10 @@ _ALL_FILE_SCHEMA = {
         "path": {"type": "string"},
         "title": {"type": "string"},
         "updated": {"type": "string"},
+        "created": {"type": "string"},
         "tags": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["path", "title", "updated", "tags"],
+    "required": ["path", "title", "updated", "created", "tags"],
     "additionalProperties": False,
 }
 
@@ -2252,8 +2268,20 @@ async def _handle_message(body: dict, user: User | None) -> dict | None:
     if method in ("notifications/initialized", "initialized"):
         return None if _is_notification(body) else _rpc_ok(req_id, {})
 
+    # Ping ist in jeder MCP-Revision Pflicht: der Empfaenger muss umgehend mit
+    # einer leeren Antwort reagieren. Ohne Handler lief der Keepalive in
+    # "Method not found" (HTTP 404) und Clients verwarfen die Sitzung.
+    if method == "ping":
+        return None if _is_notification(body) else _rpc_ok(req_id, {})
+
     if method == "tools/list":
         return _rpc_ok(req_id, {"tools": TOOLS})
+
+    # kiwiki bietet keine URI-Templates an. Clients fragen die Liste im
+    # Discovery trotzdem ab; -32601 wird dort als HTTP 404 ausgeliefert und
+    # laesst den Server defekt aussehen.
+    if method == "resources/templates/list":
+        return _rpc_ok(req_id, {"resourceTemplates": []})
 
     # ── B1: MCP Resources ────────────────────────────────────────────────────
     if method == "resources/list":
@@ -3010,7 +3038,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                 "title": str(metadata.get("title") or os.path.splitext(os.path.basename(fc.path))[0]),
                 "text": fc.content,
                 "url": _document_url(fc.path),
-                "metadata": {key: str(value) for key, value in metadata.items()},
+                "metadata": {key: _metadata_value(value) for key, value in metadata.items()},
             },
             ensure_ascii=False, indent=2,
         )
@@ -4097,10 +4125,12 @@ nav{{margin-bottom:2rem}}section{{margin-bottom:3rem;border-bottom:1px solid #ee
         # dass die job_id gueltig ist.
         if job is not None and job.get("owner") != (user.username if user else ""):
             job = None
+        # "result" ist optional. Ein null-Wert wuerde das eigene outputSchema
+        # ("type": "object") verletzen, deshalb bleibt der Schluessel hier weg.
         if job is None:
-            return json.dumps({"status": "not_found", "job_id": job_id, "result": None}, ensure_ascii=False)
+            return json.dumps({"status": "not_found", "job_id": job_id}, ensure_ascii=False)
         if job["status"] == "running":
-            return json.dumps({"status": "running", "job_id": job_id, "result": None}, ensure_ascii=False)
+            return json.dumps({"status": "running", "job_id": job_id}, ensure_ascii=False)
         return json.dumps({"status": "completed", "job_id": job_id, "result": job["result"]}, ensure_ascii=False, indent=2)
 
     raise ValueError(f"Unknown tool: {name!r}")
