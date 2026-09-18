@@ -43,6 +43,8 @@ from .mcp_git import validate_git_revision as _validate_git_revision
 from .indexing import deindex_document, index_document
 from .search import get_db, init_db, reindex_all, search as fts_search
 from .storage import (
+    fm_str,
+    fm_tags,
     _read_frontmatter_only,
     append_file,
     create_note,
@@ -1964,7 +1966,19 @@ _OUTPUT_SCHEMAS = {
         "required": ["total_files", "total_words", "total_chars", "files_by_folder", "top_tags", "most_recent_files", "oldest_files"],
         "additionalProperties": False,
     },
-    "template": _STATUS_SCHEMA,
+    "template": {
+        # Eigenes Schema statt _STATUS_SCHEMA: template liefert zusaetzlich den
+        # tatsaechlich verwendeten Typ zurueck ("adr" wird auf "decision"
+        # abgebildet), und _STATUS_SCHEMA verbietet jedes weitere Feld.
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "status": {"type": "string"},
+            "template_type": {"type": "string"},
+        },
+        "required": ["path", "status", "template_type"],
+        "additionalProperties": False,
+    },
     "validate_links": {
         "type": "object",
         "properties": {
@@ -2727,9 +2741,9 @@ def _file_summary(path) -> dict:
     stat = path.stat()
     try:
         meta = _read_frontmatter_only(rel)
-        title = meta.get("title", path.stem)
-        updated = meta.get("updated", "")
-        tags = meta.get("tags", [])
+        title = fm_str(meta.get("title"), path.stem)
+        updated = fm_str(meta.get("updated"))
+        tags = fm_tags(meta.get("tags"))
     except Exception:
         title = path.stem
         updated = ""
@@ -2738,7 +2752,7 @@ def _file_summary(path) -> dict:
         "path": rel,
         "title": title,
         "updated": updated,
-        "tags": tags if isinstance(tags, list) else [],
+        "tags": tags,
         "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
         "size_bytes": stat.st_size,
     }
@@ -2768,10 +2782,8 @@ def _resolve_local_link(source_rel: str, link: str) -> str | None:
 
 def _frontmatter_title_and_tags(path: str) -> tuple[str, list[str], dict]:
     meta = _read_frontmatter_only(path)
-    tags = meta.get("tags", [])
-    if not isinstance(tags, list):
-        tags = []
-    return meta.get("title", os.path.splitext(os.path.basename(path))[0]), tags, meta
+    default_title = os.path.splitext(os.path.basename(path))[0]
+    return fm_str(meta.get("title"), default_title), fm_tags(meta.get("tags")), meta
 
 
 def _index_markdown(path: str) -> None:
@@ -3979,7 +3991,9 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         updated = []
         for path in files:
             meta = _read_frontmatter_only(path)
-            existing_tags = list(meta.get("tags", []))
+            # list() auf einen Skalar ergaebe aus "python" sechs einzelne
+            # Buchstaben — und schriebe sie als Tags in die Notiz zurueck.
+            existing_tags = fm_tags(meta.get("tags"))
             if mode == "replace":
                 new_tags = tags
             else:
