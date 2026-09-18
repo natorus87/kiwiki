@@ -39,6 +39,19 @@ def _headers(key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"}
 
 
+def _disable_rate_limit(monkeypatch) -> None:
+    """Nimmt das Read-Limit (60 Requests/Minute) aus dem Weg.
+
+    ``_wait_until_ready`` pollt ``/api/knowledge/status`` alle 20 ms, also bis zu
+    150 mal pro Wartevorgang. Sobald der Background-Worker unter Last laenger als
+    rund 1,2 Sekunden braucht, ueberschreiten die Polls das Read-Limit und der
+    Test scheitert an einem 429 statt an der eigentlichen Zusicherung.
+    """
+    import app.rate_limiter as rate_limiter
+
+    monkeypatch.setattr(rate_limiter, "_ENABLED", False)
+
+
 def _write_note(username: str, relative_path: str, content: str) -> Path:
     from app.tenancy import ensure_user_workspace
 
@@ -110,6 +123,7 @@ def test_knowledge_endpoints_enforce_read_and_write_roles(monkeypatch):
 
 def test_enabled_status_search_and_reindex_are_tenant_isolated(monkeypatch):
     _configure_users(monkeypatch)
+    _disable_rate_limit(monkeypatch)
     monkeypatch.setenv("KIWIKI_KNOWLEDGE_ENABLED", "true")
     _write_note(
         "alice",
@@ -165,6 +179,28 @@ def test_enabled_status_search_and_reindex_are_tenant_isolated(monkeypatch):
     assert "borealis" not in json.dumps(isolated_payload).lower()
     assert "/home/" not in json.dumps(alice_payload)
     assert "/home/" not in json.dumps(bob_payload)
+
+
+def test_status_polling_survives_more_requests_than_the_read_limit(monkeypatch):
+    """Regression: Der Readiness-Poll darf nicht am eigenen Read-Limit scheitern.
+
+    Ohne ``_disable_rate_limit`` liefert der 61. Status-Request ein 429, weil
+    ``/api/knowledge/status`` im Read-Tier (60 Requests/Minute) liegt. Genau das
+    machte ``test_enabled_status_search_and_reindex_are_tenant_isolated`` flaky,
+    sobald der Background-Worker unter Last mehr als rund 1,2 Sekunden brauchte.
+    """
+    _configure_users(monkeypatch)
+    _disable_rate_limit(monkeypatch)
+    monkeypatch.setenv("KIWIKI_KNOWLEDGE_ENABLED", "true")
+
+    poll_count = int(3.0 / 0.02) + 1  # Worst Case von _wait_until_ready
+    with TestClient(app) as client:
+        status_codes = {
+            client.get("/api/knowledge/status", headers=_headers("reader-key")).status_code
+            for _ in range(poll_count)
+        }
+
+    assert status_codes == {200}
 
 
 def test_knowledge_mcp_tool_definitions_have_bounded_schemas_and_annotations():
