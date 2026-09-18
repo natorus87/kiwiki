@@ -40,6 +40,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   Integrationen, die `content[0].text` direkt als Array auswerten, müssen angepasst werden.
 
 ### Fixed
+- **Frei getippte Frontmatter-Werte halten die Werkzeug-Schemas ein** — `title: 2026` und `tags: python` sind
+  gültiges YAML und ergeben int bzw. Skalar. `list_all_files` und `recent_files` reichten sie ungeprüft weiter und
+  verletzten damit ihr eigenes `outputSchema`; ein validierender Client verwarf daraufhin die komplette Antwort.
+  Ein skalarer Tag wurde zudem stillschweigend verworfen statt als einelementige Liste gelesen.
+- **`batch_tag` zerlegt skalare Tags nicht mehr in Einzelbuchstaben** — `list("python")` ergab sechs Tags
+  (`p`, `y`, `t`, …) und schrieb sie in die Notiz zurück. Betroffen war jede Notiz mit `tags:` als Skalar.
+- **`template` deklariert das `template_type`-Feld, das es liefert** — das Werkzeug teilte sich `_STATUS_SCHEMA`
+  mit sechs anderen, und dieses verbot über `additionalProperties: false` jedes weitere Feld.
+- **`NaN` und `Infinity` im Frontmatter brechen die Antwort nicht mehr** — `score: .nan` landete als nacktes
+  JSON-Literal in der Ausgabe. RFC 8259 kennt beides nicht; strikte Parser scheiterten an der gesamten Antwort.
 - **`ping` wird beantwortet** — die MCP-Spezifikation verlangt in jeder Revision eine umgehende leere Antwort.
   kiwiki lief stattdessen in `-32601 Method not found`, was als HTTP 404 ausgeliefert wurde; Clients, die mit
   `ping` am Leben halten, verwarfen die Sitzung.
