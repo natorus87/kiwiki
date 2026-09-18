@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 import tempfile
 import threading
@@ -213,9 +214,41 @@ def _normalize_metadata(value):
         return {str(key): _normalize_metadata(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [_normalize_metadata(item) for item in value]
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        # JSON kennt weder NaN noch Infinity. json.dumps() schreibt die Literale
+        # trotzdem und macht die Antwort damit fuer jeden strikten Parser
+        # unlesbar — als String bleibt der Wert erhalten und gueltig.
+        return str(value)
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
+
+
+def fm_str(value, default: str = "") -> str:
+    """Frontmatter-Wert als String, wie ihn die Werkzeug-Schemas deklarieren.
+
+    `title: 2026` ist gueltiges YAML und ergibt ein int. Ungeprueft weitergereicht
+    verletzt es `{"type": "string"}` und laesst einen validierenden Client die
+    komplette Antwort verwerfen — nicht nur den betroffenen Eintrag.
+    """
+    if value is None or value == "":
+        return default
+    return value if isinstance(value, str) else str(value)
+
+
+def fm_tags(value) -> list[str]:
+    """Frontmatter-Tags als Stringliste.
+
+    `tags: python` ist ein Skalar, keine Liste. Ihn zu verwerfen verliert den Tag,
+    ihn per list() zu zerlegen macht aus "python" sechs einzelne Buchstaben.
+    """
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, (list, tuple, set)):
+        return [fm_str(item) for item in value if fm_str(item)]
+    if value is None:
+        return []
+    return [fm_str(value)]
 
 
 def _load_post(source, *, is_text: bool = False) -> frontmatter.Post:
@@ -364,7 +397,7 @@ def list_files(path: str = ".") -> list[FileInfo]:
             mtime_str = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat().split("T")[0]
             try:
                 meta = _read_frontmatter_only(rel_path)
-                updated = meta.get("updated", mtime_str)
+                updated = fm_str(meta.get("updated"), mtime_str)
             except Exception:
                 updated = mtime_str
             items.append(
@@ -623,10 +656,10 @@ def _scan_markdown_recursive(dir_path: Path, root: Path, items: list) -> None:
             rel_path = os.path.relpath(entry.path, root)
             try:
                 meta = _read_frontmatter_only(rel_path)
-                title = meta.get("title", Path(entry.name).stem)
-                updated = meta.get("updated", "")
-                created = meta.get("created", "")
-                tags = meta.get("tags", [])
+                title = fm_str(meta.get("title"), Path(entry.name).stem)
+                updated = fm_str(meta.get("updated"))
+                created = fm_str(meta.get("created"))
+                tags = fm_tags(meta.get("tags"))
             except Exception:
                 title = Path(entry.name).stem
                 updated = ""
