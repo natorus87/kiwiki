@@ -207,3 +207,123 @@ async def test_wissensmaschine_haelt_ihr_schema_auch_aktiviert_ein(active_user, 
     monkeypatch.setenv("KIWIKI_KNOWLEDGE_ENABLED", "true")
     _seed_workspace(active_user)
     await _aufrufen_und_pruefen(name)
+
+
+class TestWissensmaschineMitDaten:
+    """Die Knowledge-Schemas gegen echte Relationen prüfen, nicht gegen leere.
+
+    Im Ruhezustand liefern diese Werkzeuge `entity: null` und `neighbors: []` —
+    daran hält jedes Schema. Aussagekräftig werden die Felder erst an einem
+    indizierten Workspace, und genau dort standen vorher nur
+    `{"type": "object", "additionalProperties": true}`.
+    """
+
+    _NOTIZ_A = (
+        "---\ntitle: A\ntype: note\ntags: [python, mcp]\nowner: alice\nrelated: [notes/b.md]\n---\n\n"
+        "# A\n\nText [[notes/b]]\n"
+    )
+    _NOTIZ_B = "---\ntitle: B\ntype: note\ntags: [python]\n---\n\n# B\n"
+
+    @staticmethod
+    def _indizieren(tmp_file) -> tuple[str, str]:
+        """Workspace indizieren und eine echte entity_id und relation_id liefern."""
+        from app.knowledge.db import open_database
+        from app.knowledge.service import _workspace, process_pending_current_workspace
+        from app.knowledge.reconcile import reconcile_workspace
+
+        tmp_file("notes/a.md", TestWissensmaschineMitDaten._NOTIZ_A)
+        tmp_file("notes/b.md", TestWissensmaschineMitDaten._NOTIZ_B)
+        workspace = _workspace()
+        connection = open_database(workspace)
+        try:
+            reconcile_workspace(connection, workspace, 25)
+        finally:
+            connection.close()
+        assert process_pending_current_workspace(50) == 2
+
+        connection = open_database(workspace)
+        try:
+            entity_id = connection.execute(
+                "SELECT id FROM entities WHERE kind='document' ORDER BY canonical_name"
+            ).fetchone()
+            relation_id = connection.execute(
+                "SELECT id FROM relations ORDER BY id"
+            ).fetchone()
+        finally:
+            connection.close()
+        assert entity_id and relation_id, "Indexierung hat nichts erzeugt"
+        return entity_id[0], relation_id[0]
+
+    @pytest.fixture
+    def indiziert(self, active_user, monkeypatch, tmp_file):
+        monkeypatch.setenv("KIWIKI_KNOWLEDGE_ENABLED", "true")
+        return self._indizieren(tmp_file)
+
+    async def _pruefen(self, name: str, args: dict) -> dict:
+        user = User(username="alice", api_key="test-key", role="admin")
+        payload = json.loads(await _dispatch(name, args, user))
+        fehler = list(Draft202012Validator(_SCHEMAS[name]["outputSchema"]).iter_errors(payload))
+        assert not fehler, "\n".join(f"{name}: {list(e.path)} — {e.message}" for e in fehler[:5])
+        return payload
+
+    async def test_entity_details_liefert_eine_entitaet(self, indiziert):
+        entity_id, _ = indiziert
+
+        payload = await self._pruefen("entity_details", {"entity_id": entity_id})
+
+        assert payload["entity"]["kind"] == "document"
+
+    async def test_unbekannte_entity_id_bleibt_null(self, indiziert):
+        """null heißt "nachgesehen, nichts gefunden" — ein fehlendes Feld nicht."""
+        payload = await self._pruefen("entity_details", {"entity_id": "gibtesnicht"})
+
+        assert payload["entity"] is None
+
+    async def test_nachbarn_tragen_vollstaendige_relationen(self, indiziert):
+        entity_id, _ = indiziert
+
+        payload = await self._pruefen("entity_neighbors", {"entity_id": entity_id, "depth": 2})
+
+        assert payload["depth"] == 2
+        assert payload["neighbors"], "keine Relationen gefunden"
+        for fakt in payload["neighbors"]:
+            # Genau eines der beiden Felder trägt das Objekt (DB-CHECK).
+            assert (fakt["entity_id"] is None) != (fakt["value"] is None)
+            assert fakt["source"] == "notes/a.md"
+
+    async def test_tiefe_wird_auf_den_erlaubten_bereich_geklemmt(self, indiziert):
+        """Das Schema sagt 1..3 zu — der Server muss das auch einhalten."""
+        entity_id, _ = indiziert
+
+        payload = await self._pruefen("entity_neighbors", {"entity_id": entity_id, "depth": 99})
+
+        assert payload["depth"] == 3
+
+    async def test_fact_timeline_liefert_dieselben_fakten(self, indiziert):
+        entity_id, _ = indiziert
+
+        payload = await self._pruefen("fact_timeline", {"entity_id": entity_id})
+
+        assert payload["facts"]
+
+    async def test_explain_relation_liefert_herkunft_und_konfidenz(self, indiziert):
+        _, relation_id = indiziert
+
+        payload = await self._pruefen("explain_relation", {"relation_id": relation_id})
+
+        relation = payload["relation"]
+        assert relation["extraction"] == "frontmatter"
+        assert 0 <= relation["confidence"] <= 1
+        assert relation["source"] == "notes/a.md"
+
+    async def test_unbekannte_relation_id_bleibt_null(self, indiziert):
+        payload = await self._pruefen("explain_relation", {"relation_id": "gibtesnicht"})
+
+        assert payload["relation"] is None
+
+    async def test_reindex_meldet_eingereiht(self, active_user, monkeypatch):
+        monkeypatch.setenv("KIWIKI_KNOWLEDGE_ENABLED", "true")
+
+        payload = await self._pruefen("knowledge_reindex", {})
+
+        assert payload == {"status": "queued", "enabled": True}
