@@ -20,6 +20,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   passend zur bereits bestehenden Schreibsperre.
 
 ### Changed
+- **MCP verhandelt jetzt Revision 2025-06-18** — `outputSchema` und `structuredContent` sind erst ab dieser
+  Revision Teil der Spezifikation. kiwiki lieferte beides aus, nannte im Handshake aber `2025-03-26`; ein Client,
+  der sein Tool-Modell an der ausgehandelten Revision ausrichtet, sah dort unbekannte Felder. Clients, die
+  `2024-11-05` oder `2025-03-26` anfragen, bekommen weiterhin genau diese Revision; eine neuere Anfrage
+  (etwa `2025-11-25`) wird auf `2025-06-18` beantwortet.
+- **`fetch` liefert Listen-Metadaten lesbar** — `tags: [python, mcp]` erscheint als `"python, mcp"` statt als
+  Python-Repräsentation `"['python', 'mcp']"`.
 - **BREAKING: `search` und `fetch` folgen dem OpenAI-Connector-Kontrakt** — `search` liefert
   `{"results": [{"id", "title", "text", "url"}]}`, `fetch` liefert `{"id", "title", "text", "url", "metadata"}`.
   Die `id` ist der Notizpfad und lässt sich unverändert an `fetch` weiterreichen; `url` zitiert über
@@ -33,6 +40,21 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   Integrationen, die `content[0].text` direkt als Array auswerten, müssen angepasst werden.
 
 ### Fixed
+- **`ping` wird beantwortet** — die MCP-Spezifikation verlangt in jeder Revision eine umgehende leere Antwort.
+  kiwiki lief stattdessen in `-32601 Method not found`, was als HTTP 404 ausgeliefert wurde; Clients, die mit
+  `ping` am Leben halten, verwarfen die Sitzung.
+- **Unquotierte Datumsangaben im Frontmatter brechen die Werkzeuge nicht mehr** — YAML liest `created: 2026-01-01`
+  als `datetime.date`. Dieser Wert lief bis in `json.dumps()` und in Sortierungen und ließ `read_file`,
+  `read_many`, `list_files`, `list_all_files`, `recent_files` und `statistics` mit einem internen Fehler
+  abbrechen. Die Server-Instruktionen fordern `created`/`updated` ausdrücklich ein, und `write_file` schrieb den
+  Datumswert unquotiert zurück — der Server erzeugte die unlesbare Notiz also selbst. Frontmatter wird jetzt beim
+  Parsen auf JSON-taugliche Typen normalisiert, Lese- und Schreibpfad gemeinsam.
+- **`list_all_files` hält sein eigenes `outputSchema` ein** — die Antwort enthielt `created`, das Schema verbot
+  über `additionalProperties: false` jedes weitere Feld. Strikt validierende Clients verwarfen das Ergebnis.
+- **`grep_status` liefert kein `null` mehr für `result`** — das Feld ist optional und bleibt bei `not_found` und
+  `running` weg, statt den im Schema deklarierten Objekt-Typ zu verletzen.
+- **`resources/templates/list` antwortet mit einer leeren Liste** — kiwiki bietet keine URI-Templates an, Clients
+  fragen sie im Discovery trotzdem ab. Die bisherige `-32601`-Antwort kam als HTTP 404 zurück.
 - **Notizen mit doppeltem Tag brechen den Wissensindex nicht mehr** — Frontmatter-Listen werden vor der
   Indexierung dedupliziert. Zuvor erzeugte `tags: [python, python]` zwei Relationen mit identischem
   Primärschlüssel; das Dokument blieb nach drei Fehlversuchen dauerhaft unindexiert und der Tenant-Status
