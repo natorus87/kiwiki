@@ -20,6 +20,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   passend zur bereits bestehenden Schreibsperre.
 
 ### Changed
+- **Die Wissens-Werkzeuge deklarieren ihre Antwort** — `entity_details`, `entity_neighbors`, `fact_timeline`,
+  `explain_relation` und `knowledge_reindex` standen bisher auf `{"type": "object", "additionalProperties": true}`
+  und sagten damit gar nichts aus. Die Schemas benennen jetzt Felder, Typen, Wertebereiche (`depth` 1–3,
+  `confidence` 0–1) und erlaubte `status`-Werte. `entity` und `relation` sind ausdrücklich nullable: `null`
+  heißt „nachgesehen, nichts gefunden", ein fehlendes Feld heißt „Wissensmaschine aus".
 - **MCP verhandelt jetzt Revision 2025-06-18** — `outputSchema` und `structuredContent` sind erst ab dieser
   Revision Teil der Spezifikation. kiwiki lieferte beides aus, nannte im Handshake aber `2025-03-26`; ein Client,
   der sein Tool-Modell an der ausgehandelten Revision ausrichtet, sah dort unbekannte Felder. Clients, die
