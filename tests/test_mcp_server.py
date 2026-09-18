@@ -1547,3 +1547,86 @@ class TestUnquotierteDatenImFrontmatter:
         await _dispatch("write_file", {"path": "notes/c.md", "content": self.FRONTMATTER}, user)
 
         assert isinstance(storage_read_file("notes/c.md").frontmatter["created"], str)
+
+
+class TestFrontmatterTypenImSchema:
+    """Frontmatter ist frei getippt, die outputSchemas sind es nicht.
+
+    `title: 2026` und `tags: python` sind gültiges YAML und ergeben int bzw.
+    Skalar. Ungeprüft weitergereicht verletzen sie die deklarierten Typen, und
+    ein validierender Client verwirft die komplette Antwort — nicht nur den
+    betroffenen Eintrag. Seit Revision 2025-06-18 validieren Clients das.
+    """
+
+    FRONTMATTER = '---\ntitle: 2026\ntags: python\ncreated: "2026-01-01"\nupdated: "2026-01-02"\n---\n\nHallo\n'
+
+    @staticmethod
+    def _item_schema(tool_name: str) -> dict:
+        return next(t for t in TOOLS if t["name"] == tool_name)["outputSchema"]["properties"]["items"]["items"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("tool", ["list_all_files", "recent_files"])
+    async def test_titel_und_tags_halten_ihre_deklarierten_typen(self, active_user, tmp_file, tool):
+        user = User(username="alice", role="admin")
+        tmp_file("notes/a.md", self.FRONTMATTER)
+
+        payload = json.loads(await _dispatch(tool, {}, user))
+
+        eintraege = payload["items"]
+        assert eintraege, "keine Datei gelistet"
+        erlaubt = set(self._item_schema(tool)["properties"])
+        for eintrag in eintraege:
+            assert set(eintrag) <= erlaubt
+            assert isinstance(eintrag["title"], str), eintrag["title"]
+            assert isinstance(eintrag["updated"], str)
+            assert isinstance(eintrag["tags"], list)
+            assert all(isinstance(tag, str) for tag in eintrag["tags"])
+
+    @pytest.mark.asyncio
+    async def test_skalarer_tag_geht_nicht_verloren(self, active_user, tmp_file):
+        """Verwerfen war die alte Rettung — der Tag war danach weg."""
+        user = User(username="alice", role="admin")
+        tmp_file("notes/a.md", self.FRONTMATTER)
+
+        payload = json.loads(await _dispatch("list_all_files", {}, user))
+
+        eintrag = next(item for item in payload["items"] if item["path"] == "notes/a.md")
+        assert eintrag["tags"] == ["python"]
+
+    @pytest.mark.asyncio
+    async def test_batch_tag_zerlegt_skalare_tags_nicht_in_buchstaben(self, active_user, tmp_file):
+        """list("python") ergab sechs Tags — und schrieb sie in die Notiz zurück."""
+        from app.storage import read_file as storage_read_file
+
+        user = User(username="alice", role="admin")
+        tmp_file("notes/a.md", self.FRONTMATTER)
+
+        await _dispatch("batch_tag", {"files": ["notes/a.md"], "tags": ["neu"]}, user)
+
+        assert storage_read_file("notes/a.md").frontmatter["tags"] == ["python", "neu"]
+
+    @pytest.mark.asyncio
+    async def test_template_deklariert_was_es_liefert(self, active_user):
+        """"adr" wird auf "decision" abgebildet — der Rückgabewert sagt das."""
+        user = User(username="alice", role="admin")
+        schema = next(t for t in TOOLS if t["name"] == "template")["outputSchema"]
+
+        payload = json.loads(await _dispatch("template", {"template_type": "adr", "title": "Wahl"}, user))
+
+        assert set(payload) <= set(schema["properties"])
+        assert set(schema["required"]) <= set(payload)
+        assert payload["template_type"] == "decision"
+
+    @pytest.mark.asyncio
+    async def test_nan_und_inf_bleiben_gueltiges_json(self, active_user, tmp_file):
+        """json.dumps() schreibt NaN/Infinity als Literale — kein striktes JSON."""
+        user = User(username="alice", role="admin")
+        rel = tmp_file("notes/n.md", "---\ntitle: N\nscore: .nan\nratio: .inf\n---\n\nText\n")
+
+        raw = await _dispatch("read_file", {"path": rel}, user)
+
+        def _verboten(constant):
+            raise AssertionError(f"striktes JSON kennt {constant} nicht")
+
+        payload = json.loads(raw, parse_constant=_verboten)
+        assert payload["frontmatter"]["score"] == "nan"
