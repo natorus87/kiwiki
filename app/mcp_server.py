@@ -1667,6 +1667,25 @@ def _list_output_schema(item_schema: dict) -> dict:
     }
 
 
+# Eine Relation aus knowledge.relations. Die Tabelle erzwingt
+# CHECK((object_id IS NULL) != (object_value IS NULL)): genau eines der beiden
+# Felder traegt das Objekt, das andere ist null. Deshalb sind "entity_id" und
+# "value" nullable, aber immer beide vorhanden. Der heutige Extraktor erzeugt
+# ausschliesslich Literal-Relationen (tagged_with, related_to), also durchweg
+# entity_id=null — die Spalte object_id bleibt fuer Entitaet-zu-Entitaet.
+_KNOWLEDGE_FACT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "predicate": {"type": "string"},
+        "entity_id": {"type": ["string", "null"]},
+        "value": {"type": ["string", "null"]},
+        "source": {"type": "string", "description": "Pfad der Notiz, aus der die Relation stammt"},
+    },
+    "required": ["predicate", "entity_id", "value", "source"],
+    "additionalProperties": False,
+}
+
+
 _OUTPUT_SCHEMAS = {
     "read_index": _STRING_MAP_SCHEMA,
     "list_files": _list_output_schema(_FILE_INFO_SCHEMA),
@@ -2105,10 +2124,71 @@ _OUTPUT_SCHEMAS = {
         "required": ["status", "results"],
         "additionalProperties": False,
     },
-    "entity_details": {"type": "object", "additionalProperties": True},
-    "entity_neighbors": {"type": "object", "additionalProperties": True},
-    "fact_timeline": {"type": "object", "additionalProperties": True},
-    "explain_relation": {"type": "object", "additionalProperties": True},
+    "entity_details": {
+        # "entity" fehlt, solange die Wissensmaschine aus ist, und ist null,
+        # wenn die id unbekannt ist — beides unterscheidbar zu halten ist der
+        # Sinn der Unterscheidung zwischen "nicht vorhanden" und "nichts gefunden".
+        "type": "object",
+        "properties": {
+            "status": {"type": "string", "enum": ["disabled", "ready"]},
+            "entity": {
+                "type": ["object", "null"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "kind": {"type": "string"},
+                    "name": {"type": "string"},
+                },
+                "required": ["id", "kind", "name"],
+                "additionalProperties": False,
+            },
+        },
+        "required": ["status"],
+        "additionalProperties": False,
+    },
+    "entity_neighbors": {
+        # "depth" liefert der Server nur im aktiven Zustand; der Wert ist die
+        # auf 1..3 geklemmte Anfrage, nicht die ungepruefte Eingabe.
+        "type": "object",
+        "properties": {
+            "status": {"type": "string", "enum": ["disabled", "ready"]},
+            "depth": {"type": "integer", "minimum": 1, "maximum": 3},
+            "neighbors": {"type": "array", "items": _KNOWLEDGE_FACT_SCHEMA},
+        },
+        "required": ["status", "neighbors"],
+        "additionalProperties": False,
+    },
+    "fact_timeline": {
+        "type": "object",
+        "properties": {
+            "status": {"type": "string", "enum": ["disabled", "ready"]},
+            "facts": {"type": "array", "items": _KNOWLEDGE_FACT_SCHEMA},
+        },
+        "required": ["status", "facts"],
+        "additionalProperties": False,
+    },
+    "explain_relation": {
+        "type": "object",
+        "properties": {
+            "status": {"type": "string", "enum": ["disabled", "ready"]},
+            "relation": {
+                # "value" ist null, wenn die Relation auf eine Entitaet statt auf
+                # einen Literalwert zeigt (siehe _KNOWLEDGE_FACT_SCHEMA).
+                "type": ["object", "null"],
+                "properties": {
+                    "predicate": {"type": "string"},
+                    "value": {"type": ["string", "null"]},
+                    "source": {"type": "string"},
+                    "revision": {"type": "integer", "minimum": 0},
+                    "extraction": {"type": "string"},
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                },
+                "required": ["predicate", "value", "source", "revision", "extraction", "confidence"],
+                "additionalProperties": False,
+            },
+        },
+        "required": ["status"],
+        "additionalProperties": False,
+    },
     "knowledge_status": {
         "type": "object",
         "properties": {
@@ -2121,7 +2201,17 @@ _OUTPUT_SCHEMAS = {
         "required": ["status", "enabled", "documents", "pending", "failed"],
         "additionalProperties": False,
     },
-    "knowledge_reindex": {"type": "object", "additionalProperties": True},
+    "knowledge_reindex": {
+        # "queued" heisst: der Abgleich ist eingereiht, nicht abgeschlossen.
+        # Den Fortschritt liefert knowledge_status.
+        "type": "object",
+        "properties": {
+            "status": {"type": "string", "enum": ["disabled", "queued"]},
+            "enabled": {"type": "boolean"},
+        },
+        "required": ["status", "enabled"],
+        "additionalProperties": False,
+    },
 }
 
 _READ_ONLY_TOOLS = {
