@@ -1,6 +1,6 @@
 [project]
 name = "kiwiki"
-version = "3.2.0"
+version = "4.0.0"
 description = "KI-gestütztes Wiki mit MCP-Server"
 requires-python = ">=3.12"
 license = {text = "MIT"}

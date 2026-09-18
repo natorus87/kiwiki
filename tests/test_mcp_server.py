@@ -542,7 +542,7 @@ class TestHandleMessage:
         body = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
         result = await _handle_message(body, User(username="alice", role="admin"))
         assert result["result"]["protocolVersion"] == "2025-06-18"
-        assert result["result"]["serverInfo"]["version"] == "3.2.0"
+        assert result["result"]["serverInfo"]["version"] == "4.0.0"
         assert "tools" in result["result"]["capabilities"]
         instructions = result["result"]["instructions"]
         assert "Authorization is already enforced by kiwiki" in instructions
