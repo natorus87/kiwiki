@@ -5,7 +5,7 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import date, datetime, time as time_cls, timezone
 import frontmatter
 from .models import FileInfo, FileContent
 from .tenancy import BASE_DATA_DIR, user_root
@@ -198,6 +198,33 @@ def safe_path(path: str) -> Path:
     return normalized
 
 
+def _normalize_metadata(value):
+    """YAML-Werte auf JSON-taugliche Typen zuruecksetzen.
+
+    PyYAML liest unquotierte ISO-Daten (``created: 2026-01-01``) als
+    ``datetime.date``. Solche Werte landen ueber FileContent.frontmatter
+    direkt in json.dumps() und in Sortierungen — beides scheitert dort mit
+    TypeError. Die Normalisierung passiert an der einzigen Stelle, an der
+    Frontmatter geparst wird, damit Lese- und Schreibpfad dasselbe sehen.
+    """
+    if isinstance(value, (datetime, date, time_cls)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _normalize_metadata(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_normalize_metadata(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _load_post(source, *, is_text: bool = False) -> frontmatter.Post:
+    """Frontmatter parsen und die Metadaten normalisieren."""
+    post = frontmatter.loads(source) if is_text else frontmatter.load(source)
+    post.metadata = _normalize_metadata(post.metadata)
+    return post
+
+
 def _read_frontmatter_only(path: str) -> dict:
     """Extract frontmatter metadata without reading the full file content.
 
@@ -225,8 +252,7 @@ def _read_frontmatter_only(path: str) -> dict:
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             raw = f.read(_FRONTMATTER_READ_LIMIT)
-        post = frontmatter.loads(raw)
-        metadata = post.metadata
+        metadata = _load_post(raw, is_text=True).metadata
     except Exception:
         logger.warning("Failed to parse frontmatter for %r", path, exc_info=True)
         return {}
@@ -246,7 +272,7 @@ def read_file(path: str) -> FileContent:
     if not file_path.is_file():
         raise ValueError(f"Not a file: {path}")
     with open(file_path, "r", encoding="utf-8") as f:
-        post = frontmatter.load(f)
+        post = _load_post(f)
     return FileContent(
         path=path,
         content=post.content,
@@ -270,7 +296,7 @@ def write_file(path: str, content: str, expected_revision: int | None = None) ->
                 f"Write conflict for {path!r}: expected revision {expected_revision}, "
                 f"current revision is {current_revision}"
             )
-        post = frontmatter.loads(content) if content else frontmatter.Post("")
+        post = _load_post(content, is_text=True) if content else frontmatter.Post("")
         post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
         _atomic_write_text(file_path, frontmatter.dumps(post))
         revision = file_path.stat().st_mtime_ns
@@ -290,7 +316,7 @@ def append_file(path: str, content: str) -> FileContent:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {path}")
         with open(file_path, "r", encoding="utf-8") as f:
-            post = frontmatter.load(f)
+            post = _load_post(f)
         post.content += "\n" + content
         post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
         _atomic_write_text(file_path, frontmatter.dumps(post))
@@ -456,7 +482,7 @@ def edit_file(path: str, new_str: str, old_str: str = "") -> FileContent:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {path}")
         with open(file_path, "r", encoding="utf-8") as f:
-            post = frontmatter.load(f)
+            post = _load_post(f)
         if old_str:
             if old_str not in post.content:
                 raise ValueError(f"String not found in {path!r}")
@@ -482,7 +508,7 @@ def update_frontmatter(path: str, updates: dict) -> FileContent:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {path}")
         with open(file_path, "r", encoding="utf-8") as f:
-            post = frontmatter.load(f)
+            post = _load_post(f)
         post.metadata.update(updates)
         post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
         _atomic_write_text(file_path, frontmatter.dumps(post))
