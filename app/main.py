@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import markdown as md_lib
+from jinja2 import pass_context as jinja_pass_context
 import nh3
 import yaml
 from fastapi import FastAPI, Depends, Form, HTTPException, Query, Request
@@ -51,12 +52,17 @@ from .indexing import (
     deindex_documents as deindex_files,
     index_document as index_file,
 )
-from .i18n import UI_TRANSLATIONS, request_language, template_language_context
+from .i18n import (
+    UI_TRANSLATIONS,
+    format_stamp,
+    request_language,
+    stamp_title,
+    template_language_context,
+)
 from .search import init_db, reindex_all, reindex_changed, search as search_files
 from .storage import (
     _locked_paths,
     _path_lock,
-    _read_frontmatter_only,
     append_file,
     create_folder,
     create_note,
@@ -265,6 +271,16 @@ templates = Jinja2Templates(
     directory=str(TEMPLATES_DIR),
     context_processors=[template_language_context],
 )
+
+
+@jinja_pass_context
+def _kwdate(ctx: dict, value: object) -> str:
+    """{{ f.updated|kwdate }} — kurze, lokalisierte Form des Zeitstempels."""
+    return format_stamp(value, str(ctx.get("lang") or "de"))
+
+
+templates.env.filters["kwdate"] = _kwdate
+templates.env.filters["kwdate_full"] = stamp_title
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -817,17 +833,13 @@ async def ui_tags(request: Request) -> HTMLResponse:
     """E4: Global tag overview page."""
     user = _session_user(request)
     try:
-        all_files = list_files(".")
+        # list_all_files() laeuft rekursiv und liefert die Tags bereits mit.
+        # list_files(".") sah nur die oberste Ebene, wodurch jede Notiz in einem
+        # Ordner in der Tag-Uebersicht fehlte.
         tags: dict[str, list[str]] = {}
-        for f in all_files:
-            if f.is_dir:
-                continue
-            try:
-                meta = _read_frontmatter_only(f.path)
-                for tag in meta.get("tags", []):
-                    tags.setdefault(str(tag), []).append(f.path)
-            except Exception:
-                continue
+        for f in list_all_files("."):
+            for tag in f.get("tags") or []:
+                tags.setdefault(str(tag), []).append(f["path"])
         tag_items = [
             {"tag": tag, "count": len(files), "files": sorted(files)}
             for tag, files in sorted(tags.items(), key=lambda x: (-len(x[1]), x[0]))
