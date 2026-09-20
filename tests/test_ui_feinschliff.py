@@ -213,6 +213,6 @@ def test_die_hero_groessen_stehen_dort_wo_sie_auch_gewinnen():
     index = (root / "app/templates/index.html").read_text(encoding="utf-8")
     polish = (root / "app/static/kiwiki-polish.css").read_text(encoding="utf-8")
 
-    assert "clamp(1.9rem, 3.4vw, 2.5rem)" in index
+    assert "font-size: var(--text-display);" in index
     assert "grid-template-columns: minmax(0, 1fr);" in index
     assert "font-size" not in polish.split(".hero-title", 1)[1].split("}", 1)[0]
