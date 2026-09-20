@@ -1272,7 +1272,6 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
   .btn { min-height: 44px; padding: 0.5rem 1rem; font-size: 0.88rem; }
 
   /* Editor-Bar auf Mobile */
-  .editor-hint { display: none; }
   .editor-path { min-width: 0; width: 100%; }
 
   /* Safari iOS: Inputs unter 16px triggern Auto-Zoom — fix auf 16px */
