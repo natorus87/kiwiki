@@ -20,10 +20,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   Kopf samt Kopier-Button aus dem sichtbaren Bereich.
 - **Dashboard-Panels schnitten die Zeitangabe ab** — Grid-Kinder haben `min-width: auto`; ein langer Notiztitel zog
   das Panel über den Rand.
+- **Der Hero blieb auf voller Displaygröße** — `index.html` lädt sein `<style>` nach `kiwiki-polish.css`, weshalb
+  die dortigen Hero-Regeln bei gleicher Spezifität verloren: der Titel stand weiter auf 3.8rem und das Grid behielt
+  die leere zweite Spalte des entfernten Statuspanels.
 - **Markdown-Tabellen hatten einen zu breiten Rahmen** — `display: block` mit `width: 100%` legte den Rahmen um die
   volle Spaltenbreite, während die Zellen nur ihren Inhalt füllten.
 
 ### Changed
+- **Die Startseite hilft beim Erststart, statt sie wegzuklappen** — ein frischer Workspace zeigte zwei leere Panels
+  mit demselben Satz und ein zugeklapptes „Erste Schritte". Der Hilfeblock steht jetzt offen, solange keine Notiz
+  existiert, und jedes Panel hat seinen eigenen Leertext.
 - **Zeitstempel sind lesbar** — statt `2026-09-19T17:42:00` steht in Listen und im Dateikopf „Heute, 09:31",
   „Gestern, 18:25", „vor 3 Tagen" oder „19. Sep."; der vollständige Zeitpunkt bleibt im `title` des `<time>`-Elements.
 - **Der Dateibaum startet offen und merkt sich seinen Zustand** — er ist die Hauptnavigation und war nach jedem
