@@ -70,6 +70,17 @@ function kwClearDesktopSidebarWidth(sidebar, logoWrap) {
   if (logoWrap) logoWrap.style.width = '';
 }
 
+// Offen/Zu ueberlebt den Seitenwechsel: der Server rendert die Sidebar beim
+// naechsten Request passend zu diesem Cookie, damit der Dateibaum nicht bei
+// jedem Reload verschwindet (und nicht erst per JS aufklappt).
+function kwPersistSidebarState(isOpen) {
+  if (kwIsMobileSidebar()) return;
+  try {
+    document.cookie = 'kiwiki_sidebar=' + (isOpen ? 'open' : 'closed')
+      + ';path=/;max-age=' + (365 * 24 * 3600) + ';samesite=strict';
+  } catch (e) {}
+}
+
 function kwSetSidebarAccessibility(s, isClosed) {
   if (!s) return;
   s.setAttribute('aria-hidden', isClosed ? 'true' : 'false');
@@ -92,6 +103,7 @@ function openSidebar() {
       s.classList.remove('collapsed');
       kwApplyDesktopSidebarWidth(s, logoWrap);
     }
+    kwPersistSidebarState(true);
   }
   if (btn) btn.setAttribute('aria-expanded', 'true');
   kwSetSidebarAccessibility(s, false);
@@ -113,6 +125,7 @@ function closeSidebar() {
       s.classList.add('collapsed');
       kwClearDesktopSidebarWidth(s, logoWrap);
     }
+    kwPersistSidebarState(false);
   }
   kwCloseAccountMenu();
   if (btn) btn.setAttribute('aria-expanded', 'false');
