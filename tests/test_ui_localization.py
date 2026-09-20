@@ -40,7 +40,9 @@ def test_english_language_choice_applies_to_all_core_pages_and_fragments(monkeyp
     assert "Save" in editor.text
     assert '<html lang="en">' in settings.text
     assert "Add local user" in settings.text
-    assert "No files yet." in recent.text
+    # Die beiden Dashboard-Panels haben je einen eigenen Leertext, damit auf
+    # einem frischen Workspace nicht zweimal derselbe Satz nebeneinander steht.
+    assert "Nothing edited yet." in recent.text
     assert "No file path provided" in missing_history.text
     assert "File not found" in missing_file.text
 
