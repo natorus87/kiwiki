@@ -7,6 +7,43 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- **Die Live-Suche hat nie gefeuert** — `hx-trigger` stand auf dem Suchformular mit dem Modifier `changed`. htmx
+  vergleicht dafür `elt.value` des Trigger-Elements, und ein `<form>` hat keines: der Vergleich war immer
+  `undefined === undefined` und verwarf jedes Eingabe- und Submit-Event. Tippen zeigte nichts, Enter zeigte nichts,
+  und eine zuvor sichtbare Trefferliste blieb bei geänderter Suche stehen — also Treffer zu einer anderen Anfrage.
+- **Die Tag-Übersicht sah nur das Wurzelverzeichnis** — `/ui/tags` las mit `list_files(".")` nur die oberste Ebene
+  und meldete „Noch keine Tags vorhanden", sobald Notizen in Ordnern lagen. Sie nutzt jetzt `list_all_files(".")`,
+  das rekursiv läuft und die Tags bereits mitliefert.
+- **Der Dateikopf lief auf schmalen Geräten über den Bildschirmrand** — `.file-header` ist dort ein Column-Flex mit
+  `flex-wrap: wrap`; die Breite ist dabei die Kreuzachse und wächst auf `max-content`. Ein langer Pfad schob den
+  Kopf samt Kopier-Button aus dem sichtbaren Bereich.
+- **Dashboard-Panels schnitten die Zeitangabe ab** — Grid-Kinder haben `min-width: auto`; ein langer Notiztitel zog
+  das Panel über den Rand.
+- **Markdown-Tabellen hatten einen zu breiten Rahmen** — `display: block` mit `width: 100%` legte den Rahmen um die
+  volle Spaltenbreite, während die Zellen nur ihren Inhalt füllten.
+
+### Changed
+- **Zeitstempel sind lesbar** — statt `2026-09-19T17:42:00` steht in Listen und im Dateikopf „Heute, 09:31",
+  „Gestern, 18:25", „vor 3 Tagen" oder „19. Sep."; der vollständige Zeitpunkt bleibt im `title` des `<time>`-Elements.
+- **Der Dateibaum startet offen und merkt sich seinen Zustand** — er ist die Hauptnavigation und war nach jedem
+  Seitenwechsel wieder eingeklappt. Offen/Zu liegt jetzt im Cookie `kiwiki_sidebar`, sodass der Server gleich
+  richtig rendert.
+- **Die Startseite zeigt zuerst die Arbeit** — der Hero ist kompakter, das Statuspanel mit den drei
+  unveränderlichen Fakten (`.md`, `FTS5`, Rolle) ist entfallen, und „Erste Schritte" samt MCP-Zugangsdaten stehen
+  vollständig, aber eingeklappt unter den Notizlisten.
+- **Suchtreffer führen mit dem Titel** — darunter der Pfad, darunter ein Ausschnitt rund um die Trefferstelle statt
+  der ersten 200 Rohzeichen der Datei. Frontmatter, Überschriftenzeichen, Tabellen-Pipes und Link-Ziele sind raus.
+- **Die Leseansicht nennt den Pfad einmal statt dreimal** — Breadcrumb, Titel und Pfad-Chip sagten dasselbe. Die
+  Breadcrumb führt jetzt bis zum Ordner, die Metazeile trägt Pfad, Zeitpunkt und Autor.
+- **Bearbeiten ist die Hauptaktion** — in Leseansicht und Editor war „Löschen" der auffälligste Button (auf dem
+  Handy sogar der breiteste). Es behält sein Label, ist abgesetzt und wird erst bei Hover/Fokus rot.
+- **Tag-Übersicht und Suchverlauf sind gestaltet** — beide Ansichten hatten kein eigenes CSS und keinen sichtbaren
+  Rückweg; beide haben jetzt dieselbe Kopfzeile mit Breadcrumb wie die Leseansicht.
+- **Einstellungen verschwendet keine leere Spalte mehr** — die Sidebar trug dort nur einen „Zurück"-Button, den es
+  im Seitenkopf ohnehin schon gab.
+- **`Ctrl+S` steht am Speichern-Button** — vorher als lose Beschriftung am Ende der Editor-Leiste.
+
 ## [4.0.0] - 2026-09-18
 
 ### Security
