@@ -49,7 +49,7 @@
       color: var(--md-on-surface-v);
       position: relative;
       overflow: auto;
-      padding: 1rem;
+      padding: var(--space-4);
       font-feature-settings: "ss01", "ss03", "cv11";
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
@@ -72,7 +72,7 @@
       background: var(--md-surface);
       border: 1px solid var(--md-outline-v);
       border-radius: 18px;
-      padding: 2.75rem 2.5rem;
+      padding: var(--space-12) var(--space-12);
       width: 100%; max-width: 400px;
       box-shadow: var(--shadow-soft);
     }
@@ -82,11 +82,11 @@
 
     .brand {
       text-align: center;
-      margin-bottom: 2.5rem;
+      margin-bottom: var(--space-12);
     }
     .brand-icon-wrap {
       display: inline-flex;
-      margin-bottom: 1rem;
+      margin-bottom: var(--space-4);
     }
     .brand-icon {
       width: 56px; height: 56px;
@@ -97,10 +97,10 @@
     }
     .brand-logo {
       font-family: 'Bricolage Grotesque', 'Geist Sans', ui-sans-serif, system-ui, sans-serif;
-      font-size: 2.3rem; font-weight: 700;
+      font-size: var(--text-3xl); font-weight: 700;
       color: var(--md-on-surface);
       letter-spacing: 0; line-height: 1.1;
-      padding-top: 0.06em;
+      padding-top: var(--space-0-5);
       font-variation-settings: "opsz" 72;
     }
     .brand-logo em {
@@ -112,7 +112,7 @@
       width: 3px; height: 0.78em;
       background: var(--md-primary);
       vertical-align: -0.04em;
-      margin-left: 3px;
+      margin-left: var(--space-0-5);
       animation: caret-blink 1.2s steps(2, end) infinite;
       border-radius: 1px;
     }
@@ -121,26 +121,26 @@
       51%, 100% { opacity: 0; }
     }
     .brand-tagline {
-      font-size: 0.82rem; color: var(--md-outline);
-      margin-top: 0.55rem;
+      font-size: var(--text-md); color: var(--md-outline);
+      margin-top: var(--space-2);
       letter-spacing: 0.005em;
     }
 
     .form-label {
       display: block;
-      font-size: 0.75rem; font-weight: 600;
+      font-size: var(--text-sm); font-weight: 600;
       color: var(--md-on-surface-v);
-      margin-bottom: 0.45rem;
+      margin-bottom: var(--space-2);
       letter-spacing: 0.06em; text-transform: uppercase;
     }
 
     .form-input {
       width: 100%;
-      padding: 0.7rem 1rem;
+      padding: var(--space-3) var(--space-4);
       background: var(--md-surface-c);
       border: 1px solid var(--md-outline-v);
       border-radius: 8px;
-      font-size: 0.95rem;
+      font-size: var(--text-lg);
       font-family: 'JetBrains Mono', monospace;
       color: var(--md-on-surface);
       letter-spacing: 0;
@@ -155,26 +155,26 @@
     }
 
     .error-msg {
-      display: flex; align-items: center; gap: 0.6rem;
+      display: flex; align-items: center; gap: var(--space-2);
       background: var(--md-error-dim);
       border: 1px solid var(--md-error-border);
       color: var(--md-error);
-      padding: 0.7rem 1rem; border-radius: 12px;
-      font-size: 0.84rem; margin-bottom: 1.1rem;
+      padding: var(--space-3) var(--space-4); border-radius: 12px;
+      font-size: var(--text-md); margin-bottom: var(--space-4);
     }
 
     .submit-btn {
-      width: 100%; margin-top: 1.5rem;
-      padding: 0.85rem;
+      width: 100%; margin-top: var(--space-6);
+      padding: var(--space-3);
       background: var(--md-primary);
       color: var(--md-primary-c-on);
       border: none; border-radius: 999px;
-      font-size: 0.95rem; font-weight: 600;
+      font-size: var(--text-lg); font-weight: 600;
       font-family: 'Geist Sans', 'Geist', ui-sans-serif, system-ui, sans-serif;
       cursor: pointer; letter-spacing: 0.01em;
       transition: background 0.15s, transform 0.1s;
       box-shadow: none;
-      display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+      display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
     }
     .submit-btn:hover {
       background: var(--md-primary-hover);
@@ -188,21 +188,21 @@
     }
 
     .hint {
-      margin-top: 1.75rem;
-      padding-top: 1.25rem;
+      margin-top: var(--space-8);
+      padding-top: var(--space-6);
       border-top: 1px solid var(--md-outline-v);
-      font-size: 0.73rem; color: var(--md-outline);
+      font-size: var(--text-sm); color: var(--md-outline);
       text-align: center; line-height: 1.75;
     }
     .hint code {
       background: var(--md-surface-ch);
       border: 1px solid var(--md-outline-v);
-      padding: 0.05rem 0.4rem; border-radius: 6px;
-      font-size: 0.7rem; font-family: 'JetBrains Mono', monospace;
+      padding: var(--space-0-5) var(--space-2); border-radius: 6px;
+      font-size: var(--text-xs); font-family: 'JetBrains Mono', monospace;
       color: var(--md-on-surface-v);
     }
   </style>
-  <link rel="stylesheet" href="/static/kiwiki-polish.css?v=20260920-polish">
+  <link rel="stylesheet" href="/static/kiwiki-polish.css?v=20260920-scale">
   <script src="/static/kiwiki-motion.bundle.js?v=20260608" defer></script>
 </head>
 <body>
