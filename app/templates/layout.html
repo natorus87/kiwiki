@@ -23,12 +23,12 @@
     window.KIWIKI_I18N = window.KIWIKI.i18n;
   </script>
 
-  <link rel="stylesheet" href="/static/kiwiki.css?v=20260706-sidebar">
-  <link rel="stylesheet" href="/static/kiwiki-polish.css?v=20260806">
+  <link rel="stylesheet" href="/static/kiwiki.css?v=20260920-polish">
+  <link rel="stylesheet" href="/static/kiwiki-polish.css?v=20260920-polish">
   {% block extra_styles %}{% endblock %}
 </head>
 <body class="role-{{ user.role if user else 'none' }}">
-<script src="/static/kiwiki.js?v=20260824-export-paths" defer></script>
+<script src="/static/kiwiki.js?v=20260920-polish" defer></script>
 
 <a href="#main-content" class="skip-link sr-only">{{ t.skip_content }}</a>
 
@@ -46,7 +46,10 @@
   <form class="search-wrap"
         role="search"
         hx-post="/ui/search" hx-target="#search-results" hx-swap="innerHTML"
-        hx-trigger="input changed delay:400ms, submit">
+        {# "changed" darf hier nicht stehen: htmx vergleicht dafuer elt.value des
+           Trigger-Elements, und ein <form> hat kein value. Der Vergleich war damit
+           immer undefined === undefined und hat jede Live-Suche verworfen. #}
+        hx-trigger="input delay:400ms, submit">
     <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     <input type="search" name="query" class="search-input" placeholder="{{ t.search_placeholder }}" autocomplete="off" aria-label="{{ t.search_wiki }}" aria-controls="search-results">
     <div id="search-results" role="region" aria-label="{{ t.search_results }}" aria-live="polite"></div>
