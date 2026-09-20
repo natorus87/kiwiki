@@ -1,11 +1,16 @@
-<div class="content-inner">
-  <h2>{{ t.tags }}</h2>
+<div class="content-inner subview">
+  <nav class="breadcrumb" aria-label="{{ t.path_navigation }}">
+    <button type="button" class="breadcrumb-item breadcrumb-root">Wiki</button>
+    <span class="breadcrumb-sep" aria-hidden="true">/</span>
+    <span class="breadcrumb-item current" aria-current="page">{{ t.tags }}</span>
+  </nav>
+  <h2 class="subview-title">{{ t.tags }}</h2>
   {% if tags %}
   <div class="tag-cloud">
     {% for tag_item in tags %}
     <div class="tag-item">
       <a href="/?search={{ ('tag:' ~ tag_item.tag)|urlencode }}" class="tag-chip kw-search-link" data-search-query="tag:{{ tag_item.tag }}">
-        {{ tag_item.tag }}
+        <span class="tag-chip-name">{{ tag_item.tag }}</span>
         <span class="tag-count">{{ tag_item.count }}</span>
       </a>
       <details class="tag-files">
