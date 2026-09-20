@@ -419,3 +419,312 @@ header {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Feinschliff-Runde: Hierarchie, Dichte und Lesbarkeit
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Startseite: der Hero traegt kein Statuspanel mehr ────────────────── */
+.hero {
+  grid-template-columns: minmax(0, 1fr);
+  padding-block: var(--space-8) var(--space-6);
+  gap: var(--space-4);
+}
+.hero-title {
+  /* Der Produktname steht 40 px darueber schon im Header; hier genuegt ein
+     Markenanker statt einer Displayzeile, die den halben Screen fuellt. */
+  font-size: clamp(1.9rem, 3.4vw, 2.5rem);
+  margin-bottom: var(--space-2);
+}
+.hero-title em { text-shadow: none; }
+.hero-sub {
+  font-size: 0.95rem;
+  max-width: 64ch;
+}
+.quick-actions { margin-top: var(--space-4); }
+
+/* Onboarding und MCP-Zugang: vollstaendig da, aber eingeklappt. */
+.home-help {
+  margin-top: var(--space-8);
+  border-top: 1px solid var(--md-outline-v);
+}
+.home-help-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  padding-block: var(--space-2);
+  color: var(--md-on-surface-v);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.home-help-summary::-webkit-details-marker { display: none; }
+.home-help-summary::before {
+  content: '';
+  width: 0.42rem;
+  height: 0.42rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  rotate: -45deg;
+  translate: 0 -1px;
+  transition: rotate var(--t);
+}
+.home-help[open] .home-help-summary::before { rotate: 45deg; translate: 0 -2px; }
+.home-help-summary:hover { color: var(--md-on-surface); }
+.home-help > :not(summary):first-of-type { margin-top: var(--space-4); }
+
+/* ── Dashboard-Zeilen: Titel und Zeitangabe duerfen sich nicht beruehren ── */
+.recent-item { gap: var(--space-3); }
+.recent-name { margin-inline-end: auto; }
+.recent-date {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--md-outline);
+}
+
+/* ── Leseansicht: eine Metazeile statt Pfad-Kasten plus Meta-Zeile ────── */
+.file-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  color: var(--md-on-surface-v);
+}
+.file-meta .file-path {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  max-width: min(100%, 46ch);
+}
+.file-meta time { font-variant-numeric: tabular-nums; }
+.file-meta-sep { color: var(--md-outline-v); }
+.file-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+/* Destruktive Aktion: abgesetzt, ruhig, und erst bei Zuwendung rot. */
+.file-actions { gap: var(--space-2); align-items: center; }
+.btn-danger-quiet {
+  margin-inline-start: var(--space-2);
+  background: transparent;
+  border-color: var(--md-outline-v);
+  color: var(--md-on-surface-v);
+}
+.btn-danger-quiet:hover,
+.btn-danger-quiet:focus-visible {
+  background: var(--md-error-dim);
+  border-color: var(--md-error-border);
+  color: var(--md-error);
+}
+
+/* ── Suchtreffer: der Titel ist die Antwort, der Pfad nur der Ort ─────── */
+.result-title {
+  font-size: 0.88rem;
+  margin: 0 0 0.1rem;
+}
+.result-path {
+  font-size: 0.68rem;
+  color: var(--md-outline);
+}
+.result-snippet {
+  margin-top: 0.22rem;
+  line-height: 1.45;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+/* ── Markdown-Tabellen: der Rahmen umschloss bisher leeren Raum ───────── */
+.markdown-content table {
+  width: fit-content;
+  max-width: 100%;
+}
+
+@media (max-width: 760px) {
+  /* Loeschen war hier der breiteste Button der Seite. */
+  .file-actions .btn { flex: 0 1 auto; }
+  .file-actions .btn-primary { flex: 1 1 auto; }
+  .btn-danger-quiet { margin-inline-start: 0; }
+}
+
+/* ── Nebenansichten: Tags und Suchverlauf ─────────────────────────────
+   Beide hatten bisher kein eigenes Styling — der Tag-Bug hat die Seite nie
+   gefuellt, also fiel das rohe Markup nie auf. Beide bekommen denselben
+   Kopf mit Rueckweg wie die Leseansicht. */
+.subview-title {
+  margin: var(--space-2) 0 var(--space-6);
+  font-family: var(--font-body);
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--md-on-surface);
+}
+
+.tag-cloud {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: var(--space-2);
+}
+.tag-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--md-outline-v);
+  border-radius: var(--radius-md);
+  background: var(--md-bg-subtle);
+}
+.tag-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 28px;
+  color: var(--md-on-surface);
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.tag-chip:hover .tag-chip-name { color: var(--md-primary); }
+.tag-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--t);
+}
+.tag-count {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-xl);
+  background: var(--md-primary-dim);
+  color: var(--md-primary);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+.tag-files summary {
+  min-height: 24px;
+  color: var(--md-outline);
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+.tag-files summary:hover { color: var(--md-on-surface-v); }
+.tag-files ul {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-1);
+}
+.tag-files li a {
+  display: block;
+  padding: 0.2rem var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--md-on-surface-v);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag-files li a:hover {
+  background: var(--md-primary-dim2);
+  color: var(--md-primary);
+}
+
+.search-history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--md-outline-v);
+  max-width: var(--content-reading);
+}
+.search-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  border-bottom: 1px solid var(--md-outline-v);
+}
+.search-history-item a {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-3) var(--space-2);
+  color: var(--md-on-surface);
+  font-size: 0.86rem;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-history-item:hover { background: var(--md-primary-dim2); }
+.search-history-item:hover a { color: var(--md-primary); }
+.search-history-meta {
+  flex: 0 0 auto;
+  padding-inline-end: var(--space-2);
+  color: var(--md-outline);
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Pfad plus Kopier-Button und die Fakten dahinter sind je eine Gruppe: ohne
+   diese Wrapper rutschten einzelne Teile beim Umbruch allein in die naechste
+   Zeile. */
+.file-meta .file-path-row,
+.file-meta .file-meta-facts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+}
+.file-meta .file-path-row { flex: 0 1 auto; }
+.file-meta .file-meta-facts { flex: 0 0 auto; gap: var(--space-2); }
+.file-meta .file-path-row .file-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  /* .file-header ist hier ein Column-Flex mit flex-wrap: wrap. Dabei ist die
+     Breite die Kreuzachse und waechst auf max-content — der lange Pfad zog den
+     Kopf so ueber den Bildschirmrand hinaus. */
+  .file-header { flex-wrap: nowrap; }
+  .file-header-main { width: 100%; min-width: 0; }
+  .file-meta { row-gap: var(--space-1); }
+  .file-meta .file-path-row { flex: 1 1 100%; }
+}
+
+/* Grid- und Flex-Kinder haben min-width: auto und wachsen auf max-content.
+   Ein langer Notiztitel schob das Dashboard-Panel deshalb ueber den rechten
+   Rand, sodass die Zeitangabe abgeschnitten wurde. */
+.dashboard-panel,
+.recent-files,
+.recent-list,
+.recent-item,
+.step-card {
+  min-width: 0;
+}
+.recent-item { overflow: hidden; }
+
+/* Im Editor war Loeschen auf Mobile der zweitgroesste Button, gleichauf mit
+   Speichern. Es behaelt sein Label, aber nicht das Gewicht. */
+.editor-bar .btn-danger-quiet { flex: 0 1 auto; }
