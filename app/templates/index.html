@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
 {% block sidebar %}
-<aside class="sidebar collapsed" aria-label="{{ t.files }}" aria-hidden="true" inert>
+<aside class="sidebar{% if not sidebar_open %} collapsed{% endif %}" aria-label="{{ t.files }}" aria-hidden="{{ "false" if sidebar_open else "true" }}"{% if not sidebar_open %} inert{% endif %}>
 
   <!-- Mobile-only: Kopfleiste mit Logo + Schließen-Button -->
   <div class="mobile-sidebar-header">
@@ -322,7 +322,6 @@
   <!-- ── Hero & Info ──────────────────────────────────────────────── -->
   <section class="hero">
     <div>
-      <div class="hero-eyebrow"><span class="dot"></span>{{ t.markdown_truth }}</div>
       <h1 class="hero-title">ki<em>wiki</em></h1>
       <p class="hero-sub">
         {{ t.home_intro }}
@@ -335,11 +334,6 @@
         <a class="btn btn-ghost kw-view-link" href="/?view=tags" data-view-endpoint="/ui/tags">{{ t.tags }}</a>
         <a class="btn btn-ghost kw-view-link" href="/?view=search-history" data-view-endpoint="/ui/search-history">{{ t.search_history }}</a>
       </div>
-    </div>
-    <div class="hero-panel" aria-label="{{ t.work_status }}">
-      <div class="hero-panel-row"><span>{{ t.format }}</span><strong>.md</strong></div>
-      <div class="hero-panel-row"><span>{{ t.search }}</span><strong>FTS5</strong></div>
-      <div class="hero-panel-row"><span>{{ t.access }}</span><strong>{{ user.role if user else 'none' }}</strong></div>
     </div>
   </section>
 
@@ -358,6 +352,9 @@
       </div>
     </div>
   </section>
+
+  <details class="home-help">
+    <summary class="home-help-summary">{{ t.home_help }}</summary>
 
   <p class="section-label">{{ t.getting_started }}</p>
   <div class="step-grid">
@@ -407,6 +404,7 @@ Authorization: Bearer &lt;api-key&gt;</code></pre>
     </div>
     <pre><code>{{ request.base_url }}mcp/sse</code></pre>
   </div>
+  </details>
 </div>
 
 {% if user and user.role in ['write', 'admin'] %}
