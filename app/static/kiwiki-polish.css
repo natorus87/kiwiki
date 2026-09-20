@@ -424,23 +424,11 @@ header {
    Feinschliff-Runde: Hierarchie, Dichte und Lesbarkeit
    ═══════════════════════════════════════════════════════════════════════ */
 
-/* ── Startseite: der Hero traegt kein Statuspanel mehr ────────────────── */
-.hero {
-  grid-template-columns: minmax(0, 1fr);
-  padding-block: var(--space-8) var(--space-6);
-  gap: var(--space-4);
-}
-.hero-title {
-  /* Der Produktname steht 40 px darueber schon im Header; hier genuegt ein
-     Markenanker statt einer Displayzeile, die den halben Screen fuellt. */
-  font-size: clamp(1.9rem, 3.4vw, 2.5rem);
-  margin-bottom: var(--space-2);
-}
+/* ── Startseite ───────────────────────────────────────────────────────
+   Hero-Größen stehen im <style> von index.html — das lädt nach diesem
+   Stylesheet und gewinnt bei gleicher Spezifität. Regeln, die hier stünden,
+   wären wirkungslos. */
 .hero-title em { text-shadow: none; }
-.hero-sub {
-  font-size: 0.95rem;
-  max-width: 64ch;
-}
 .quick-actions { margin-top: var(--space-4); }
 
 /* Onboarding und MCP-Zugang: vollstaendig da, aber eingeklappt. */
