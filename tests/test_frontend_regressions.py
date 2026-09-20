@@ -58,13 +58,28 @@ def test_layout_erlaubt_zoom_und_laesst_editor_assets_aus_normalen_seiten():
 
 
 def test_geschlossene_sidebar_ist_initial_fuer_a11y_versteckt():
-    for template_name in ("app/templates/index.html", "app/templates/editor.html"):
+    """collapsed und a11y-Zustand muessen gemeinsam gesetzt werden.
+
+    Seit der Dateibaum seinen Offen-Zustand ueber das Cookie kiwiki_sidebar
+    behaelt, rendert das Template beides konditional — collapsed ohne
+    aria-hidden/inert waere eine sichtbar erreichbare, aber unsichtbare Sidebar.
+    """
+    for template_name in (
+        "app/templates/index.html",
+        "app/templates/editor.html",
+        "app/templates/settings.html",
+        "app/templates/knowledge.html",
+    ):
         template = _read(template_name)
-        assert '<aside class="sidebar collapsed" aria-label="{{ t.files }}" aria-hidden="true" inert>' in template
+        aside = template.split('<aside class="sidebar', 1)[1].split(">", 1)[0]
+        assert "{% if not sidebar_open %} collapsed{% endif %}" in aside
+        assert '{{ "false" if sidebar_open else "true" }}' in aside
+        assert "{% if not sidebar_open %} inert{% endif %}" in aside
 
     script = _read("app/static/kiwiki.js")
     assert "function kwSetSidebarAccessibility" in script
     assert "s.inert = isClosed" in script
+    assert "kwPersistSidebarState" in script
 
 
 def test_hamburger_hat_sichtbaren_tastaturfokus():
@@ -139,7 +154,7 @@ def test_mehrfachloeschung_verwendet_einen_batch_request():
     assert "body: JSON.stringify({ paths: paths })" in batch_delete
     assert "result.index_cleanup_pending" in batch_delete
     assert "for (" not in batch_delete
-    assert "/static/kiwiki.js?v=20260824-export-paths" in layout
+    assert "/static/kiwiki.js?v=20260920-polish" in layout
 
 
 def test_desktop_sidebar_breite_respektiert_collapsed_zustand_und_drag_abbruch():
@@ -163,8 +178,8 @@ def test_astryx_inspirierter_feinschliff_bleibt_selbst_gehostet_und_tokenbasiert
     assert polish_path.exists()
     polish = polish_path.read_text(encoding="utf-8")
 
-    assert "/static/kiwiki-polish.css?v=20260806" in layout
-    assert "/static/kiwiki-polish.css?v=20260806" in login
+    assert "/static/kiwiki-polish.css?v=20260920-polish" in layout
+    assert "/static/kiwiki-polish.css?v=20260920-polish" in login
     assert "--space-1: 4px" in polish
     assert "--control-height: 40px" in polish
     assert "--touch-target: 44px" in polish
