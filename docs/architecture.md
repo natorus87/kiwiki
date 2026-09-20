@@ -153,6 +153,40 @@ renderer uses a deterministic 3D layout projected onto an accessible canvas, wit
 DOM-based inspector for readable metadata and source navigation. The UI remains
 functional as an explicit empty state while the engine is disabled or backfilling.
 
+## Design-Rollen: Typografie und Abstände
+
+Beide Maßsysteme liegen als Tokens in `app/static/kiwiki-polish.css` unter `:root`. **Nicht nach `kiwiki.css`
+verschieben** — `login.html` lädt `kiwiki.css` nicht (es bringt seine Farben selbst mit und bindet nur das
+Polish-Stylesheet ein) und fällt sonst auf Browser-Defaults zurück.
+
+| Rolle | Größe | Wofür |
+|---|---|---|
+| `--text-xs` | 11 px | Zähler, Badges, Verb-Chips, Initialen |
+| `--text-sm` | 12 px | Meta, Section-Labels, Pfade, Captions |
+| `--text-md` | 13 px | UI-Standard: Buttons, Dateibaum, Listen |
+| `--text-lg` | 15 px | Lesetext, Fließtext |
+| `--text-xl` | 18 px | Abschnitts- und Paneltitel |
+| `--text-2xl` | 24 px | Titel einer Notiz, Dialogtitel |
+| `--text-3xl` | 32 px | Seitentitel: Einstellungen, Login, `h1` |
+| `--text-display` | `clamp(1.9rem, 3.4vw, 2.5rem)` | Hero |
+
+Abstände: `--space-0-5` (2 px), dann `--space-1` bis `--space-16` als Vielfache von 4 (4/8/12/16/24/32/48/64).
+
+Zwischen `--text-md` und `--text-lg` sowie zwischen `lg` und `xl` sitzt bewusst eine Lücke. Vorher trugen die
+Stylesheets **37 Schriftgrößen** und **58 Abstandswerte**, 71 % davon zwischen den Stufen — `rem`-Brüche wie
+`0.45rem` ergeben krumme Pixel, und acht Größen zwischen 10.4 und 13.44 px sind keine Hierarchie, sondern
+Streuung. Schriftgewichte sind auf 400/500/600/700 beschränkt; Werte wie 620 oder 650 sind Artefakte einer
+variablen Schrift, die niemand bewusst wählt.
+
+`tests/test_design_tokens.py` hält die Skala geschlossen: rohe `font-size`-, `padding`-, `margin`- und
+`gap`-Werte lassen die Suite fehlschlagen. Zwei begründete Ausnahmen stehen dort explizit:
+
+- `font-size: 16px` auf Eingabefeldern — die Schwelle, unterhalb der iOS beim Fokussieren hineinzoomt.
+- Icon-Abstände in Feldern als `calc(14px + 2 * var(--space-3))` — die Rechnung bleibt sichtbar, statt als
+  krumme `rem`-Zahl zu erscheinen.
+
+Das CSS des Toast-UI-Editors gehört nicht zu diesem System und wird nicht angefasst.
+
 ## Zeitstempel in Templates
 
 Frontmatter liefert naive lokale Zeitstempel. Roh ausgegeben (`2026-09-19T17:42:00`) sind sie in Listen unlesbar
