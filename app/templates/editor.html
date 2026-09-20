@@ -33,11 +33,6 @@
   }
   .editor-path:focus { outline: none; border-color: var(--md-primary); }
 
-  .editor-hint {
-    font-family: var(--font-mono); font-size: 0.68rem;
-    color: var(--md-outline); margin-left: auto;
-    white-space: nowrap;
-  }
   @media (max-width: 768px) {
     .editor-bar {
       display: flex;
@@ -58,6 +53,8 @@
       justify-content: center;
       min-height: 44px;
     }
+    /* Loeschen soll nicht dieselbe Flaeche belegen wie Speichern. */
+    .editor-bar .btn-danger-quiet { flex: 0 1 auto; }
     .editor-bar .btn-ghost { display: none; }
     .fab-save {
       display: flex;
@@ -92,7 +89,7 @@
 {% endblock %}
 
 {% block sidebar %}
-<aside class="sidebar collapsed" aria-label="{{ t.files }}" aria-hidden="true" inert>
+<aside class="sidebar{% if not sidebar_open %} collapsed{% endif %}" aria-label="{{ t.files }}" aria-hidden="{{ "false" if sidebar_open else "true" }}"{% if not sidebar_open %} inert{% endif %}>
 
   <!-- Mobile-only: Kopfleiste mit Logo + Schließen-Button -->
   <div class="mobile-sidebar-header">
@@ -124,7 +121,7 @@
          placeholder="{{ t.file_path }}, z. B. notes/meine-notiz.md"
          value="{{ file_path }}">
 
-  <button type="button" class="btn btn-primary" onclick="saveFile()">
+  <button type="button" class="btn btn-primary" onclick="saveFile()" title="{{ t.save }} (Ctrl+S)">
     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>
     {{ t.save }}
   </button>
@@ -135,7 +132,7 @@
   </button>
 
   {% if user and user.role in ['write', 'admin'] %}
-  <button type="button" class="btn btn-danger" onclick="deleteCurrentFile()">
+  <button type="button" class="btn btn-danger btn-danger-quiet" onclick="deleteCurrentFile()">
     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
     {{ t.delete }}
   </button>
@@ -146,7 +143,6 @@
     {{ t.back }}
   </a>
 
-  <span class="editor-hint">Ctrl+S</span>
 </div>
 
 <div id="tui-editor-wrap"></div>
