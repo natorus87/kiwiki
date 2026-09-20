@@ -330,13 +330,30 @@ def _run_browser_checks() -> None:
         page.goto(f"{BASE_URL}/", wait_until="networkidle")
         sidebar = page.locator(".sidebar")
         hamburger = page.get_by_role("button", name="Menü")
+
+        # Der Dateibaum ist die Hauptnavigation und startet offen. Wer ihn
+        # zuklappt, findet ihn nach dem naechsten Seitenaufruf genauso wieder —
+        # frueher war er nach jedem Reload wieder verschwunden.
+        assert sidebar.get_attribute("aria-hidden") == "false"
+        assert sidebar.evaluate("element => element.inert") is False
+
+        hamburger.click()
         assert sidebar.get_attribute("aria-hidden") == "true"
         assert sidebar.evaluate("element => element.inert") is True
+        # Die Breite animiert 0.25s lang auf 0.
+        page.wait_for_function(
+            "() => document.querySelector('.sidebar').getBoundingClientRect().width === 0"
+        )
+        assert "kiwiki_sidebar=closed" in page.evaluate("document.cookie")
+
+        page.reload(wait_until="networkidle")
+        assert sidebar.get_attribute("aria-hidden") == "true"
         assert sidebar.evaluate("element => element.getBoundingClientRect().width") == 0
 
         hamburger.click()
         assert sidebar.get_attribute("aria-hidden") == "false"
         assert sidebar.evaluate("element => element.inert") is False
+        assert "kiwiki_sidebar=open" in page.evaluate("document.cookie")
         page.wait_for_function(
             "() => Math.round(document.querySelector('.sidebar').getBoundingClientRect().width) === 380"
         )
