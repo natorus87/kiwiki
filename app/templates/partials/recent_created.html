@@ -5,7 +5,7 @@
     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
     <span class="recent-name">{{ f.title }}</span>
     {% if f.created %}
-    <span class="recent-date">{{ f.created }}</span>
+    <time class="recent-date" title="{{ f.created|kwdate_full }}">{{ f.created|kwdate }}</time>
     {% endif %}
   </a>
   {% endfor %}
