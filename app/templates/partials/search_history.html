@@ -1,5 +1,10 @@
-<div class="content-inner">
-  <h2>{{ t.last_searches }}</h2>
+<div class="content-inner subview">
+  <nav class="breadcrumb" aria-label="{{ t.path_navigation }}">
+    <button type="button" class="breadcrumb-item breadcrumb-root">Wiki</button>
+    <span class="breadcrumb-sep" aria-hidden="true">/</span>
+    <span class="breadcrumb-item current" aria-current="page">{{ t.search_history }}</span>
+  </nav>
+  <h2 class="subview-title">{{ t.last_searches }}</h2>
   {% if history %}
   <ul class="search-history-list">
     {% for h in history %}
