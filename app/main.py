@@ -530,7 +530,22 @@ async def logout(request: Request) -> RedirectResponse:
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
     user = _session_user(request)
-    return templates.TemplateResponse(request=request, name="index.html", context={"user": user})
+    # Wer noch keine Notiz hat, braucht die Einstiegshilfe offen statt zwei
+    # leere Panels und ein zugeklapptes "Erste Schritte".
+    has_notes = False
+    if user:
+        try:
+            has_notes = any(
+                f["path"] not in ("index.md", "AGENTS.md") for f in list_all_files(".")
+            )
+        except Exception:
+            logging.exception("Failed to determine whether the workspace has notes")
+            has_notes = True  # im Zweifel nicht mit Onboarding zuschuetten
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={"user": user, "workspace_is_empty": not has_notes},
+    )
 
 
 @app.get("/settings", response_class=HTMLResponse)
