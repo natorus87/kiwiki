@@ -220,17 +220,11 @@
 {% endblock %}
 
 {% block sidebar %}
-<aside class="sidebar" aria-label="{{ t.navigation }}">
+<aside class="sidebar{% if not sidebar_open %} collapsed{% endif %}" aria-label="{{ t.navigation }}" aria-hidden="{{ "false" if sidebar_open else "true" }}"{% if not sidebar_open %} inert{% endif %}>
   <div class="mobile-sidebar-header">
     <span class="mobile-sidebar-logo">ki<em>wiki</em></span>
     <button type="button" class="mobile-close-btn" onclick="closeSidebar()" aria-label="{{ t.close_sidebar }}">
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
-  </div>
-  <div class="sidebar-toolbar">
-    <button type="button" class="sidebar-btn" onclick="window.location.href='/'">
-      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-      {{ t.back }}
     </button>
   </div>
   <div class="file-tree" aria-hidden="true"></div>
