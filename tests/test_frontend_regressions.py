@@ -154,7 +154,7 @@ def test_mehrfachloeschung_verwendet_einen_batch_request():
     assert "body: JSON.stringify({ paths: paths })" in batch_delete
     assert "result.index_cleanup_pending" in batch_delete
     assert "for (" not in batch_delete
-    assert "/static/kiwiki.js?v=20260920-polish" in layout
+    assert "/static/kiwiki.js?v=20260920-scale" in layout
 
 
 def test_desktop_sidebar_breite_respektiert_collapsed_zustand_und_drag_abbruch():
@@ -178,9 +178,12 @@ def test_astryx_inspirierter_feinschliff_bleibt_selbst_gehostet_und_tokenbasiert
     assert polish_path.exists()
     polish = polish_path.read_text(encoding="utf-8")
 
-    assert "/static/kiwiki-polish.css?v=20260920-polish" in layout
-    assert "/static/kiwiki-polish.css?v=20260920-polish" in login
-    assert "--space-1: 4px" in polish
+    assert "/static/kiwiki-polish.css?v=20260920-scale" in layout
+    assert "/static/kiwiki-polish.css?v=20260920-scale" in login
+    # Die Abstandsskala liegt seit der Vereinheitlichung in kiwiki.css :root,
+    # damit sie nur einmal existiert. tests/test_design_tokens.py haelt sie
+    # geschlossen; hier genuegt, dass das Polish-Stylesheet sie benutzt.
+    assert "var(--space-1)" in polish
     assert "--control-height: 40px" in polish
     assert "--touch-target: 44px" in polish
     assert ":focus-visible" in polish
@@ -199,7 +202,9 @@ def test_sidebar_filter_icon_is_embedded_in_the_input_field():
     assert ".tree-filter-wrap {\n  position: relative;" in polish
     assert ".tree-filter-icon {\n  position: absolute;" in polish
     assert "pointer-events: none;" in polish
-    assert ".tree-filter {\n  padding-inline: 2.15rem var(--space-3);" in polish
+    filter_rule = polish.split(".tree-filter {", 1)[1].split("}", 1)[0]
+    assert "padding-inline: calc(" in filter_rule
+    assert "var(--space-3)" in filter_rule
 
 
 def test_editor_controls_erhalten_zugaengliche_namen():
