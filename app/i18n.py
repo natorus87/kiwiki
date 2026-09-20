@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
+
 from starlette.requests import Request
 
 
@@ -41,6 +43,7 @@ UI_TRANSLATIONS = {
         "recently_edited": "Zuletzt bearbeitet",
         "recently_created": "Zuletzt erstellt",
         "getting_started": "Erste Schritte",
+        "home_help": "Erste Schritte und KI-Anbindung",
         "open_note": "Notiz öffnen",
         "open_note_help": "Eine Datei im Baum links öffnen und direkt hier lesen.",
         "new_note_help": "Eine Markdown-Notiz anlegen und sofort im Editor bearbeiten.",
@@ -198,7 +201,8 @@ UI_TRANSLATIONS = {
         "new_note": "New note", "tags": "Tags", "search_history": "Search history",
         "work_status": "Workspace status", "format": "Format", "search": "Search", "access": "Access",
         "recently_edited": "Recently edited", "recently_created": "Recently created",
-        "getting_started": "Getting started", "open_note": "Open a note",
+        "getting_started": "Getting started", "home_help": "Getting started and AI access",
+        "open_note": "Open a note",
         "open_note_help": "Open a file from the tree on the left and read it here.",
         "new_note_help": "Create a Markdown note and edit it immediately.",
         "fulltext_search": "Search all content", "fulltext_search_help": "Search the complete local store from the field in the header.",
@@ -305,4 +309,83 @@ def request_language(request: Request) -> tuple[str, bool]:
 def template_language_context(request: Request) -> dict[str, object]:
     """Gemeinsamer Jinja-Kontext fuer Seiten und HTMX-Fragmente."""
     language, _explicit = request_language(request)
-    return {"lang": language, "t": UI_TRANSLATIONS[language]}
+    return {
+        "lang": language,
+        "t": UI_TRANSLATIONS[language],
+        # Der Dateibaum ist die Hauptnavigation und startet deshalb offen.
+        # Wer ihn zuklappt, findet ihn nach dem naechsten Seitenwechsel
+        # genauso wieder — auf Mobile haelt CSS die Sidebar ohnehin zu.
+        "sidebar_open": request.cookies.get("kiwiki_sidebar") != "closed",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Datumsdarstellung
+#
+# Frontmatter liefert naive lokale Zeitstempel ("2026-09-19 17:42:00" oder
+# "2026-09-19T17:42:00"). Roh angezeigt sind sie in Listen unlesbar und
+# optisch dominanter als der Notiztitel daneben. Deshalb: relative Angabe
+# fuer die letzten Tage, danach ein kurzes Datum.
+# ---------------------------------------------------------------------------
+
+_MONTHS = {
+    "de": ["Jan.", "Feb.", "März", "Apr.", "Mai", "Juni",
+           "Juli", "Aug.", "Sep.", "Okt.", "Nov.", "Dez."],
+    "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+}
+
+_DATE_WORDS = {
+    "de": {"today": "Heute", "yesterday": "Gestern", "days_ago": "vor {n} Tagen"},
+    "en": {"today": "Today", "yesterday": "Yesterday", "days_ago": "{n} days ago"},
+}
+
+
+def _parse_stamp(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day)
+    if not isinstance(value, str):
+        return None
+    raw = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        try:
+            parsed = datetime.strptime(raw[:10], "%Y-%m-%d")
+        except ValueError:
+            return None
+    # Ein von aussen gesetzter Stempel kann eine Zone tragen (MCP-Clients
+    # schreiben gern "...Z"). Der wird in Ortszeit umgerechnet, nicht einfach
+    # um die Zone gekuerzt — sonst zeigt die UI die falsche Uhrzeit.
+    return parsed.astimezone().replace(tzinfo=None) if parsed.tzinfo else parsed
+
+
+def format_stamp(value: object, language: str = "de") -> str:
+    """Zeitstempel als kurze, lesbare Angabe. Unparsbares bleibt unveraendert."""
+    parsed = _parse_stamp(value)
+    if parsed is None:
+        return "" if value is None else str(value)
+    lang = language if language in _MONTHS else "de"
+    words = _DATE_WORDS[lang]
+    delta_days = (date.today() - parsed.date()).days
+    clock = f"{parsed.hour:02d}:{parsed.minute:02d}"
+    if delta_days == 0:
+        return f"{words['today']}, {clock}"
+    if delta_days == 1:
+        return f"{words['yesterday']}, {clock}"
+    if 2 <= delta_days <= 6:
+        return words["days_ago"].format(n=delta_days)
+    month = _MONTHS[lang][parsed.month - 1]
+    if parsed.year == date.today().year:
+        return f"{parsed.day}. {month}" if lang == "de" else f"{month} {parsed.day}"
+    return f"{parsed.day}. {month} {parsed.year}" if lang == "de" else f"{month} {parsed.day}, {parsed.year}"
+
+
+def stamp_title(value: object) -> str:
+    """Vollstaendiger Zeitstempel fuer title=/datetime= neben der Kurzform."""
+    parsed = _parse_stamp(value)
+    if parsed is None:
+        return "" if value is None else str(value)
+    return parsed.strftime("%d.%m.%Y, %H:%M")
