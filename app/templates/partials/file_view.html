@@ -1,16 +1,15 @@
 <div class="content-inner file-content-inner">
+  {# Der Dateiname steht schon als <h1> darunter — die Breadcrumb fuehrt nur
+     noch bis zum Ordner, statt den Pfad ein drittes Mal zu wiederholen. #}
   <nav class="breadcrumb" aria-label="{{ t.path_navigation }}">
     <button type="button" class="breadcrumb-item breadcrumb-root">Wiki</button>
     {% set parts = path.split('/') %}
     {% set ns = namespace(accum='') %}
     {% for part in parts %}
-      {% set ns.accum = ns.accum + '/' + part if ns.accum else part %}
       {% if not loop.last %}
+        {% set ns.accum = ns.accum + '/' + part if ns.accum else part %}
         <span class="breadcrumb-sep" aria-hidden="true">/</span>
         <button type="button" class="breadcrumb-item breadcrumb-folder" data-folder-path="{{ ns.accum }}">{{ part }}</button>
-      {% else %}
-        <span class="breadcrumb-sep" aria-hidden="true">/</span>
-        <span class="breadcrumb-item current" aria-current="page">{{ part }}</span>
       {% endif %}
     {% endfor %}
   </nav>
@@ -19,29 +18,36 @@
     <header class="file-header">
       <div class="file-header-main">
         <h1 class="file-title">{{ title }}</h1>
-        <div class="file-path-row">
-          <span class="file-path">{{ path }}</span>
-          <button type="button" class="btn-copy-path" onclick="kwCopyPath({{ path|tojson|forceescape }})" title="{{ t.copy_path }}" aria-label="{{ t.copy_path }}">
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-          </button>
-        </div>
+        {# Zwei Gruppen statt lose Items: Pfad mit Kopier-Button und die Fakten
+           dahinter brechen so jeweils als Einheit um, statt einzelne Teile in
+           die naechste Zeile zu schieben. #}
         <div class="file-meta">
-          {% if updated %}{{ t.updated }}: {{ updated }}{% endif %}
-          {% if updated and (owner or tags) %} · {% endif %}
-          {% if owner %}{{ t.author }}: {{ owner }}{% endif %}
-          {% if owner and tags %} · {% endif %}
-          {% if tags %}
-            {{ t.tags }}:
-            {% for tag in tags %}
-              <button type="button" class="tag" onclick="kwSearchTag({{ tag|tojson|forceescape }})" title="{{ t.search_tag.format(tag=tag) }}">{{ tag }}</button>
-            {% endfor %}
-          {% endif %}
-          {% if not updated and not owner and not tags %}{{ t.no_metadata }}{% endif %}
+          <span class="file-path-row">
+            <span class="file-path" title="{{ path }}">{{ path }}</span>
+            <button type="button" class="btn-copy-path" onclick="kwCopyPath({{ path|tojson|forceescape }})" title="{{ t.copy_path }}" aria-label="{{ t.copy_path }}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            </button>
+          </span>
+          <span class="file-meta-facts">
+            {% if updated %}
+              <time title="{{ t.updated }}: {{ updated|kwdate_full }}">{{ updated|kwdate }}</time>
+            {% endif %}
+            {% if updated and owner %}<span class="file-meta-sep" aria-hidden="true">·</span>{% endif %}
+            {% if owner %}<span>{{ owner }}</span>{% endif %}
+            {% if not updated and not owner and not tags %}<span>{{ t.no_metadata }}</span>{% endif %}
+          </span>
         </div>
+        {% if tags %}
+        <div class="file-tags">
+          {% for tag in tags %}
+            <button type="button" class="tag" onclick="kwSearchTag({{ tag|tojson|forceescape }})" title="{{ t.search_tag.format(tag=tag) }}">{{ tag }}</button>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
       <div class="file-actions">
         {% if user and user.role in ['write', 'admin'] %}
-        <button type="button" class="btn btn-ghost" onclick="openEditor({{ path|tojson|forceescape }})">
+        <button type="button" class="btn btn-primary" onclick="openEditor({{ path|tojson|forceescape }})">
           {{ svg_edit|safe }} {{ t.edit }}
         </button>
         {% endif %}
@@ -50,7 +56,9 @@
           {{ t.export }}
         </button>
         {% if can_delete %}
-          <button type="button" class="btn btn-danger" onclick="deleteFile({{ path|tojson|forceescape }})">
+          {# Destruktiv: abgesetzt und erst im Hover/Fokus rot, damit die
+             haeufige Aktion daneben nicht mit ihr konkurriert. #}
+          <button type="button" class="btn btn-danger btn-danger-quiet" onclick="deleteFile({{ path|tojson|forceescape }})">
             {{ svg_trash|safe }} {{ t.delete }}
           </button>
         {% endif %}
