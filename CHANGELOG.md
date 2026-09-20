@@ -27,6 +27,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   volle Spaltenbreite, während die Zellen nur ihren Inhalt füllten.
 
 ### Changed
+- **Ein Maßsystem statt zweier konkurrierender** — die Stylesheets trugen 37 Schriftgrößen und 58
+  Abstandswerte, 71 % der Abstände lagen zwischen den Stufen. Beides läuft jetzt über Tokens:
+  sieben Typo-Rollen plus Display, Abstände als Vielfache von 4 (plus 2 px für Haarabstände). Schriftgewichte
+  sind auf 400/500/600/700 beschränkt — 620 und 650 waren Artefakte einer variablen Schrift.
+  `tests/test_design_tokens.py` lässt rohe Werte künftig fehlschlagen.
 - **Die Startseite hilft beim Erststart, statt sie wegzuklappen** — ein frischer Workspace zeigte zwei leere Panels
   mit demselben Satz und ein zugeklapptes „Erste Schritte". Der Hilfeblock steht jetzt offen, solange keine Notiz
   existiert, und jedes Panel hat seinen eigenen Leertext.
