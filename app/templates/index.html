@@ -61,14 +61,14 @@
 <style>
   /* ── Hero with gradient glow ─────────────────────────────────────── */
   .hero {
-    padding: 2.8rem 0 1.8rem;
+    padding: var(--space-8) 0 var(--space-6);
     border-bottom: 1px solid var(--md-outline-v);
-    margin-bottom: 1.6rem;
+    margin-bottom: var(--space-6);
     position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 2rem;
-    align-items: end;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+    align-items: start;
   }
   .hero::before {
     content: '';
@@ -104,7 +104,7 @@
   }
   .hero-title {
     font-family: var(--font-display);
-    font-size: clamp(2.6rem, 6vw, 3.8rem);
+    font-size: clamp(1.9rem, 3.4vw, 2.5rem);
     font-weight: 700;
     letter-spacing: -0.035em;
     line-height: 1.05;
@@ -121,9 +121,9 @@
     text-shadow: 0 0 30px rgba(184, 223, 120, 0.25);
   }
   .hero-sub {
-    font-size: 1.05rem; line-height: 1.55;
+    font-size: 0.95rem; line-height: 1.55;
     color: var(--md-on-surface-v);
-    max-width: 56ch;
+    max-width: 64ch;
     text-wrap: pretty;
   }
   .hero-panel {
@@ -353,7 +353,7 @@
     </div>
   </section>
 
-  <details class="home-help">
+  <details class="home-help"{% if workspace_is_empty %} open{% endif %}>
     <summary class="home-help-summary">{{ t.home_help }}</summary>
 
   <p class="section-label">{{ t.getting_started }}</p>
