@@ -242,7 +242,38 @@ def _path_rows(conn, raw_query: str):
     ).fetchall()
 
 
-def _to_results(rows) -> list[SearchResult]:
+_MD_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+_MD_NOISE = re.compile(
+    r"^\s{0,3}\|?[\s:|-]*\|[\s:|-]*$"      # Tabellen-Trennzeilen (|---|:--:|)
+    r"|^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+|\d+\.\s+)"  # Ueberschrift, Zitat, Liste
+    r"|^\s*-{3,}\s*$"                       # horizontale Linie
+    r"|[*_`~|]",                            # Auszeichnung und Tabellen-Pipes
+    re.M,
+)
+
+
+def _clean_snippet(content: str, query: str, width: int = 180) -> str:
+    """Lesbarer Textausschnitt rund um den Treffer.
+
+    Vorher waren es die ersten 200 Zeichen der Rohdatei: meist Frontmatter und
+    Markdown-Syntax, und nie die Stelle, die zur Suche passt.
+    """
+    body = content.split("---", 2)[2] if content.lstrip().startswith("---") else content
+    body = _MD_LINK.sub(r"\1", body)  # [Text](url) -> Text
+    text = " ".join(_MD_NOISE.sub("", body).split())
+    if not text:
+        return ""
+    term = next((w for w in query.replace("tag:", " ").split() if len(w) > 1), "")
+    hit = text.lower().find(term.lower()) if term else -1
+    if hit <= width // 2:
+        start = 0
+    else:
+        start = max(0, min(hit - width // 3, len(text) - width))
+    excerpt = text[start:start + width]
+    return ("…" if start else "") + excerpt.strip() + ("…" if start + width < len(text) else "")
+
+
+def _to_results(rows, query: str = "") -> list[SearchResult]:
     from .storage import safe_path
 
     out = []
@@ -259,12 +290,10 @@ def _to_results(rows) -> list[SearchResult]:
         except (OSError, ValueError):
             continue
         seen.add(row["path"])
-        content = row["content"] or ""
-        snippet = content[:200] + ("..." if len(content) > 200 else "")
         out.append(SearchResult(
             path=row["path"],
             title=row["title"],
-            snippet=snippet,
+            snippet=_clean_snippet(row["content"] or "", query),
             score=abs(row["rank"]),
         ))
     return out
@@ -290,7 +319,7 @@ def search(query: str) -> list[SearchResult]:
                 "ORDER BY title LIMIT 50",
                 (tag_term,),
             ).fetchall()
-            return _to_results(rows)
+            return _to_results(rows, query)
 
         clean = _sanitize_fts(query)
         try:
@@ -302,14 +331,14 @@ def search(query: str) -> list[SearchResult]:
                 rows = _fts_rows(conn, ' '.join(words)) if words else []
             except sqlite3.OperationalError:
                 rows = []
-        results = _to_results(rows)
+        results = _to_results(rows, query)
         # If FTS found nothing, try a path/title LIKE search as last resort.
         # Auch dieser Zweig muss OperationalError abfangen — sonst schlaegt eine
         # fehlende oder beschaedigte Tabelle bis zum Aufrufer durch, waehrend der
         # FTS-Zweig darueber sie sauber behandelt.
         if not results:
             try:
-                results = _to_results(_path_rows(conn, query))
+                results = _to_results(_path_rows(conn, query), query)
             except sqlite3.OperationalError:
                 logger.warning("Search fallback unavailable for %r", query, exc_info=True)
                 return []
