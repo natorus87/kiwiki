@@ -57,10 +57,15 @@ layout.html                   Base: <head>, header, sidebar slot, <main>, motion
 
 Layout-Reihenfolge im `{% block content %}`:
 
-1. **Hero-Block** — kiwiki-Titel, Tagline („Dein persönlicher Wissensspeicher…"), „Neue Notiz"-Button, Statuspanel (Format/Suche/Zugriff)
+1. **Hero-Block** — kiwiki-Titel, Tagline („Dein persönlicher Wissensspeicher…"), „Neue Notiz"/„Tags"/„Suchverlauf"
 2. **Dashboard** — Zwei Panels: „Zuletzt bearbeitet" + „Zuletzt erstellt" (je bis zu 8 Dateien, rekursiv via `list_all_files`)
-3. **Erste Schritte** — 4 Info-Karten (Notiz öffnen, Neue Notiz, Volltext-Suche, KI-Anbindung)
-4. **MCP-Verbindung** — Code-Blöcke für POST Streamable HTTP + GET SSE
+3. **`<details class="home-help">`** — eingeklappt: „Erste Schritte" (4 Info-Karten) und „MCP-Verbindung"
+   (POST Streamable HTTP + GET SSE)
+
+Die Reihenfolge ist Absicht: wer die Startseite öffnet, will seine Notizen sehen, nicht erklärt bekommen, was
+Markdown ist. Das Onboarding bleibt vollständig erhalten, nimmt der täglichen Arbeit aber nicht den Platz. Das
+frühere Statuspanel (Format `.md`, Suche `FTS5`, Zugriff `<rolle>`) ist entfallen — drei Fakten, die sich nie
+ändern und die Rolle steht ohnehin im Account-Menü.
 
 HTMX-Endpoints für Dashboard:
 - `/ui/recent-edited` → `partials/recent_edited.html` (sortiert nach `updated`-Frontmatter)
@@ -69,6 +74,13 @@ HTMX-Endpoints für Dashboard:
 Sidebar (`{% block sidebar %}`):
 - Dateibaum mit Filter + Multi-Select Toolbar (write/admin)
 - Account-Menu Partial
+
+Der Dateibaum ist die Hauptnavigation und wird deshalb offen gerendert. Sein Zustand liegt im Cookie
+`kiwiki_sidebar` (`open`/`closed`), das `openSidebar()`/`closeSidebar()` im Desktop-Zweig setzen und
+`template_language_context()` als `sidebar_open` in jedes Template gibt. Damit rendert der Server gleich
+richtig — ohne Cookie wäre der Baum nach jedem Seitenwechsel wieder eingeklappt, und ein reines JS-Aufklappen
+nach `DOMContentLoaded` wäre als Sprung sichtbar. Auf Mobile hält CSS die Sidebar unabhängig davon geschlossen
+(`transform: translateX(-100%)`); `kwSyncSidebarForViewport()` setzt dort `inert`/`aria-hidden` nach.
 
 ## Partials (HTMX swaps)
 
@@ -86,6 +98,7 @@ Partials must be self-contained — they cannot rely on `<script>` tags or exter
 | File | Role |
 |---|---|
 | `app/static/kiwiki.css` | Single stylesheet, one `:root` token source, mobile breakpoints |
+| `app/static/kiwiki-polish.css` | Feinschliff-Schicht: Primitive (Spacing, Control-Höhen, Fokus) und gezielte Korrekturen. Lädt nach `kiwiki.css` und überschreibt dort, wo die Basis nicht angefasst werden soll |
 | `app/static/kiwiki.js` | All UI logic: sidebar, tree state, dialogs, toasts, swipe, FAB |
 | `app/static/kiwiki-motion.bundle.js` | Built by `npm run build:motion` (Animate API entrance animations) |
 | `app/static/kiwiki-fonts.css` | Local font-face declarations |
@@ -106,6 +119,16 @@ search("tag:python")
 ```
 
 The prefix path sidesteps FTS5 column filters, which are brittle in SQLite's FTS5. Use it whenever you need structured tag filtering from the UI.
+
+`_clean_snippet(content, query)` builds the excerpt shown in the result list: it strips frontmatter, heading
+markers, list bullets, emphasis, table pipes and link targets, then centres a window on the first occurrence of
+the query term. The previous implementation returned `content[:200]`, which usually showed frontmatter and never
+the part that actually matched.
+
+Die Live-Suche im Header hängt an `hx-trigger="input delay:400ms, submit"`. Der Modifier `changed` darf dort
+**nicht** stehen: htmx vergleicht dafür `elt.value` des Trigger-Elements, und ein `<form>` hat keines — der
+Vergleich ist immer `undefined === undefined` und verwirft jedes Event. Das hat die Live-Suche bis v4.0.0
+vollständig stillgelegt; `tests/test_ui_feinschliff.py` sichert die Trigger-Definition ab.
 
 ## Optional Knowledge Engine
 
@@ -130,6 +153,21 @@ renderer uses a deterministic 3D layout projected onto an accessible canvas, wit
 DOM-based inspector for readable metadata and source navigation. The UI remains
 functional as an explicit empty state while the engine is disabled or backfilling.
 
+## Zeitstempel in Templates
+
+Frontmatter liefert naive lokale Zeitstempel. Roh ausgegeben (`2026-09-19T17:42:00`) sind sie in Listen unlesbar
+und optisch dominanter als der Notiztitel daneben. `app/i18n.py` stellt dafür zwei Funktionen bereit, die
+`app/main.py` als Jinja-Filter registriert:
+
+| Filter | Ergebnis |
+|---|---|
+| `{{ f.updated\|kwdate }}` | „Heute, 09:31", „Gestern, 18:25", „vor 3 Tagen", „19. Sep.", „7. März 2021" |
+| `{{ f.updated\|kwdate_full }}` | `19.09.2026, 17:42` — für `title=` neben der Kurzform |
+
+`kwdate` ist ein `@pass_context`-Filter und liest `lang` aus dem Template-Kontext. Unparsbare Werte gibt er
+unverändert zurück: Frontmatter darf beliebigen Text enthalten, der darf nicht verschwinden. Neue Templates, die
+ein Datum anzeigen, nutzen `<time title="{{ x|kwdate_full }}">{{ x|kwdate }}</time>`.
+
 ## JS Helper Conventions
 
 All global helpers in `kiwiki.js` are namespaced with the `kw` prefix (`kwToast`, `kwDialog`, `kwNewNote`, `kwSearchTag`, `kwToggleSelect`, …). Legacy helpers (`loadFile`, `openEditor`, `toggleFolder`, `deleteFile`) keep their original names for backward compatibility with templates but should not be extended — prefer `kw*` for new helpers.
@@ -150,6 +188,9 @@ Tree state (open folders, active file, scroll position) is persisted in `localSt
 | `kiwiki:activeFile` | Last opened file path |
 | `kiwiki:treeScroll` | Tree last scroll position |
 | `kiwiki_sidebar_w` | Desktop sidebar width (resize handle) |
+
+Offen/Zu der Sidebar liegt bewusst **nicht** im `localStorage`, sondern im Cookie `kiwiki_sidebar` — nur so kann
+der Server das Markup beim ersten Byte richtig rendern.
 
 ## Roles & Visibility
 
