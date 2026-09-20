@@ -153,3 +153,66 @@ def test_snippet_bleibt_bei_leerer_query_am_dateianfang():
 
     assert snippet.startswith("Titel")
     assert not snippet.startswith("…")
+
+
+# ── Erststart ───────────────────────────────────────────────────────────────
+
+def test_onboarding_steht_offen_solange_der_workspace_leer_ist(monkeypatch):
+    """Ein frischer Workspace zeigt sonst nur zwei leere Panels.
+
+    Das eingeklappte <details> spart einem eingearbeiteten Nutzer Platz, nimmt
+    einem neuen aber genau die Hilfe weg, die er gerade braucht.
+    """
+    from app.tenancy import ensure_user_workspace
+
+    monkeypatch.setenv("KIWIKI_USERS", "admin:adminkey:admin")
+    workspace = ensure_user_workspace("admin")
+    for note in workspace.rglob("*.md"):
+        if note.name not in ("index.md", "AGENTS.md"):
+            note.unlink()
+    client = _client(monkeypatch)
+
+    assert '<details class="home-help" open>' in client.get("/").text
+
+    # Ueber die API, nicht per write_text: nur dieser Weg leert den
+    # Verzeichnis-Cache in storage.py, und genau den geht die Anwendung auch.
+    created = client.put("/api/file", json={"path": "notes/erste.md", "content": "# Erste"})
+    assert created.status_code == 200, created.text
+
+    assert '<details class="home-help">' in client.get("/").text
+
+
+def test_die_beiden_dashboard_panels_haben_eigene_leertexte(monkeypatch):
+    from app.tenancy import ensure_user_workspace
+
+    monkeypatch.setenv("KIWIKI_USERS", "admin:adminkey:admin")
+    workspace = ensure_user_workspace("admin")
+    for note in workspace.rglob("*.md"):
+        if note.name not in ("index.md", "AGENTS.md"):
+            note.unlink()
+    client = _client(monkeypatch)
+
+    edited = client.get("/ui/recent-edited").text
+    created = client.get("/ui/recent-created").text
+
+    assert "Noch nichts bearbeitet." in edited
+    assert "Noch keine Notiz angelegt." in created
+    assert edited != created
+
+
+def test_die_hero_groessen_stehen_dort_wo_sie_auch_gewinnen():
+    """index.html laedt sein <style> nach kiwiki-polish.css.
+
+    Hero-Regeln im Polish-Stylesheet waeren bei gleicher Spezifitaet
+    wirkungslos — genau das ist einmal passiert und liess den Titel bei
+    3.8rem stehen.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    index = (root / "app/templates/index.html").read_text(encoding="utf-8")
+    polish = (root / "app/static/kiwiki-polish.css").read_text(encoding="utf-8")
+
+    assert "clamp(1.9rem, 3.4vw, 2.5rem)" in index
+    assert "grid-template-columns: minmax(0, 1fr);" in index
+    assert "font-size" not in polish.split(".hero-title", 1)[1].split("}", 1)[0]
