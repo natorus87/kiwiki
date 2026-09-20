@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block sidebar %}
-<aside class="sidebar collapsed knowledge-sidebar" aria-label="{{ t.sidebar_label }}" aria-hidden="true" inert>
+<aside class="sidebar knowledge-sidebar{% if not sidebar_open %} collapsed{% endif %}" aria-label="{{ t.sidebar_label }}" aria-hidden="{{ "false" if sidebar_open else "true" }}"{% if not sidebar_open %} inert{% endif %}>
   <div class="mobile-sidebar-header">
     <span class="mobile-sidebar-logo">ki<em>wiki</em></span>
     <button type="button" class="mobile-close-btn" onclick="closeSidebar()" aria-label="{{ t.close_sidebar }}">
