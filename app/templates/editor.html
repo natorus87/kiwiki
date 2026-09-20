@@ -15,19 +15,19 @@
     overflow: hidden; background: var(--md-bg);
   }
   .editor-bar {
-    display: flex; align-items: center; gap: 0.5rem;
-    padding: 0.6rem 0.75rem;
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     background: var(--md-surface);
     border-bottom: 1px solid var(--md-outline-v);
     flex-shrink: 0; flex-wrap: wrap;
   }
   .editor-path {
     flex: 1; min-width: 200px;
-    padding: 0.4rem 0.85rem;
+    padding: var(--space-2) var(--space-3);
     background: var(--md-surface-c);
     border: 1px solid var(--md-outline-v);
     border-radius: 28px;
-    font-size: 0.8rem; font-family: var(--font-mono);
+    font-size: var(--text-sm); font-family: var(--font-mono);
     color: var(--md-on-surface);
     transition: border-color 0.15s;
   }
@@ -40,8 +40,8 @@
       top: auto;
       z-index: 2;
       flex-wrap: wrap;
-      gap: 0.4rem;
-      padding: 0.5rem 0.6rem;
+      gap: var(--space-2);
+      padding: var(--space-2) var(--space-2);
     }
     .editor-path {
       width: 100%;
