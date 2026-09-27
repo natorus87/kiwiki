@@ -932,18 +932,18 @@ class TestToolDispatch:
         assert str(active_user) not in json.dumps({"status": status, "identity": identity})
 
     def test_chunked_upload_store_is_bounded(self, active_user, monkeypatch):
-        from app import mcp_server
+        from app.mcp_tools import files as _mcp_files
 
-        mcp_server._chunked_writes.clear()
-        monkeypatch.setattr(mcp_server, "_MCP_MAX_STAGED_UPLOADS", 1)
+        _mcp_files._chunked_writes.clear()
+        monkeypatch.setattr(_mcp_files, "_MCP_MAX_STAGED_UPLOADS", 1)
         user = User(username="alice", role="write")
-        mcp_server._stage_chunked_write(
+        _mcp_files._stage_chunked_write(
             {"path": "notes/a.md", "upload_id": "a", "chunk": "a", "chunk_index": 0},
             user,
         )
 
         with pytest.raises(ValueError, match="staged uploads"):
-            mcp_server._stage_chunked_write(
+            _mcp_files._stage_chunked_write(
                 {"path": "notes/b.md", "upload_id": "b", "chunk": "b", "chunk_index": 0},
                 user,
             )
@@ -1253,11 +1253,11 @@ class TestReviewRegressions:
         Die Treffer enthalten Dateipfade samt Zeileninhalten — eine geleakte
         job_id haette einem anderen Benutzer Einblick gegeben.
         """
-        from app import mcp_server
+        from app.mcp_tools import search as _mcp_search
 
         alice = User(username="alice", role="write")
         bob = User(username="bob", role="write")
-        mcp_server._grep_jobs["job-1"] = {
+        _mcp_search._grep_jobs["job-1"] = {
             "status": "completed",
             "created_at": time.time(),
             "result": {"matches": [{"file": "notes/geheim.md", "text": "VERTRAULICH"}]},
@@ -1276,21 +1276,21 @@ class TestReviewRegressions:
     async def test_hintergrund_grep_haelt_seine_task_referenz(self, active_user, tmp_file):
         """Regression: eine unreferenzierte Task kann der GC mitten im Lauf einsammeln,
         der Job bliebe dann dauerhaft auf 'running' und belegte seinen Slot."""
-        from app import mcp_server
+        from app.mcp_tools import search as _mcp_search
 
         user = User(username="alice", role="write")
         tmp_file("notes/a.md", "---\ntitle: A\n---\n\nTREFFER")
 
         started = json.loads(await _dispatch("grep", {"pattern": "TREFFER", "background": True}, user))
-        assert mcp_server._grep_tasks, "keine starke Referenz auf die laufende Task"
+        assert _mcp_search._grep_tasks, "keine starke Referenz auf die laufende Task"
 
         for _ in range(60):
             await asyncio.sleep(0.05)
-            if mcp_server._grep_jobs[started["job_id"]]["status"] == "completed":
+            if _mcp_search._grep_jobs[started["job_id"]]["status"] == "completed":
                 break
         status = json.loads(await _dispatch("grep_status", {"job_id": started["job_id"]}, user))
         assert status["status"] == "completed"
-        assert not mcp_server._grep_tasks, "abgeschlossene Task wurde nicht aufgeraeumt"
+        assert not _mcp_search._grep_tasks, "abgeschlossene Task wurde nicht aufgeraeumt"
 
     @pytest.mark.asyncio
     async def test_listen_tools_liefern_ein_objekt(self, active_user, tmp_file):
@@ -1387,9 +1387,9 @@ class TestOpenAIConnectorContract:
     @pytest.mark.asyncio
     async def test_fetch_ohne_basis_url_bleibt_relativ(self, monkeypatch, active_user, tmp_file):
         monkeypatch.delenv("KIWIKI_BASE_URL", raising=False)
-        from app import mcp_server
+        from app.mcp_tools import fileutil as _mcp_fileutil
 
-        monkeypatch.setattr(mcp_server, "_BASE_URL", "")
+        monkeypatch.setattr(_mcp_fileutil, "_BASE_URL", "")
         user = User(username="alice", role="admin")
         rel = tmp_file("notes/a.md", "---\ntitle: A\n---\n\nText")
 
