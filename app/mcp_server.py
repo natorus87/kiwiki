@@ -185,6 +185,11 @@ def _log_agent_call(user: "User | None", tool: str, args: dict, success: bool, e
             with os.fdopen(fd, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception:
+        # Bewusst still: der Audit-Log darf nie einen MCP-Aufruf abbrechen.
+        # Kosten ist ein fehlender Eintrag — der naechste erfolgreiche
+        # schreibt wieder, und der Log bricht nach _AGENT_LOG_MAX_BYTES ohne
+        #hin ab statt zu eskalieren. Wer den Verlust bemerken will, prueft
+        #die Groesse der Datei.
         pass
 
 
