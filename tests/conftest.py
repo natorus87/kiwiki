@@ -26,9 +26,16 @@ def _clear_process_local_state() -> None:
                 middleware._windows.clear()
             middleware = getattr(middleware, "app", None)
 
-    rate_mod = sys.modules.get("app.rate_limiter")
-    if rate_mod is not None:
-        rate_mod._failed_key_attempts.clear()
+    store_mod = sys.modules.get("app.rate_limit_store")
+    if store_mod is not None:
+        # Der Key-Zaehler ist inzwischen austauschbar (app/rate_limit_store),
+        # deshalb hier nicht mehr ein Modul-Attribut loeschen, sondern den
+        # aktiven Store zuruecksetzen, damit kein Budget in den naechsten Test
+        # durchschlaegt.
+        active = store_mod._store
+        if active is not None:
+            active.prune()
+        store_mod.set_store(None)
 
     mcp_mod = sys.modules.get("app.mcp_server")
     if mcp_mod is not None:
