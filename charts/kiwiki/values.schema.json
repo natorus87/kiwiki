@@ -14,7 +14,10 @@
         "KIWIKI_KNOWLEDGE_ENABLED": {"type": "string", "enum": ["true", "false"]},
         "KIWIKI_KNOWLEDGE_BACKFILL_BATCH_SIZE": {"type": "string", "pattern": "^[1-9][0-9]*$"},
         "KIWIKI_KNOWLEDGE_MAX_FILE_BYTES": {"type": "string", "pattern": "^[1-9][0-9]*$"},
-        "KIWIKI_KNOWLEDGE_MAX_DB_BYTES": {"type": "string", "pattern": "^[1-9][0-9]*$"}
+        "KIWIKI_KNOWLEDGE_MAX_DB_BYTES": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "KIWIKI_KNOWLEDGE_MIN_FREE_BYTES": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "KIWIKI_UI_LIMIT": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "KIWIKI_SESSION_TTL_SECONDS": {"type": "string", "pattern": "^[1-9][0-9]*$"}
       },
       "additionalProperties": true
     }
