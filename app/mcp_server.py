@@ -2187,15 +2187,21 @@ def _tool_annotations(name: str) -> dict:
     return {
         "readOnlyHint": read_only,
         "destructiveHint": destructive,
+        # Regel: idempotent sind Lese-Werkzeuge ohne Schreibseiteneffekt.
+        # build_index, reindex_all und knowledge_reindex standen
+        # faelschlich drin — teure Schreibvorgaenge, die ein Client sonst
+        # frei wiederholen duerfte. grep bleibt drin (Default-Aufruf liest
+        # nur; background-Jobs sind opt-in per Argument).
         "idempotentHint": name in {
             "read_index", "list_files", "read_file", "fetch", "search", "read_many",
-            "list_all_files", "grep", "find", "file_info", "read_lines", "build_index",
+            "list_all_files", "grep", "find", "file_info", "read_lines",
             "recent_files", "backlinks", "preview_edit", "validate_wiki", "related_files",
-            "tag_index", "reindex_all", "search_status", "whoami",
+            "tag_index", "search_status", "whoami",
             "file_history", "diff", "statistics", "validate_links", "link_graph",
             "export", "duplicate_check", "ai_summarize",
             "knowledge_search", "entity_details", "entity_neighbors", "fact_timeline",
-            "explain_relation", "knowledge_status", "knowledge_reindex",
+            "explain_relation", "knowledge_status",
+            "search_history", "dead_link_check", "grep_status",
         },
         "openWorldHint": False,
     }
