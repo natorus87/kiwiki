@@ -29,7 +29,14 @@ _pool: dict[tuple[str, int], sqlite3.Connection] = {}
 
 
 def _get_pooled_conn(db_path: str) -> sqlite3.Connection:
-    """Return a persistent connection for the given database path."""
+    """Return a persistent connection for the given database path.
+
+    Das Timeout bleibt bewusst bei 250 ms: die Schreibpfade des FTS-Index
+    haben eine eigene Retry-Logik (`deindex_files` versucht dreimal mit
+    Backoff 20/40/80 ms). Ein langes Warten wuerde diese Logik aushebeln —
+    der Aufrufer wartet dann 10 s statt dreimal kurz zu probieren, und die
+    Zeit wandert vom Aufrufer in den Lock.
+    """
     key = (db_path, threading.get_ident())
     with _pool_lock:
         conn = _pool.get(key)
