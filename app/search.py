@@ -222,6 +222,11 @@ def deindex_files(file_paths: list[str]) -> None:
                 conn.rollback()
                 if attempt == 2:
                     raise
+                logger.debug(
+                    "deindex_files: database locked, retrying (attempt %d of 3, %d paths)",
+                    attempt + 2,
+                    len(params),
+                )
         time.sleep(0.02 * (2 ** attempt))
 
 
