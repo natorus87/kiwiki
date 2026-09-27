@@ -84,6 +84,7 @@ All runtime configuration is done through environment variables.
 | `KIWIKI_CORS_ORIGINS` | empty | Comma-separated list of allowed CORS origins; empty disables cross-origin access |
 | `KIWIKI_RATE_LIMIT_ENABLED` | `true` | Enables login, OAuth, UI, read, and write rate limits |
 | `KIWIKI_LOGIN_LIMIT` | `5` | `/login` brute-force attempts per minute and client IP |
+| `KIWIKI_KEY_ATTEMPT_LIMIT` | `5` | Failed API-key attempts counted separately from the path tier, so `/oauth/authorize` cannot be used to probe keys more cheaply than `/login` |
 | `KIWIKI_OAUTH_LIMIT` | `20` | OAuth handshake requests (authorize/token/register) per minute and client IP |
 | `KIWIKI_WRITE_LIMIT` | `30` | Authenticated write requests per minute and client IP |
 | `KIWIKI_UI_LIMIT` | `240` | Web UI fragment requests per minute and client IP |
@@ -106,10 +107,13 @@ All runtime configuration is done through environment variables.
 | `KIWIKI_MCP_UPLOAD_TTL_SECONDS` | `3600` | Lifetime of incomplete staged uploads |
 | `KIWIKI_MCP_MAX_UPLOAD_BYTES` | `10485760` | Maximum assembled bytes per staged upload |
 | `KIWIKI_MCP_MAX_UPLOAD_CHUNKS` | `1000` | Maximum chunks per staged upload |
+| `KIWIKI_MCP_MAX_STAGED_UPLOADS` | `32` | Maximum staged chunked uploads per process |
+| `KIWIKI_MCP_MAX_STAGED_BYTES` | `52428800` | Maximum aggregate bytes held by staged uploads |
 | `KIWIKI_KNOWLEDGE_ENABLED` | `false` | Enables the optional deterministic per-user knowledge index and worker |
 | `KIWIKI_KNOWLEDGE_BACKFILL_BATCH_SIZE` | `25` | Maximum queued documents processed per tenant and worker pass |
 | `KIWIKI_KNOWLEDGE_MAX_FILE_BYTES` | `1048576` | Maximum Markdown file size accepted by the knowledge extractor |
 | `KIWIKI_KNOWLEDGE_MAX_DB_BYTES` | `134217728` | Per-user knowledge database size ceiling |
+| `KIWIKI_KNOWLEDGE_MIN_FREE_BYTES` | `134217728` | Minimum free space on the workspace filesystem required before the knowledge indexer may write |
 
 ### Optional Knowledge Engine
 
@@ -129,8 +133,6 @@ The authenticated web UI exposes the local graph at `/knowledge`. Its self-hoste
 without sending graph data to third parties. Drag or touch to orbit, use the wheel
 or trackpad to zoom, click a node for provenance, double-click a document to open it,
 and use W/A/S/D to move through the knowledge space.
-| `KIWIKI_MCP_MAX_STAGED_UPLOADS` | `32` | Maximum staged chunked uploads per process |
-| `KIWIKI_MCP_MAX_STAGED_BYTES` | `52428800` | Maximum aggregate bytes held by staged uploads |
 
 Example:
 
