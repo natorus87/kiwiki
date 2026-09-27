@@ -59,9 +59,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **`Ctrl+S` steht am Speichern-Button** — vorher als lose Beschriftung am Ende der Editor-Leiste.
 - **Die Konfigurationsdoku ist mit dem Code synchron** — `tests/test_deployment_config.py` prüft jetzt, dass
   jede `KIWIKI_*`-Variable, die der Code liest, in der README-Tabelle steht, dass `.env.example` keine
-  erfundenen Keys nennt, dass `values.yaml` die UI- und Session-Grenzen exponiert und dass `AGENTS.md` nur auf
-  existierende Pfade zeigt. `.env.example` führt die Betriebs-relevanten Variablen aktiv und die übrigen
-  kommentiert mit Default in Klammern; die vollständige Liste bleibt in der README.
+  erfundenen Keys nennt, dass `values.yaml` die UI- und Session-Grenzen exponiert und dass `AGENTS.md` den
+  Unterschied zwischen versionierten und lokalen Pfaden benennt. `.env.example` führt die betriebsrelevanten
+  Variablen aktiv und die übrigen kommentiert mit Default in Klammern; die vollständige Liste bleibt in der
+  README.
 - **`AGENTS.md` benennt die existierenden Pfade** — die Datei verwies auf `.Codex/rules/`, `.Codex/skills/`
   und `.Codex/agents/`. Real ist `.claude/`. Sie weist jetzt zusätzlich darauf hin, dass `.claude/` per
   `.gitignore` nicht versioniert ist, ein frischer Klon also weder Rules noch Agents noch Skills besitzt, und
