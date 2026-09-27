@@ -81,12 +81,18 @@ Vor jeder Fertigmeldung müssen diese drei Gates lokal grün sein — genau so, 
 
 ```bash
 .venv/bin/python -m ruff check app tests        # Lint
-.venv/bin/python -m pytest -q                    # 506 Tests
-.venv/bin/python -m coverage report --fail-under=60
+.venv/bin/python -m pytest -q                    # 595 Tests
+.venv/bin/python -m coverage report --fail-under=75
 ```
 
 Der Browser-Smoke-Test (`tests/browser_smoke.py`) läuft nur in CI, weil er Chromium
 und einen echten Server braucht.
+
+## Aufgaben-Board
+
+Offene Arbeit liegt auf dem Hermes-Kanban-Board `kiwiki` (Single Source of Truth),
+nicht in GitHub Issues. Neue Befunde dort aufnehmen, erledigte Karten nur mit
+Nachweis (Tests, Gates, PR) abschließen.
 
 ## Prinzipien
 

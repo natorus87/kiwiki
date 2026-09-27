@@ -1,13 +1,13 @@
 """Regressionstests fuer die SQLite-Timeouts.
 
-Beide Datenbanken hatten ein Busy-Timeout, das unter Last nicht reichte:
-
-* `knowledge.db` : 1,0 s
-* `search` (FTS) : 0,25 s
-
-Der Knowledge-Test fiel dadurch in CI mit `sqlite3.OperationalError:
+Die Knowledge-DB hatte ein Busy-Timeout von 1,0 s, das unter Last nicht
+reichte: der Knowledge-Test fiel dadurch in CI mit `sqlite3.OperationalError:
 database is locked` um, ohne dass ein Codefehler vorlag. Der Wartende
 bekam schlicht keine Gelegenheit, den Lock zu bekommen.
+
+Der FTS-Index bleibt dagegen bewusst bei 250 ms — er hat eine eigene
+Retry-Logik (`deindex_files` versucht dreimal mit Backoff 20/40/80 ms),
+und ein langes Warten wuerde sie aushebeln.
 
 Ein Timeout ist hier kein Komfortparameter: SQLite in WAL-Modus kann
 gleichzeitig schreiben und lesen, aber nur *ein* Schreiber zur Zeit. Wer
@@ -38,15 +38,15 @@ def workspace(tmp_path: Path) -> Path:
 # ── Die Timeouts selbst ────────────────────────────────────────────────────
 
 def test_knowledge_db_timeout_ist_nicht_unter_einer_sekunde(workspace):
-    """1,0 s war der Ausloeser. Der Test nennt die Grenze, damit die
-    Begruendung im Code nicht wieder wegoptimiert wird."""
+    """1,0 s war der Ausloeser. Der Test haelt die 10 s fest, damit der
+    Wert nicht wieder herunteroptimiert wird."""
     connection = knowledge_db.open_database(workspace)
     try:
         timeout_ms = connection.execute("PRAGMA busy_timeout").fetchone()[0]
     finally:
         connection.close()
 
-    assert timeout_ms >= 5000, (
+    assert timeout_ms >= 10000, (
         f"busy_timeout ist {timeout_ms} ms — unter CI-Last reichte das nicht, "
         "der Test fiel mit 'database is locked' um"
     )
@@ -74,12 +74,21 @@ def test_nur_die_knowledge_db_wartet_lang(tmp_path):
     """Die beiden Timeouts sind verschieden — mit Absicht, nicht aus Versehen.
 
     Die Knowledge-DB hat keinen Retry-Pfad, dort war 1,0 s zu knapp. Der
-    FTS-Index hat einen und bleibt deshalb kurz.
+    FTS-Index hat einen und bleibt deshalb kurz. Beide Seiten werden zur
+    Laufzeit ueber PRAGMA geprüft, nicht per Quelltext-Suche — ein Reformat
+    (Leerzeichen, Konstante) darf diesen Test nicht brechen.
     """
-    from app import search as search_mod
+    db_path = tmp_path / "index.sqlite"
+    connection = _get_pooled_conn(str(db_path))
+    try:
+        fts_ms = connection.execute("PRAGMA busy_timeout").fetchone()[0]
+    finally:
+        close_pool()
 
-    suche = Path(search_mod.__file__).read_text(encoding="utf-8")
-    assert "timeout=0.25" in suche, "der FTS-Timeout hat sich geändert"
+    assert fts_ms <= 250, (
+        f"der FTS-Timeout ist {fts_ms} ms — er muss kurz bleiben, weil "
+        "deindex_files selbst mit Backoff retryt"
+    )
 
 
 # ── Der eigentliche Nachweis: paralleles Schreiben ────────────────────────
