@@ -13,9 +13,6 @@ skills-lock.json
 # Lokaler Agent-/Scheduler-Zustand
 .mimocode/
 
-# Local planning notes
-PLAN.md
-
 # Python
 __pycache__/
 *.py[cod]
