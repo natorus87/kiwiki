@@ -93,6 +93,20 @@ def test_ci_enforces_coverage_and_dependency_audits():
     assert "npm audit" in workflow
 
 
+def test_coverage_gate_is_identical_in_pyproject_and_ci():
+    """Die Schwelle steht zweimal; ein Drift laesst eines der beiden Gates still greifen."""
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    match = re.search(r"fail_under\s*=\s*(\d+)", pyproject)
+    assert match, "pyproject.toml setzt keine Coverage-Schwelle"
+    threshold = match.group(1)
+
+    assert f"--fail-under={threshold}" in workflow, (
+        f"pyproject.toml verlangt {threshold} %, der CI-Schritt verlangt eine andere Schwelle"
+    )
+
+
 def test_shipped_version_matches_the_app_constant():
     """APP_VERSION ist die ausgelieferte Version (FastAPI, /version, MCP serverInfo)."""
     from app.constants import APP_VERSION
