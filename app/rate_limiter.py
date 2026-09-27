@@ -155,6 +155,16 @@ def reset_failed_key_attempts(request: Request) -> None:
         _failed_key_attempts.pop(_get_client_ip(request), None)
 
 
+def _is_login_success(request: Request) -> bool:
+    """Traegt der Request ein vom Client gesetztes Formularfeld mit dem Key?
+
+    Nur bei einem echten Login-POST lohnt der Sonderfall; ein 200 aus einem
+    anderen Handler darf das Budget nicht leeren.
+    """
+    content_type = request.headers.get("content-type", "")
+    return "form" in content_type.lower()
+
+
 def _classify_path(path: str, method: str) -> str:
     """Ordne Pfad+Methode einer der vier Limits zu."""
     if path == "/login" and method == "POST":
@@ -259,6 +269,28 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Pruefen
         if len(self._windows.get(key, [])) >= limit:
+            # Ausnahme fuer /login: der Erfolgsfall darf nicht am Limit
+            # scheitern. Wer den richtigen Key hat, ist genau dann gesperrt,
+            # wenn er ihn braucht — und der Handler haette das Fenster bereits
+            # freigeben koennen, wird aber nie erreicht. Deshalb laeuft der
+            # Login-Request durch und entscheidet erst danach.
+            #
+            # Freigegeben wird nur, was tatsaechlich eine Anmeldung ist: der
+            # Statuscode 303 ist der Redirect, den login_submit nur nach
+            # erfolgreicher Pruefung zurueckgibt. Ein 200 aus einem beliebigen
+            # anderen Handler gilt nicht als Erfolg.
+            if tier == "login" and _is_login_success(request):
+                response = await call_next(request)
+                if response.status_code in (302, 303):
+                    self._windows.pop(key, None)
+                    return response
+                logger.warning(
+                    "Rate limit login exceeded for %s (%d requests in %ds)",
+                    client_ip,
+                    len(self._windows[key]),
+                    window,
+                )
+                return _build_rate_limit_response(request, max(0, int(self._windows[key][0] + window - now)))
             logger.warning(
                 "Rate limit %s exceeded for %s (%s requests in %ds)",
                 tier,
