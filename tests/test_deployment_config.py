@@ -134,10 +134,13 @@ def test_helm_env_exposes_the_ui_and_session_limits():
     assert env["KIWIKI_SESSION_TTL_SECONDS"] == "2592000"
 
 
-def test_agents_md_points_at_paths_that_exist():
-    """AGENTS.md ist versioniert, .claude/ nicht — Referenzen muessen aufloesbar sein."""
+def test_agents_md_marks_local_paths_as_local():
+    """AGENTS.md ist versioniert, .claude/ nicht — der Unterschied muss dort stehen.
+
+    Die Existenz von .claude/ darf *nicht* geprueft werden: das Verzeichnis ist
+    per .gitignore ausgeschlossen und fehlt in jedem frischen Klon und in CI.
+    """
     agents_md = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
     assert ".Codex/" not in agents_md, "AGENTS.md verweist auf ein Verzeichnis, das es nicht gibt"
-    for directory in (".claude/rules", ".claude/skills", ".claude/commands"):
-        assert (ROOT / directory).is_dir(), f"AGENTS.md nennt {directory}, das existiert nicht"
+    assert ".gitignore" in agents_md, "AGENTS.md muss sagen, dass .claude/ nicht versioniert ist"
