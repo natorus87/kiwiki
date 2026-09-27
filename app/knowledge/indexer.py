@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
 import time
 import unicodedata
@@ -43,7 +44,7 @@ def upsert_document(connection: sqlite3.Connection, workspace: Path, path: str) 
     root = Path(workspace).resolve()
     if file_path != root and not str(file_path).startswith(str(root) + "/"):
         raise ValueError("Document escapes workspace")
-    max_bytes = int(__import__("os").getenv("KIWIKI_KNOWLEDGE_MAX_FILE_BYTES", "1048576"))
+    max_bytes = int(os.getenv("KIWIKI_KNOWLEDGE_MAX_FILE_BYTES", "1048576"))
     stat = file_path.stat()
     if stat.st_size > max_bytes:
         raise ValueError("Document exceeds knowledge indexing size limit")
