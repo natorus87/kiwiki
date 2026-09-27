@@ -1,7 +1,5 @@
 """
-Einfache, prozesslokale Rate-Limiting-Middleware.
-
-Fuenf Tier-Grenzen pro Client-IP:
+Rate-Limiting: fuenf Tier-Grenzen pro Client-IP
   - login       : 5 Versuche / Minute  (Brute-Force-Schutz für /login)
   - oauth       : 20 Anfragen / Minute (MCP-OAuth-Handshake: authorize/token/register)
   - write       : 30 Anfragen / Minute (Schreiboperationen)
@@ -14,6 +12,11 @@ spaetere Refreshes) verbraucht schnell mehr als die 5 Versuche, die fuer
 Passwort-Brute-Force am /login-Formular gedacht sind — sonst landen legitime
 Nutzer im selben 429 wie ein Angreifer.
 
+Die API-Key-Fehlversuche selbst liegen in `app.rate_limit_store`: /login und
+/oauth/authorize teilen sich dort ein Budget, damit das Durchprobieren von Keys
+nicht an der Formularwahl scheitert. Zusaetzlich begrenzt eine globale
+Obergrenze die Summe ueber alle Quellen.
+
 Schaltung über KIWIKI_RATE_LIMIT_ENABLED (default "true").
 """
 
@@ -22,7 +25,6 @@ from __future__ import annotations
 import html
 import logging
 import os
-import threading
 import time
 import ipaddress
 from collections import defaultdict
@@ -72,16 +74,11 @@ _UI_WINDOW: int = 60
 _READ_LIMIT: int = int(os.getenv("KIWIKI_READ_LIMIT", "60"))
 _READ_WINDOW: int = 60
 
-# Fehlversuche der API-Key-Eingabe werden getrennt vom Pfad-Tier gezaehlt.
-# Grund: /oauth/authorize prueft denselben API-Key wie /login, liegt aber im
-# grosszuegigeren oauth-Tier (20/min), damit ein Connector-Handshake nicht ins
-# 429 laeuft. Ohne diesen separaten Zaehler waere das Formular der bequemere
-# Weg zum Durchprobieren von Keys als das /login-Tier mit 5/min. Erfolgreiche
-# Handshakes zaehlen hier nicht mit, der Connector-Flow bleibt unberuehrt.
-_KEY_ATTEMPT_LIMIT: int = int(os.getenv("KIWIKI_KEY_ATTEMPT_LIMIT", "5"))
-_KEY_ATTEMPT_WINDOW: int = 60
-_failed_key_attempts: dict[str, list[float]] = {}
-_failed_key_lock = threading.Lock()
+# Fehlversuche der API-Key-Eingabe werden in app/rate_limit_store gefuehrt und
+# von /login wie /oauth/authorize geteilt — beide pruefen denselben Key, ein
+# getrenntes Budget je Formular waere die Umgehung. Zusaetzlich gilt eine
+# globale Obergrenze ueber alle Quellen (KIWIKI_KEY_ATTEMPT_GLOBAL_LIMIT),
+# damit verteiltes Durchprobieren hinter NAT, VPN oder Tor teuer wird.
 
 # Statische Pfade werden nie gedrosselt
 _STATIC_PATHS: set[str] = {
@@ -128,31 +125,21 @@ def register_failed_key_attempt(request: Request) -> bool:
     """Einen fehlgeschlagenen API-Key-Versuch buchen.
 
     Liefert True, wenn die Quelle ihr Fehlversuchs-Budget aufgebraucht hat und
-    geblockt werden soll.
+    geblockt werden soll. Das Budget ist das gemeinsame aus
+    `app.rate_limit_store` — /login und /oauth/authorize teilen es sich.
     """
+    from .rate_limit_store import register_failed_key_attempt as _register
+
     if not _ENABLED:
         return False
-    source = _get_client_ip(request)
-    now = time.monotonic()
-    cutoff = now - _KEY_ATTEMPT_WINDOW
-    with _failed_key_lock:
-        recent = [value for value in _failed_key_attempts.get(source, []) if value > cutoff]
-        recent.append(now)
-        _failed_key_attempts[source] = recent
-        # Verwaiste Quellen aufraeumen, damit das Dict nicht unbegrenzt waechst.
-        if len(_failed_key_attempts) > 100:
-            for key in [k for k, v in _failed_key_attempts.items() if not any(t > cutoff for t in v)]:
-                del _failed_key_attempts[key]
-        blocked = len(recent) > _KEY_ATTEMPT_LIMIT
-    if blocked:
-        logger.warning("API key attempt limit exceeded for %s", source)
-    return blocked
+    return _register(_get_client_ip(request))
 
 
 def reset_failed_key_attempts(request: Request) -> None:
     """Zaehler nach erfolgreicher Authentifizierung leeren."""
-    with _failed_key_lock:
-        _failed_key_attempts.pop(_get_client_ip(request), None)
+    from .rate_limit_store import reset_failed_key_attempts as _reset
+
+    _reset(_get_client_ip(request))
 
 
 def _is_login_success(request: Request) -> bool:
