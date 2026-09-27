@@ -39,8 +39,16 @@ def _clear_process_local_state() -> None:
 
     mcp_mod = sys.modules.get("app.mcp_server")
     if mcp_mod is not None:
-        for name in ("_sse_sessions", "_oauth_clients", "_oauth_codes", "_grep_jobs", "_chunked_writes"):
+        for name in ("_sse_sessions", "_oauth_clients", "_oauth_codes"):
             getattr(mcp_mod, name).clear()
+    # Grep- und Upload-State wohnen seit dem Modulsplit in app.mcp_tools
+    # (search/files) statt in app.mcp_server — gleiche Dicts, neuer Ort.
+    for modname, names in (("app.mcp_tools.search", ("_grep_jobs",)),
+                           ("app.mcp_tools.files", ("_chunked_writes",))):
+        pkg_mod = sys.modules.get(modname)
+        if pkg_mod is not None:
+            for name in names:
+                getattr(pkg_mod, name).clear()
 
     # Der Session-Store haelt seinen Zustand ebenfalls prozesslokal. Ohne dieses
     # Zuruecksetzen bleibt eine in Test A per /login erzeugte Session in Test B
