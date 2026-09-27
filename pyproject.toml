@@ -10,8 +10,22 @@ target-version = "py312"
 line-length = 120
 
 [tool.ruff.lint]
+# Der Regelensatz wird festgeschrieben statt dem Default folgen zu lassen.
+# ruff 0.16 hat den Default von 59 auf 413 Regeln erweitert (BLE001, B008,
+# LOG015, ASYNC221, ...). Ohne diese Festlegung wuerde ein reines Werkzeug-
+# Update 197 Befunde ausloesen, die keine Fehler sind — 51 davon sind
+# BLE001 ("blind except"), also genau die Faelle, die dieses Projekt
+# bewusst in den Audit-Pfaden mit Logging versehen hat.
+#
+# Der Satz entspricht dem Default von ruff 0.15, der seit Projektbeginn
+# lief. Neue Regeln kommen bewusst einzeln dazu, nicht als Sammelumstellung.
+select = [
+  "E",    # pycodestyle errors
+  "F",    # pyflakes
+  "W",    # pycodestyle warnings
+]
 ignore = [
-  "E501",
+  "E501",  # Zeilenlaenge, regelt line-length oben
 ]
 
 [tool.pytest.ini_options]
