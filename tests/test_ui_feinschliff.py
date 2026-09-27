@@ -12,6 +12,8 @@ Jeder Test hier reproduziert einen Fehler, der im Browser sichtbar war:
 * Der Dateibaum klappte bei jedem Seitenwechsel wieder zu.
 """
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app.i18n import format_stamp, stamp_title
@@ -36,8 +38,7 @@ def _client(monkeypatch, users: str = "admin:adminkey:admin") -> TestClient:
 def test_suchformular_hat_keinen_changed_modifier():
     """"changed" auf einem <form> deaktiviert die Live-Suche vollstaendig."""
     layout = (
-        __import__("pathlib").Path(__file__).resolve().parents[1]
-        / "app/templates/layout.html"
+        Path(__file__).resolve().parents[1] / "app/templates/layout.html"
     ).read_text(encoding="utf-8")
     trigger = layout.split('hx-trigger="', 1)[1].split('"', 1)[0]
 

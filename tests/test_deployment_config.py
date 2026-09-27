@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import yaml
@@ -90,3 +91,56 @@ def test_ci_enforces_coverage_and_dependency_audits():
     assert "--fail-under" in workflow
     assert "pip-audit" in workflow
     assert "npm audit" in workflow
+
+
+def test_shipped_version_matches_the_app_constant():
+    """APP_VERSION ist die ausgelieferte Version (FastAPI, /version, MCP serverInfo)."""
+    from app.constants import APP_VERSION
+
+    assert APP_VERSION == "4.0.0"
+
+
+def _configured_env_keys() -> set[str]:
+    """Alle KIWIKI_*-Variablen, die der Code tatsächlich liest."""
+    keys: set[str] = set()
+    pattern = re.compile(r'(?:os\.environ\.get|os\.getenv)\(\s*"(KIWIKI_\w+)"')
+    for path in (ROOT / "app").rglob("*.py"):
+        keys |= set(pattern.findall(path.read_text(encoding="utf-8")))
+    return keys
+
+
+def test_every_env_var_read_by_the_code_is_documented_in_the_readme():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    documented = set(re.findall(r"\|\s*`(KIWIKI_\w+)`", readme))
+
+    undocumented = _configured_env_keys() - documented
+    assert not undocumented, f"im Code gelesen, aber nicht in der README-Tabelle: {sorted(undocumented)}"
+
+
+def test_env_example_only_contains_real_env_vars():
+    """Kommentierte Beispiele duerfen Keys nennen, unbekannte duerfen nicht."""
+    example = (ROOT / ".env.example").read_text(encoding="utf-8")
+    mentioned = set(re.findall(r"KIWIKI_\w+", example))
+
+    unknown = mentioned - _configured_env_keys()
+    assert not unknown, f"in .env.example, aber im Code nicht vorhanden: {sorted(unknown)}"
+
+
+def test_helm_env_exposes_the_ui_and_session_limits():
+    values = yaml.safe_load((ROOT / "charts/kiwiki/values.yaml").read_text(encoding="utf-8"))
+    env = values["env"]
+
+    assert env["KIWIKI_UI_LIMIT"] == "240"
+    assert env["KIWIKI_SESSION_TTL_SECONDS"] == "2592000"
+
+
+def test_agents_md_marks_local_paths_as_local():
+    """AGENTS.md ist versioniert, .claude/ nicht — der Unterschied muss dort stehen.
+
+    Die Existenz von .claude/ darf *nicht* geprueft werden: das Verzeichnis ist
+    per .gitignore ausgeschlossen und fehlt in jedem frischen Klon und in CI.
+    """
+    agents_md = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+
+    assert ".Codex/" not in agents_md, "AGENTS.md verweist auf ein Verzeichnis, das es nicht gibt"
+    assert ".gitignore" in agents_md, "AGENTS.md muss sagen, dass .claude/ nicht versioniert ist"

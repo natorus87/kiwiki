@@ -100,6 +100,8 @@ env:
   KIWIKI_TRUST_PROXY: "true"  # auf "false" fuer lokale Entwicklung ohne Proxy
   KIWIKI_CORS_ORIGINS: ""  # Leer deaktiviert CORS; sonst explizite Origins kommagetrennt setzen
   KIWIKI_RATE_LIMIT_ENABLED: "true"  # Rate Limiting aktivieren (empfohlen)
+  KIWIKI_UI_LIMIT: "240"  # Web-UI-Fragment-Requests pro Minute und Client-IP
+  KIWIKI_SESSION_TTL_SECONDS: "2592000"  # Gleitende Web-Session-Lebensdauer (30 Tage)
   # Optionaler, migrationsfaehiger Wissensindex im bestehenden Daten-PVC.
   KIWIKI_KNOWLEDGE_ENABLED: "false"
   KIWIKI_KNOWLEDGE_BACKFILL_BATCH_SIZE: "25"
