@@ -3073,38 +3073,49 @@ def _stage_chunked_write(args: dict, user: User | None) -> dict:
 # Tool dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _dispatch(name: str, args: dict, user: User | None) -> str:
-    # Multi-Tenancy: jeder MCP-Aufruf läuft im Namespace des authentifizierten Users.
-    if user is not None and is_valid_username(user.username):
-        set_user_ns(user.username)
-        ensure_user_workspace(user.username)
+class _McpContext:
+    """Geteilter Aufrufkontext aller MCP-Werkzeug-Handler.
 
-    def _need_read():
-        if user is None:
+    Ersetzt die Closures der alten _dispatch-Funktion (_need_read,
+    _need_write, _need_admin, _bounded_list): gleiche Guards, ein Ort,
+    einzeln testbar.
+    """
+
+    def __init__(self, args: dict, user: User | None) -> None:
+        self.args = args
+        self.user = user
+
+    def need_read(self):
+        if self.user is None:
             raise PermissionError("Authentication required")
 
-    def _need_write():
-        if user is None:
+
+    def need_write(self):
+        if self.user is None:
             raise PermissionError("Authentication required")
-        if ROLE_HIERARCHY.get(user.role, -1) < ROLE_HIERARCHY["write"]:
+        if ROLE_HIERARCHY.get(self.user.role, -1) < ROLE_HIERARCHY["write"]:
             raise PermissionError("Write permission required")
 
-    def _need_admin():
-        if user is None:
+
+    def need_admin(self):
+        if self.user is None:
             raise PermissionError("Authentication required")
-        if ROLE_HIERARCHY.get(user.role, -1) < ROLE_HIERARCHY["admin"]:
+        if ROLE_HIERARCHY.get(self.user.role, -1) < ROLE_HIERARCHY["admin"]:
             raise PermissionError("Admin permission required")
 
-    def _bounded_list(key: str, *, required: bool = False) -> list:
-        value = args.get(key, [])
+
+    def bounded_list(self, key: str, *, required: bool = False) -> list:
+        value = self.args.get(key, [])
         if not isinstance(value, list) or (required and not value):
             raise ValueError(f"Missing required argument: {key}")
         if len(value) > _MCP_MAX_LIST_ITEMS:
             raise ValueError(f"Too many {key} (max {_MCP_MAX_LIST_ITEMS})")
         return value
 
-    if name == "read_index":
-        _need_read()
+
+
+async def _tool_read_index(ctx: _McpContext) -> str:
+        ctx.need_read()
         out = {}
         for fname in ("index.md", "AGENTS.md"):
             try:
@@ -3114,14 +3125,16 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                 out[fname] = f"[Error: {exc}]"
         return json.dumps(out, ensure_ascii=False, indent=2)
 
-    if name == "list_files":
-        _need_read()
-        items = list_files(args.get("path", "."))
+
+async def _tool_list_files(ctx: _McpContext) -> str:
+        ctx.need_read()
+        items = list_files(ctx.args.get("path", "."))
         return json.dumps({"items": [i.model_dump() for i in items]}, ensure_ascii=False, indent=2)
 
-    if name == "read_file":
-        _need_read()
-        path = args.get("path") or args.get("id")
+
+async def _tool_read_file(ctx: _McpContext) -> str:
+        ctx.need_read()
+        path = ctx.args.get("path") or ctx.args.get("id")
         if not path:
             raise ValueError("Missing required argument: path")
         fc = read_file(path)
@@ -3130,11 +3143,12 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             ensure_ascii=False, indent=2,
         )
 
-    if name == "fetch":
+
+async def _tool_fetch(ctx: _McpContext) -> str:
         # OpenAI-Connector-Kontrakt: id/title/text/url, metadata optional.
         # Die id ist der Notizpfad — genau der Wert, den search als id liefert.
-        _need_read()
-        path = args.get("id") or args.get("path")
+        ctx.need_read()
+        path = ctx.args.get("id") or ctx.args.get("path")
         if not path:
             raise ValueError("Missing required argument: id")
         fc = read_file(path)
@@ -3150,24 +3164,27 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             ensure_ascii=False, indent=2,
         )
 
-    if name == "write_file":
-        _need_write()
-        path = args["path"]
-        result = _write_markdown_content(path, args["content"], mode="replace")
+
+async def _tool_write_file(ctx: _McpContext) -> str:
+        ctx.need_write()
+        path = ctx.args["path"]
+        result = _write_markdown_content(path, ctx.args["content"], mode="replace")
         return json.dumps({"path": result["path"], "status": result["status"]}, ensure_ascii=False)
 
-    if name == "append_file":
-        _need_write()
-        path = args["path"]
+
+async def _tool_append_file(ctx: _McpContext) -> str:
+        ctx.need_write()
+        path = ctx.args["path"]
         filepath = safe_path(path)
         if not filepath.exists():
             raise FileNotFoundError(f"File not found: {path}")
-        result = _write_markdown_content(path, args["content"], mode="append", create_if_missing=False)
+        result = _write_markdown_content(path, ctx.args["content"], mode="append", create_if_missing=False)
         return json.dumps({"path": result["path"], "status": result["status"]}, ensure_ascii=False)
 
-    if name == "write_many":
-        _need_write()
-        files = _bounded_list("files", required=True)
+
+async def _tool_write_many(ctx: _McpContext) -> str:
+        ctx.need_write()
+        files = ctx.bounded_list("files", required=True)
         results = []
         for item in files:
             path = str(item.get("path", ""))
@@ -3185,16 +3202,18 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         written = sum(1 for item in results if item["status"] != "error")
         return json.dumps({"results": results, "written": written, "failed": len(results) - written}, ensure_ascii=False, indent=2)
 
-    if name == "chunked_write":
-        _need_write()
-        return json.dumps(_stage_chunked_write(args, user), ensure_ascii=False, indent=2)
 
-    if name == "search":
+async def _tool_chunked_write(ctx: _McpContext) -> str:
+        ctx.need_write()
+        return json.dumps(_stage_chunked_write(ctx.args, ctx.user), ensure_ascii=False, indent=2)
+
+
+async def _tool_search(ctx: _McpContext) -> str:
         # OpenAI-Connector-Kontrakt: {"results": [{id, title, url}, ...]}.
         # `text` ist nicht verpflichtend, hilft Deep Research aber bei der
         # Relevanzbewertung, ohne die Notiz vollstaendig zu laden.
-        _need_read()
-        results = fts_search(args["query"])
+        ctx.need_read()
+        results = fts_search(ctx.args["query"])
         return json.dumps(
             {
                 "results": [
@@ -3210,102 +3229,115 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             ensure_ascii=False, indent=2,
         )
 
-    if name == "knowledge_search":
-        _need_read()
+
+async def _tool_knowledge_search(ctx: _McpContext) -> str:
+        ctx.need_read()
         from .knowledge.service import search_knowledge
 
         return json.dumps(
-            search_knowledge(args["query"], args.get("limit", 20)),
+            search_knowledge(ctx.args["query"], ctx.args.get("limit", 20)),
             ensure_ascii=False,
         )
 
-    if name == "entity_details":
-        _need_read()
+
+async def _tool_entity_details(ctx: _McpContext) -> str:
+        ctx.need_read()
         from .knowledge.service import entity_details
 
-        return json.dumps(entity_details(args["entity_id"]), ensure_ascii=False)
+        return json.dumps(entity_details(ctx.args["entity_id"]), ensure_ascii=False)
 
-    if name == "entity_neighbors":
-        _need_read()
+
+async def _tool_entity_neighbors(ctx: _McpContext) -> str:
+        ctx.need_read()
         from .knowledge.service import entity_neighbors
 
         return json.dumps(
-            entity_neighbors(args["entity_id"], args.get("depth", 1), args.get("limit", 20)),
+            entity_neighbors(ctx.args["entity_id"], ctx.args.get("depth", 1), ctx.args.get("limit", 20)),
             ensure_ascii=False,
         )
 
-    if name == "fact_timeline":
-        _need_read()
+
+async def _tool_fact_timeline(ctx: _McpContext) -> str:
+        ctx.need_read()
         from .knowledge.service import fact_timeline
 
         return json.dumps(
-            fact_timeline(args["entity_id"], args.get("limit", 20)),
+            fact_timeline(ctx.args["entity_id"], ctx.args.get("limit", 20)),
             ensure_ascii=False,
         )
 
-    if name == "explain_relation":
-        _need_read()
+
+async def _tool_explain_relation(ctx: _McpContext) -> str:
+        ctx.need_read()
         from .knowledge.service import explain_relation
 
-        return json.dumps(explain_relation(args["relation_id"]), ensure_ascii=False)
+        return json.dumps(explain_relation(ctx.args["relation_id"]), ensure_ascii=False)
 
-    if name == "knowledge_status":
-        _need_read()
+
+async def _tool_knowledge_status(ctx: _McpContext) -> str:
+        ctx.need_read()
         from .knowledge.service import knowledge_status
 
         return json.dumps(knowledge_status(), ensure_ascii=False)
 
-    if name == "knowledge_reindex":
-        _need_write()
+
+async def _tool_knowledge_reindex(ctx: _McpContext) -> str:
+        ctx.need_write()
         from .knowledge.service import rebuild_current_workspace
 
         return json.dumps(rebuild_current_workspace(), ensure_ascii=False)
 
-    if name == "create_note":
-        _need_write()
-        owner = user.username if user else "unknown"
+
+async def _tool_create_note(ctx: _McpContext) -> str:
+        ctx.need_write()
+        owner = ctx.user.username if ctx.user else "unknown"
         path = create_note(
-            title=args["title"],
-            content=args.get("content", ""),
-            tags=args.get("tags", []),
+            title=ctx.args["title"],
+            content=ctx.args.get("content", ""),
+            tags=ctx.args.get("tags", []),
             owner=owner,
-            folder=args.get("folder", "notes"),
+            folder=ctx.args.get("folder", "notes"),
         )
         _index_markdown(path)
         return json.dumps({"path": path, "status": "created"}, ensure_ascii=False)
 
-    if name == "delete_file":
-        _need_write()
-        path = args["path"]
+
+async def _tool_delete_file(ctx: _McpContext) -> str:
+        ctx.need_write()
+        path = ctx.args["path"]
         delete_file(path)
         _deindex_markdown(path)
         return json.dumps({"path": path, "status": "deleted"}, ensure_ascii=False)
 
-    if name == "move_file":
-        _need_write()
-        src, dst = args["src"], args["dst"]
-        fc = move_file(src, dst)
+
+async def _tool_move_file(ctx: _McpContext) -> str:
+        ctx.need_write()
+        src, dst = ctx.args["src"], ctx.args["dst"]
+        move_file(src, dst)
         _deindex_markdown(src)
         _index_markdown(dst)
         return json.dumps({"src": src, "dst": dst, "status": "moved"}, ensure_ascii=False)
 
-    if name == "edit":
-        _need_write()
-        fc = edit_file(args["path"], new_str=args["new_str"], old_str=args.get("old_str", ""))
-        _index_markdown(args["path"])
-        mode = "replaced" if args.get("old_str") else "appended"
+
+async def _tool_edit(ctx: _McpContext) -> str:
+        ctx.need_write()
+        fc = edit_file(ctx.args["path"], new_str=ctx.args["new_str"], old_str=ctx.args.get("old_str", ""))
+        _index_markdown(ctx.args["path"])
+        mode = "replaced" if ctx.args.get("old_str") else "appended"
         return json.dumps({"path": fc.path, "status": mode}, ensure_ascii=False)
 
-    if name == "update_frontmatter":
-        _need_write()
-        fc = update_frontmatter(args["path"], args["updates"])
-        _index_markdown(args["path"])
+
+async def _tool_update_frontmatter(ctx: _McpContext) -> str:
+        ctx.need_write()
+        fc = update_frontmatter(ctx.args["path"], ctx.args["updates"])
+        _index_markdown(ctx.args["path"])
         return json.dumps({"path": fc.path, "frontmatter": fc.frontmatter, "status": "updated"}, ensure_ascii=False, indent=2)
 
-    if name == "read_many":
-        _need_read()
+
+async def _tool_read_many(ctx: _McpContext) -> str:
+        ctx.need_read()
         result = {}
-        for path in _bounded_list("paths", required=True):
+        for path in ctx.bounded_list("paths", required=True):
             try:
                 fc = read_file(path)
                 result[path] = {"frontmatter": fc.frontmatter, "content": fc.content}
@@ -3313,8 +3345,9 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                 result[path] = {"error": str(exc)}
         return json.dumps(result, ensure_ascii=False, indent=2)
 
-    if name == "build_index":
-        _need_write()
+
+async def _tool_build_index(ctx: _McpContext) -> str:
+        ctx.need_write()
         from datetime import date
         all_files = list_all_files(".")
         # Group by top-level folder (or root for AGENTS.md / index.md)
@@ -3364,10 +3397,11 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         _index_markdown("index.md")
         return json.dumps({"status": "rebuilt", "sections": len(groups)}, ensure_ascii=False)
 
-    if name == "sort":
-        _need_write()
+
+async def _tool_sort(ctx: _McpContext) -> str:
+        ctx.need_write()
         results = []
-        for m in _bounded_list("moves", required=True):
+        for m in ctx.bounded_list("moves", required=True):
             src, dst = m["src"], m["dst"]
             try:
                 move_file(src, dst)
@@ -3378,22 +3412,24 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                 results.append({"src": src, "dst": dst, "status": "error", "error": str(exc)})
         return json.dumps({"items": results}, ensure_ascii=False, indent=2)
 
-    if name == "list_all_files":
-        _need_read()
-        items = list_all_files(args.get("path", "."))
+
+async def _tool_list_all_files(ctx: _McpContext) -> str:
+        ctx.need_read()
+        items = list_all_files(ctx.args.get("path", "."))
         return json.dumps({"items": items}, ensure_ascii=False, indent=2)
 
-    if name == "grep":
-        _need_read()
-        pattern = args["pattern"]
-        scope = args.get("path", ".")
-        context_n = int(args.get("context_lines", 2))
-        max_results = int(args.get("max_results", 100))
+
+async def _tool_grep(ctx: _McpContext) -> str:
+        ctx.need_read()
+        pattern = ctx.args["pattern"]
+        scope = ctx.args.get("path", ".")
+        context_n = int(ctx.args.get("context_lines", 2))
+        max_results = int(ctx.args.get("max_results", 100))
         if not 0 <= context_n <= 20:
             raise ValueError("context_lines must be between 0 and 20")
         if not 1 <= max_results <= 1000:
             raise ValueError("max_results must be between 1 and 1000")
-        flags = 0 if args.get("case_sensitive", False) else re.IGNORECASE
+        flags = 0 if ctx.args.get("case_sensitive", False) else re.IGNORECASE
 
         # --- ReDoS-Hardening ---------------------------------------------
         # 1. Pattern-Sanity: zu lang oder mit gestapelten Quantoren
@@ -3492,7 +3528,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             except asyncio.TimeoutError:
                 return {"error": "Grep aborted: exceeded global timeout", "truncated": True}
 
-        if args.get("background", False):
+        if ctx.args.get("background", False):
             _prune_grep_jobs()
             if len(_grep_jobs) >= _GREP_JOBS_MAX:
                 raise ValueError("Too many grep jobs; retry after completed jobs expire")
@@ -3505,7 +3541,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                 "status": "running",
                 "created_at": time.time(),
                 "result": None,
-                "owner": user.username if user else "",
+                "owner": ctx.user.username if ctx.user else "",
             }
 
             async def _finish_background_scan() -> None:
@@ -3529,10 +3565,11 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         result = await _run_scan()
         return json.dumps(result, ensure_ascii=False, indent=2)
 
-    if name == "find":
-        _need_read()
-        pattern = args["pattern"]
-        scope = args.get("path", ".")
+
+async def _tool_find(ctx: _McpContext) -> str:
+        ctx.need_read()
+        pattern = ctx.args["pattern"]
+        scope = ctx.args.get("path", ".")
         root = safe_path(scope)
         if not root.exists():
             raise FileNotFoundError(f"Path not found: {scope!r}")
@@ -3546,12 +3583,13 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                 results.append(str(filepath.relative_to(user_root())))
         return json.dumps({"matches": results, "count": len(results)}, ensure_ascii=False, indent=2)
 
-    if name == "file_info":
-        _need_read()
-        validate_content_read_path(args["path"])
-        filepath = safe_path(args["path"])
+
+async def _tool_file_info(ctx: _McpContext) -> str:
+        ctx.need_read()
+        validate_content_read_path(ctx.args["path"])
+        filepath = safe_path(ctx.args["path"])
         if not filepath.exists():
-            raise FileNotFoundError(f"File not found: {args['path']!r}")
+            raise FileNotFoundError(f"File not found: {ctx.args['path']!r}")
         stat = filepath.stat()
         try:
             text = filepath.read_text(encoding="utf-8")
@@ -3560,49 +3598,52 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             line_count = None
         import datetime
         return json.dumps({
-            "path": args["path"],
+            "path": ctx.args["path"],
             "size_bytes": stat.st_size,
             "line_count": line_count,
             "modified": datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
         }, ensure_ascii=False, indent=2)
 
-    if name == "read_lines":
-        _need_read()
-        validate_content_read_path(args["path"])
-        filepath = safe_path(args["path"])
+
+async def _tool_read_lines(ctx: _McpContext) -> str:
+        ctx.need_read()
+        validate_content_read_path(ctx.args["path"])
+        filepath = safe_path(ctx.args["path"])
         if not filepath.exists():
-            raise FileNotFoundError(f"File not found: {args['path']!r}")
+            raise FileNotFoundError(f"File not found: {ctx.args['path']!r}")
         lines = filepath.read_text(encoding="utf-8").splitlines()
         total = len(lines)
 
-        if "tail" in args and args["tail"] is not None:
-            n = int(args["tail"])
+        if "tail" in ctx.args and ctx.args["tail"] is not None:
+            n = int(ctx.args["tail"])
             slice_ = lines[max(0, total - n):]
             offset = max(0, total - n)
         else:
-            start = max(1, int(args.get("start", 1))) - 1
-            end = min(total, int(args.get("end", total)))
+            start = max(1, int(ctx.args.get("start", 1))) - 1
+            end = min(total, int(ctx.args.get("end", total)))
             slice_ = lines[start:end]
             offset = start
 
         result = [{"line": offset + i + 1, "text": ln} for i, ln in enumerate(slice_)]
-        return json.dumps({"path": args["path"], "total_lines": total, "lines": result}, ensure_ascii=False, indent=2)
+        return json.dumps({"path": ctx.args["path"], "total_lines": total, "lines": result}, ensure_ascii=False, indent=2)
 
-    if name == "recent_files":
-        _need_read()
-        limit = max(1, min(int(args.get("limit", 20)), 200))
-        include_system = bool(args.get("include_system", False))
-        files = _markdown_paths(args.get("path", "."))
+
+async def _tool_recent_files(ctx: _McpContext) -> str:
+        ctx.need_read()
+        limit = max(1, min(int(ctx.args.get("limit", 20)), 200))
+        include_system = bool(ctx.args.get("include_system", False))
+        files = _markdown_paths(ctx.args.get("path", "."))
         if not include_system:
             files = [p for p in files if _rel_path(p) not in {"index.md", "AGENTS.md"}]
         files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return json.dumps({"items": [_file_summary(p) for p in files[:limit]]}, ensure_ascii=False, indent=2)
 
-    if name == "backlinks":
-        _need_read()
-        target = args["path"].strip("/")
+
+async def _tool_backlinks(ctx: _McpContext) -> str:
+        ctx.need_read()
+        target = ctx.args["path"].strip("/")
         matches = []
-        for filepath in _markdown_paths(args.get("scope", ".")):
+        for filepath in _markdown_paths(ctx.args.get("scope", ".")):
             rel = _rel_path(filepath)
             if rel == target:
                 continue
@@ -3621,9 +3662,10 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                     matches.append({"path": rel, "title": title, "line": lineno, "text": line})
         return json.dumps({"target": target, "matches": matches, "count": len(matches)}, ensure_ascii=False, indent=2)
 
-    if name == "move_folder":
-        _need_write()
-        src, dst = args["src"].strip("/"), args["dst"].strip("/")
+
+async def _tool_move_folder(ctx: _McpContext) -> str:
+        ctx.need_write()
+        src, dst = ctx.args["src"].strip("/"), ctx.args["dst"].strip("/")
         moved_before = [_rel_path(p) for p in _markdown_paths(src)]
         move_folder(src, dst)
         for old_path in moved_before:
@@ -3632,14 +3674,15 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             _index_markdown(new_path)
         return json.dumps({"src": src, "dst": dst, "status": "moved", "moved_files": len(moved_before)}, ensure_ascii=False)
 
-    if name == "preview_edit":
-        _need_read()
-        fc = read_file(args["path"])
-        old_str = args.get("old_str", "")
-        new_str = args["new_str"]
+
+async def _tool_preview_edit(ctx: _McpContext) -> str:
+        ctx.need_read()
+        fc = read_file(ctx.args["path"])
+        old_str = ctx.args.get("old_str", "")
+        new_str = ctx.args["new_str"]
         if old_str:
             if old_str not in fc.content:
-                raise ValueError(f"String not found in {args['path']!r}")
+                raise ValueError(f"String not found in {ctx.args['path']!r}")
             after = fc.content.replace(old_str, new_str, 1)
             mode = "replace"
         else:
@@ -3648,20 +3691,21 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         diff = "".join(difflib.unified_diff(
             fc.content.splitlines(keepends=True),
             after.splitlines(keepends=True),
-            fromfile=f"{args['path']} before",
-            tofile=f"{args['path']} after",
-            n=int(args.get("context_lines", 3)),
+            fromfile=f"{ctx.args['path']} before",
+            tofile=f"{ctx.args['path']} after",
+            n=int(ctx.args.get("context_lines", 3)),
         ))
-        return json.dumps({"path": args["path"], "mode": mode, "changed": fc.content != after, "diff": diff}, ensure_ascii=False, indent=2)
+        return json.dumps({"path": ctx.args["path"], "mode": mode, "changed": fc.content != after, "diff": diff}, ensure_ascii=False, indent=2)
 
-    if name == "replace_many":
-        _need_write()
-        paths = args.get("paths") or ([args["path"]] if args.get("path") else [])
+
+async def _tool_replace_many(ctx: _McpContext) -> str:
+        ctx.need_write()
+        paths = ctx.args.get("paths") or ([ctx.args["path"]] if ctx.args.get("path") else [])
         if not paths:
             raise ValueError("Missing required argument: path or paths")
         if not isinstance(paths, list) or len(paths) > _MCP_MAX_LIST_ITEMS:
             raise ValueError(f"Too many paths (max {_MCP_MAX_LIST_ITEMS})")
-        replacements = _bounded_list("replacements", required=True)
+        replacements = ctx.bounded_list("replacements", required=True)
         results = []
         total = 0
         for rel in paths:
@@ -3688,10 +3732,11 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             results.append({"path": rel, "replacements": count, "changed": changed != text})
         return json.dumps({"results": results, "total_replacements": total}, ensure_ascii=False, indent=2)
 
-    if name == "validate_wiki":
-        _need_read()
-        required = args.get("required_frontmatter") or ["title", "type", "created", "updated", "tags", "owner"]
-        files = _markdown_paths(args.get("path", "."))
+
+async def _tool_validate_wiki(ctx: _McpContext) -> str:
+        ctx.need_read()
+        required = ctx.args.get("required_frontmatter") or ["title", "type", "created", "updated", "tags", "owner"]
+        files = _markdown_paths(ctx.args.get("path", "."))
         issues = []
         titles: dict[str, list[str]] = {}
         existing = {_rel_path(p) for p in files}
@@ -3720,13 +3765,14 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                     issues.append({"path": rel, "type": "duplicate_title", "message": f"Duplicate title: {title}"})
         return json.dumps({"checked_files": len(files), "issue_count": len(issues), "issues": issues}, ensure_ascii=False, indent=2)
 
-    if name == "upsert_note":
-        _need_write()
-        folder = args.get("folder", "notes").strip("/") or "notes"
-        path = args.get("path", "").strip("/")
-        title = args["title"]
-        content = args.get("content", "")
-        mode = args.get("mode", "append")
+
+async def _tool_upsert_note(ctx: _McpContext) -> str:
+        ctx.need_write()
+        folder = ctx.args.get("folder", "notes").strip("/") or "notes"
+        path = ctx.args.get("path", "").strip("/")
+        title = ctx.args["title"]
+        content = ctx.args.get("content", "")
+        mode = ctx.args.get("mode", "append")
         if mode not in {"append", "replace"}:
             raise ValueError("mode must be 'append' or 'replace'")
         existing_path = path if path and safe_path(path).exists() else ""
@@ -3746,23 +3792,24 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             else:
                 append_file(existing_path, content)
                 status = "appended"
-            if args.get("tags"):
-                update_frontmatter(existing_path, {"tags": args["tags"]})
+            if ctx.args.get("tags"):
+                update_frontmatter(existing_path, {"tags": ctx.args["tags"]})
             _index_markdown(existing_path)
             return json.dumps({"path": existing_path, "status": status}, ensure_ascii=False)
-        new_path = create_note(title=title, content=content, tags=args.get("tags", []), owner=user.username if user else "unknown", folder=folder)
+        new_path = create_note(title=title, content=content, tags=ctx.args.get("tags", []), owner=ctx.user.username if ctx.user else "unknown", folder=folder)
         _index_markdown(new_path)
         return json.dumps({"path": new_path, "status": "created"}, ensure_ascii=False)
 
-    if name == "related_files":
-        _need_read()
-        target_path = args["path"]
-        limit = max(1, min(int(args.get("limit", 10)), 100))
+
+async def _tool_related_files(ctx: _McpContext) -> str:
+        ctx.need_read()
+        target_path = ctx.args["path"]
+        limit = max(1, min(int(ctx.args.get("limit", 10)), 100))
         target_title, target_tags, target_fm = _frontmatter_title_and_tags(target_path)
         target_tags_set = set(target_tags)
         explicit_related = set(target_fm.get("related", []) if isinstance(target_fm.get("related", []), list) else [])
         related = []
-        backlinks_text = await _dispatch("backlinks", {"path": target_path}, user)
+        backlinks_text = await _dispatch("backlinks", {"path": target_path}, ctx.user)
         backlink_paths = {m["path"] for m in json.loads(backlinks_text)["matches"]}
         for item in list_all_files("."):
             rel = item["path"]
@@ -3786,10 +3833,11 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         related.sort(key=lambda item: (-item["score"], item["path"]))
         return json.dumps({"path": target_path, "related": related[:limit], "count": min(len(related), limit)}, ensure_ascii=False, indent=2)
 
-    if name == "tag_index":
-        _need_read()
+
+async def _tool_tag_index(ctx: _McpContext) -> str:
+        ctx.need_read()
         tags: dict[str, list[str]] = {}
-        for filepath in _markdown_paths(args.get("path", ".")):
+        for filepath in _markdown_paths(ctx.args.get("path", ".")):
             rel = _rel_path(filepath)
             _, file_tags, _ = _frontmatter_title_and_tags(rel)
             for tag in file_tags:
@@ -3797,26 +3845,30 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         result = [{"tag": tag, "count": len(files), "files": sorted(files)} for tag, files in sorted(tags.items())]
         return json.dumps({"items": result}, ensure_ascii=False, indent=2)
 
-    if name == "reindex_all":
-        _need_write()
+
+async def _tool_reindex_all(ctx: _McpContext) -> str:
+        ctx.need_write()
         count = reindex_all()
         return json.dumps({"status": "rebuilt", "indexed_files": count}, ensure_ascii=False)
 
-    if name == "search_status":
-        _need_read()
+
+async def _tool_search_status(ctx: _McpContext) -> str:
+        ctx.need_read()
         markdown_count = len(_markdown_paths("."))
         init_db()
         with get_db() as conn:
             indexed_count = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
         return json.dumps({"markdown_files": markdown_count, "indexed_files": indexed_count, "database": ".kiwiki/index.sqlite"}, ensure_ascii=False, indent=2)
 
-    if name == "whoami":
-        _need_read()
-        return json.dumps({"username": user.username, "role": user.role, "workspace": user.username}, ensure_ascii=False, indent=2)
 
-    if name == "git_commit":
-        _need_write()
-        message = str(args["message"]).strip()
+async def _tool_whoami(ctx: _McpContext) -> str:
+        ctx.need_read()
+        return json.dumps({"username": ctx.user.username, "role": ctx.user.role, "workspace": ctx.user.username}, ensure_ascii=False, indent=2)
+
+
+async def _tool_git_commit(ctx: _McpContext) -> str:
+        ctx.need_write()
+        message = str(ctx.args["message"]).strip()
         if not message or len(message) > 256 or "\n" in message or "\r" in message:
             raise ValueError("Commit message must be one line with 1-256 characters")
         root = user_root()
@@ -3835,10 +3887,11 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         files_changed = len([line for line in diff_result.stdout.splitlines() if line.strip()])
         return json.dumps({"commit_hash": commit_hash, "message": message, "files_changed": files_changed}, ensure_ascii=False)
 
-    if name == "file_history":
-        _need_read()
-        path = _validate_git_path(args["path"])
-        limit = max(1, min(int(args.get("limit", 10)), 100))
+
+async def _tool_file_history(ctx: _McpContext) -> str:
+        ctx.need_read()
+        path = _validate_git_path(ctx.args["path"])
+        limit = max(1, min(int(ctx.args.get("limit", 10)), 100))
         root = user_root()
         result = _run_git(root, ["log", f"-{limit}", "--pretty=format:%H|%aI|%an|%s", "--", path])
         history = []
@@ -3849,11 +3902,12 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                     history.append({"hash": parts[0], "date": parts[1], "author": parts[2], "message": parts[3]})
         return json.dumps({"path": path, "history": history}, ensure_ascii=False, indent=2)
 
-    if name == "diff":
-        _need_read()
-        path = _validate_git_path(args["path"]) if args.get("path") else None
-        from_commit = _validate_git_revision(args.get("from_commit", "HEAD~1"))
-        to_commit = _validate_git_revision(args.get("to_commit", "HEAD"))
+
+async def _tool_diff(ctx: _McpContext) -> str:
+        ctx.need_read()
+        path = _validate_git_path(ctx.args["path"]) if ctx.args.get("path") else None
+        from_commit = _validate_git_revision(ctx.args.get("from_commit", "HEAD~1"))
+        to_commit = _validate_git_revision(ctx.args.get("to_commit", "HEAD"))
         root = user_root()
         cmd = ["git", "diff", f"{from_commit}..{to_commit}"]
         if path:
@@ -3866,9 +3920,10 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         files_changed = len(stat_result.stdout.strip().splitlines()) if stat_result.stdout.strip() else 0
         return json.dumps({"diff": result.stdout, "files_changed": files_changed}, ensure_ascii=False, indent=2)
 
-    if name == "statistics":
-        _need_read()
-        scope = args.get("path", ".")
+
+async def _tool_statistics(ctx: _McpContext) -> str:
+        ctx.need_read()
+        scope = ctx.args.get("path", ".")
         all_files = list_all_files(scope)
         total_files = len(all_files)
         files_by_folder: dict[str, int] = {}
@@ -3909,11 +3964,12 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             "most_recent_files": most_recent, "oldest_files": oldest,
         }, ensure_ascii=False, indent=2)
 
-    if name == "template":
-        _need_write()
+
+async def _tool_template(ctx: _McpContext) -> str:
+        ctx.need_write()
         from datetime import date
-        template_type = args["template_type"]
-        title = args["title"]
+        template_type = ctx.args["template_type"]
+        title = ctx.args["title"]
         folder_map = {
             "meeting": "notes/meetings", "decision": "decisions", "adr": "decisions",
             "review": "notes/reviews", "bug": "notes/bugs", "feature": "notes/features",
@@ -3922,7 +3978,7 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             raise ValueError(
                 f"Unknown template_type {template_type!r}; expected one of {sorted(folder_map)}"
             )
-        folder = args.get("folder") or folder_map.get(template_type, "notes")
+        folder = ctx.args.get("folder") or folder_map.get(template_type, "notes")
         today = date.today().isoformat()
         slug = title.lower().replace(" ", "-").replace("/", "-")
         slug = "".join(c for c in slug if c.isalnum() or c in "-_")[:60]
@@ -3936,12 +3992,12 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             path = f"{folder}/{slug}-{i}.md"
             i += 1
         templates = {
-            "meeting": f"---\ntitle: \"{title}\"\ntype: meeting\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [meeting]\nowner: \"{user.username}\"\n---\n\n## Agenda\n\n- \n\n## Teilnehmer\n\n- \n\n## Beschlüsse\n\n- \n\n## Action Items\n\n| Wer | Was | Bis |\n|-----|-----|-----|\n|  |  |  |",
-            "decision": f"---\ntitle: \"{title}\"\ntype: decision\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [decision, adr]\nowner: \"{user.username}\"\n---\n\n## Context\n\nWas ist die Situation?\n\n## Decision\n\nWas wurde entschieden?\n\n## Consequences\n\n### Positiv\n\n- \n\n### Negativ\n\n- \n\n## Alternatives considered\n\n- ",
+            "meeting": f"---\ntitle: \"{title}\"\ntype: meeting\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [meeting]\nowner: \"{ctx.user.username}\"\n---\n\n## Agenda\n\n- \n\n## Teilnehmer\n\n- \n\n## Beschlüsse\n\n- \n\n## Action Items\n\n| Wer | Was | Bis |\n|-----|-----|-----|\n|  |  |  |",
+            "decision": f"---\ntitle: \"{title}\"\ntype: decision\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [decision, adr]\nowner: \"{ctx.user.username}\"\n---\n\n## Context\n\nWas ist die Situation?\n\n## Decision\n\nWas wurde entschieden?\n\n## Consequences\n\n### Positiv\n\n- \n\n### Negativ\n\n- \n\n## Alternatives considered\n\n- ",
             "adr": None,
-            "review": f"---\ntitle: \"{title}\"\ntype: review\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [review]\nowner: \"{user.username}\"\n---\n\n## Summary\n\nKurze Zusammenfassung.\n\n## Findings\n\n### Positive\n\n- \n\n### Issues\n\n| Severity | File | Line | Description |\n|----------|------|------|-------------|\n|  |  |  |  |\n\n## Approval\n\n- [ ] Approved\n- [ ] Changes requested",
-            "bug": f"---\ntitle: \"{title}\"\ntype: bug\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [bug]\nowner: \"{user.username}\"\n---\n\n## Steps to reproduce\n\n1. \n\n## Expected behavior\n\n\n\n## Actual behavior\n\n\n\n## Possible fix\n\n\n\n## Environment\n\n- OS: \n- Version: ",
-            "feature": f"---\ntitle: \"{title}\"\ntype: feature\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [feature]\nowner: \"{user.username}\"\n---\n\n## User Story\n\nAls ... möchte ich ... damit ...\n\n## Acceptance Criteria\n\n- [ ] \n\n## Implementation\n\n### Approach\n\n\n\n### Tasks\n\n- [ ] \n\n## Testing\n\n\n",
+            "review": f"---\ntitle: \"{title}\"\ntype: review\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [review]\nowner: \"{ctx.user.username}\"\n---\n\n## Summary\n\nKurze Zusammenfassung.\n\n## Findings\n\n### Positive\n\n- \n\n### Issues\n\n| Severity | File | Line | Description |\n|----------|------|------|-------------|\n|  |  |  |  |\n\n## Approval\n\n- [ ] Approved\n- [ ] Changes requested",
+            "bug": f"---\ntitle: \"{title}\"\ntype: bug\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [bug]\nowner: \"{ctx.user.username}\"\n---\n\n## Steps to reproduce\n\n1. \n\n## Expected behavior\n\n\n\n## Actual behavior\n\n\n\n## Possible fix\n\n\n\n## Environment\n\n- OS: \n- Version: ",
+            "feature": f"---\ntitle: \"{title}\"\ntype: feature\ncreated: \"{today}\"\nupdated: \"{today}\"\ntags: [feature]\nowner: \"{ctx.user.username}\"\n---\n\n## User Story\n\nAls ... möchte ich ... damit ...\n\n## Acceptance Criteria\n\n- [ ] \n\n## Implementation\n\n### Approach\n\n\n\n### Tasks\n\n- [ ] \n\n## Testing\n\n\n",
         }
         if template_type == "adr":
             template_type = "decision"
@@ -3952,10 +4008,10 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         _index_markdown(path)
         return json.dumps({"path": path, "status": "created", "template_type": template_type}, ensure_ascii=False)
 
-    if name == "validate_links":
-        _need_read()
-        scope = args.get("path", ".")
-        root = user_root()
+
+async def _tool_validate_links(ctx: _McpContext) -> str:
+        ctx.need_read()
+        scope = ctx.args.get("path", ".")
         broken = []
         valid = 0
         checked = 0
@@ -3993,9 +4049,10 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                 checked += 1
         return json.dumps({"checked_files": checked, "broken_links": broken, "valid_count": valid, "broken_count": len(broken)}, ensure_ascii=False, indent=2)
 
-    if name == "link_graph":
-        _need_read()
-        scope = args.get("path", ".")
+
+async def _tool_link_graph(ctx: _McpContext) -> str:
+        ctx.need_read()
+        scope = ctx.args.get("path", ".")
         all_files_list = list_all_files(scope)
         nodes = [{"id": f["path"], "title": f["title"], "tags": f.get("tags", [])} for f in all_files_list]
         path_set = {f["path"] for f in all_files_list}
@@ -4032,11 +4089,12 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
         most_linking = [{"path": p, "count": c} for p, c in sorted(outgoing.items(), key=lambda x: -x[1])[:10]]
         return json.dumps({"nodes": nodes, "edges": edges, "orphaned": orphaned, "most_linked": most_linked, "most_linking": most_linking}, ensure_ascii=False, indent=2)
 
-    if name == "rename":
-        _need_write()
-        old_path = args["old_path"]
-        new_path = args["new_path"]
-        fc = move_file(old_path, new_path)
+
+async def _tool_rename(ctx: _McpContext) -> str:
+        ctx.need_write()
+        old_path = ctx.args["old_path"]
+        new_path = ctx.args["new_path"]
+        move_file(old_path, new_path)
         _deindex_markdown(old_path)
         _index_markdown(new_path)
         links_updated = 0
@@ -4078,11 +4136,12 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
                 links_updated += 1
         return json.dumps({"old_path": old_path, "new_path": new_path, "links_updated": links_updated, "status": "renamed"}, ensure_ascii=False)
 
-    if name == "batch_tag":
-        _need_write()
-        files = _bounded_list("files", required=True)
-        tags = _bounded_list("tags", required=True)
-        mode = args.get("mode", "merge")
+
+async def _tool_batch_tag(ctx: _McpContext) -> str:
+        ctx.need_write()
+        files = ctx.bounded_list("files", required=True)
+        tags = ctx.bounded_list("tags", required=True)
+        mode = ctx.args.get("mode", "merge")
         updated = []
         for path in files:
             meta = _read_frontmatter_only(path)
@@ -4098,10 +4157,11 @@ async def _dispatch(name: str, args: dict, user: User | None) -> str:
             updated.append({"path": path, "tags": new_tags})
         return json.dumps({"updated": updated, "count": len(updated)}, ensure_ascii=False, indent=2)
 
-    if name == "export":
-        _need_read()
-        scope = args.get("path", ".")
-        fmt = args.get("format", "html")
+
+async def _tool_export(ctx: _McpContext) -> str:
+        ctx.need_read()
+        scope = ctx.args.get("path", ".")
+        fmt = ctx.args.get("format", "html")
         all_files_list = list_all_files(scope)
         if fmt == "markdown":
             parts = []
@@ -4132,10 +4192,11 @@ nav{{margin-bottom:2rem}}section{{margin-bottom:3rem;border-bottom:1px solid #ee
 </head><body><h1>kiwiki Export</h1><nav><ul>{"".join(nav_items)}</ul></nav>{"".join(parts)}</body></html>"""
             return json.dumps({"content": content, "file_count": len(parts), "total_size": len(content)}, ensure_ascii=False, indent=2)
 
-    if name == "duplicate_check":
-        _need_read()
-        scope = args.get("path", ".")
-        threshold = float(args.get("threshold", 0.7))
+
+async def _tool_duplicate_check(ctx: _McpContext) -> str:
+        ctx.need_read()
+        scope = ctx.args.get("path", ".")
+        threshold = float(ctx.args.get("threshold", 0.7))
         all_files_list = list_all_files(scope)
         pairs = []
         for i, a in enumerate(all_files_list):
@@ -4157,10 +4218,11 @@ nav{{margin-bottom:2rem}}section{{margin-bottom:3rem;border-bottom:1px solid #ee
         pairs.sort(key=lambda x: -x["similarity"])
         return json.dumps({"pairs": pairs, "total_checked": len(all_files_list)}, ensure_ascii=False, indent=2)
 
-    if name == "ai_summarize":
-        _need_read()
-        path = args["path"]
-        max_length = int(args.get("max_length", 500))
+
+async def _tool_ai_summarize(ctx: _McpContext) -> str:
+        ctx.need_read()
+        path = ctx.args["path"]
+        max_length = int(ctx.args.get("max_length", 500))
         fc = read_file(path)
         content = fc.content
         lines = content.split("\n")
@@ -4184,18 +4246,18 @@ nav{{margin-bottom:2rem}}section{{margin-bottom:3rem;border-bottom:1px solid #ee
         summary = " ".join(summary_parts)[:max_length * 5]
         return json.dumps({"path": path, "summary": summary, "word_count": word_count, "headings": headings, "key_facts": key_facts}, ensure_ascii=False, indent=2)
 
-    # ── E3: Search History ────────────────────────────────────────────────────
-    if name == "search_history":
-        _need_read()
+
+async def _tool_search_history(ctx: _McpContext) -> str:
+        ctx.need_read()
         from .search import get_search_history
-        limit = max(1, min(int(args.get("limit", 10)), 100))
+        limit = max(1, min(int(ctx.args.get("limit", 10)), 100))
         history = get_search_history(limit)
         return json.dumps({"items": history}, ensure_ascii=False, indent=2)
 
-    # ── E5: Dead Link Check ──────────────────────────────────────────────────
-    if name == "dead_link_check":
-        _need_read()
-        scope = args.get("path", ".")
+
+async def _tool_dead_link_check(ctx: _McpContext) -> str:
+        ctx.need_read()
+        scope = ctx.args.get("path", ".")
         broken = []
         valid = 0
         checked = 0
@@ -4224,15 +4286,15 @@ nav{{margin-bottom:2rem}}section{{margin-bottom:3rem;border-bottom:1px solid #ee
             "broken_count": len(broken),
         }, ensure_ascii=False, indent=2)
 
-    # ── E2: Grep Status ──────────────────────────────────────────────────────
-    if name == "grep_status":
-        _need_read()
+
+async def _tool_grep_status(ctx: _McpContext) -> str:
+        ctx.need_read()
         _prune_grep_jobs()
-        job_id = args.get("job_id", "")
+        job_id = ctx.args.get("job_id", "")
         job = _grep_jobs.get(job_id)
         # Fremde Jobs verhalten sich wie nicht existierende — kein Hinweis darauf,
         # dass die job_id gueltig ist.
-        if job is not None and job.get("owner") != (user.username if user else ""):
+        if job is not None and job.get("owner") != (ctx.user.username if ctx.user else ""):
             job = None
         # "result" ist optional. Ein null-Wert wuerde das eigene outputSchema
         # ("type": "object") verletzen, deshalb bleibt der Schluessel hier weg.
@@ -4242,4 +4304,75 @@ nav{{margin-bottom:2rem}}section{{margin-bottom:3rem;border-bottom:1px solid #ee
             return json.dumps({"status": "running", "job_id": job_id}, ensure_ascii=False)
         return json.dumps({"status": "completed", "job_id": job_id, "result": job["result"]}, ensure_ascii=False, indent=2)
 
-    raise ValueError(f"Unknown tool: {name!r}")
+
+_HANDLERS: dict = {
+    "read_index": _tool_read_index,
+    "list_files": _tool_list_files,
+    "read_file": _tool_read_file,
+    "fetch": _tool_fetch,
+    "write_file": _tool_write_file,
+    "append_file": _tool_append_file,
+    "write_many": _tool_write_many,
+    "chunked_write": _tool_chunked_write,
+    "search": _tool_search,
+    "knowledge_search": _tool_knowledge_search,
+    "entity_details": _tool_entity_details,
+    "entity_neighbors": _tool_entity_neighbors,
+    "fact_timeline": _tool_fact_timeline,
+    "explain_relation": _tool_explain_relation,
+    "knowledge_status": _tool_knowledge_status,
+    "knowledge_reindex": _tool_knowledge_reindex,
+    "create_note": _tool_create_note,
+    "delete_file": _tool_delete_file,
+    "move_file": _tool_move_file,
+    "edit": _tool_edit,
+    "update_frontmatter": _tool_update_frontmatter,
+    "read_many": _tool_read_many,
+    "build_index": _tool_build_index,
+    "sort": _tool_sort,
+    "list_all_files": _tool_list_all_files,
+    "grep": _tool_grep,
+    "find": _tool_find,
+    "file_info": _tool_file_info,
+    "read_lines": _tool_read_lines,
+    "recent_files": _tool_recent_files,
+    "backlinks": _tool_backlinks,
+    "move_folder": _tool_move_folder,
+    "preview_edit": _tool_preview_edit,
+    "replace_many": _tool_replace_many,
+    "validate_wiki": _tool_validate_wiki,
+    "upsert_note": _tool_upsert_note,
+    "related_files": _tool_related_files,
+    "tag_index": _tool_tag_index,
+    "reindex_all": _tool_reindex_all,
+    "search_status": _tool_search_status,
+    "whoami": _tool_whoami,
+    "git_commit": _tool_git_commit,
+    "file_history": _tool_file_history,
+    "diff": _tool_diff,
+    "statistics": _tool_statistics,
+    "template": _tool_template,
+    "validate_links": _tool_validate_links,
+    "link_graph": _tool_link_graph,
+    "rename": _tool_rename,
+    "batch_tag": _tool_batch_tag,
+    "export": _tool_export,
+    "duplicate_check": _tool_duplicate_check,
+    "ai_summarize": _tool_ai_summarize,
+    "search_history": _tool_search_history,
+    "dead_link_check": _tool_dead_link_check,
+    "grep_status": _tool_grep_status,
+}
+
+
+async def _dispatch(name: str, args: dict, user: User | None) -> str:
+    # Multi-Tenancy: jeder MCP-Aufruf läuft im Namespace des authentifizierten Users.
+    if user is not None and is_valid_username(user.username):
+        set_user_ns(user.username)
+        ensure_user_workspace(user.username)
+
+    ctx = _McpContext(args, user)
+    handler = _HANDLERS.get(name)
+    if handler is None:
+        raise ValueError(f"Unknown tool: {name!r}")
+    return await handler(ctx)
