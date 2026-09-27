@@ -241,7 +241,9 @@ def test_knowledge_mcp_tool_definitions_have_bounded_schemas_and_annotations():
     assert definitions["knowledge_reindex"]["annotations"] == {
         "readOnlyHint": False,
         "destructiveHint": False,
-        "idempotentHint": True,
+        # Kein idempotentHint: Reindex schreibt (teuer). Stand bis zum
+        # Annotations-Audit faelschlich auf True.
+        "idempotentHint": False,
         "openWorldHint": False,
     }
 
