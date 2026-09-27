@@ -6,18 +6,54 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 1,
-      "description": "kiwiki currently supports exactly one replica because sessions, OAuth, SSE and uploads are process-local."
+      "description": "kiwiki supports exactly one replica: sessions, OAuth clients, SSE and chunked uploads are process-local state, and the key-attempt counters in app/rate_limit_store default to process-local memory. A second replica would count failures separately and make rate limiting weaker, not stronger. The template additionally fails without a shared store (env.KIWIKI_RATE_LIMIT_STORE=sqlite) and a ReadWriteMany volume if this ceiling is ever raised."
     },
     "env": {
       "type": "object",
       "properties": {
-        "KIWIKI_KNOWLEDGE_ENABLED": {"type": "string", "enum": ["true", "false"]},
-        "KIWIKI_KNOWLEDGE_BACKFILL_BATCH_SIZE": {"type": "string", "pattern": "^[1-9][0-9]*$"},
-        "KIWIKI_KNOWLEDGE_MAX_FILE_BYTES": {"type": "string", "pattern": "^[1-9][0-9]*$"},
-        "KIWIKI_KNOWLEDGE_MAX_DB_BYTES": {"type": "string", "pattern": "^[1-9][0-9]*$"},
-        "KIWIKI_KNOWLEDGE_MIN_FREE_BYTES": {"type": "string", "pattern": "^[1-9][0-9]*$"},
-        "KIWIKI_UI_LIMIT": {"type": "string", "pattern": "^[1-9][0-9]*$"},
-        "KIWIKI_SESSION_TTL_SECONDS": {"type": "string", "pattern": "^[1-9][0-9]*$"}
+        "KIWIKI_KNOWLEDGE_ENABLED": {
+          "type": "string",
+          "enum": [
+            "true",
+            "false"
+          ]
+        },
+        "KIWIKI_KNOWLEDGE_BACKFILL_BATCH_SIZE": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "KIWIKI_KNOWLEDGE_MAX_FILE_BYTES": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "KIWIKI_KNOWLEDGE_MAX_DB_BYTES": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "KIWIKI_KNOWLEDGE_MIN_FREE_BYTES": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "KIWIKI_UI_LIMIT": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "KIWIKI_SESSION_TTL_SECONDS": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "KIWIKI_RATE_LIMIT_STORE": {
+          "type": "string",
+          "enum": [
+            "memory",
+            "sqlite"
+          ],
+          "description": "Backing store for the API-key attempt counters; required to be sqlite for more than one replica."
+        },
+        "KIWIKI_RATE_LIMIT_STORE_PATH": {
+          "type": "string",
+          "description": "Path of the shared SQLite store; needs a ReadWriteMany volume when running multiple replicas."
+        }
       },
       "additionalProperties": true
     }

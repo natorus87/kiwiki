@@ -84,7 +84,11 @@ All runtime configuration is done through environment variables.
 | `KIWIKI_CORS_ORIGINS` | empty | Comma-separated list of allowed CORS origins; empty disables cross-origin access |
 | `KIWIKI_RATE_LIMIT_ENABLED` | `true` | Enables login, OAuth, UI, read, and write rate limits |
 | `KIWIKI_LOGIN_LIMIT` | `5` | `/login` brute-force attempts per minute and client IP |
-| `KIWIKI_KEY_ATTEMPT_LIMIT` | `5` | Failed API-key attempts counted separately from the path tier, so `/oauth/authorize` cannot be used to probe keys more cheaply than `/login` |
+| `KIWIKI_KEY_ATTEMPT_LIMIT` | `5` | Failed API-key attempts counted separately from the path tier, shared by `/login` and `/oauth/authorize` so that probing cannot succeed by switching forms |
+| `KIWIKI_KEY_ATTEMPT_GLOBAL_LIMIT` | `30` | Failed API-key attempts per minute across *all* sources; without it, five attempts per source could be exhausted indefinitely (NAT, VPN, Tor) |
+| `KIWIKI_KEY_ATTEMPT_WINDOW_SECONDS` | `60` | Sliding window for both key-attempt budgets |
+| `KIWIKI_RATE_LIMIT_STORE` | `memory` | Backing store for the key-attempt counters: `memory` (single replica) or `sqlite` (shared across replicas) |
+| `KIWIKI_RATE_LIMIT_STORE_PATH` | `/data/.kiwiki/ratelimit.sqlite` | Path of the shared SQLite store; requires a ReadWriteMany volume when running multiple replicas |
 | `KIWIKI_OAUTH_LIMIT` | `20` | OAuth handshake requests (authorize/token/register) per minute and client IP |
 | `KIWIKI_WRITE_LIMIT` | `30` | Authenticated write requests per minute and client IP |
 | `KIWIKI_UI_LIMIT` | `240` | Web UI fragment requests per minute and client IP |

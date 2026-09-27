@@ -100,6 +100,11 @@ env:
   KIWIKI_TRUST_PROXY: "true"  # auf "false" fuer lokale Entwicklung ohne Proxy
   KIWIKI_CORS_ORIGINS: ""  # Leer deaktiviert CORS; sonst explizite Origins kommagetrennt setzen
   KIWIKI_RATE_LIMIT_ENABLED: "true"  # Rate Limiting aktivieren (empfohlen)
+  # Speicher der API-Key-Fehlversuchs-Zaehler. "memory" zaehlt prozesslokal und
+  # ist nur bei replicaCount=1 gueltig; "sqlite" teilt den Stand ueber das
+  # PVC. Ab replicaCount>1 ist sqlite Pflicht, das Rendern bricht sonst ab.
+  KIWIKI_RATE_LIMIT_STORE: "memory"
+  KIWIKI_RATE_LIMIT_STORE_PATH: "/data/.kiwiki/ratelimit.sqlite"
   KIWIKI_UI_LIMIT: "240"  # Web-UI-Fragment-Requests pro Minute und Client-IP
   KIWIKI_SESSION_TTL_SECONDS: "2592000"  # Gleitende Web-Session-Lebensdauer (30 Tage)
   # Optionaler, migrationsfaehiger Wissensindex im bestehenden Daten-PVC.
