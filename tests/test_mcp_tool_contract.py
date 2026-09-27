@@ -53,17 +53,33 @@ def test_werkzeugssatz_ist_unveraendert():
     assert not neu, f"neue Werkzeuge ohne Eintrag in ERWARTETE_WERKZEUGE: {sorted(neu)}"
 
 
-def test_jedes_werkzeug_hat_eine_dispatch_verzweigung():
-    """Ein Werkzeug ohne Zweig in _dispatch waere tot — tools/list wuerde es
-    anbieten, der Aufruf wuerde aber mit 'unbekanntes Werkzeug' enden."""
-    import inspect
+def test_jedes_werkzeug_hat_einen_registry_handler():
+    """Ein Werkzeug ohne Handler in _HANDLERS waere tot — tools/list wuerde es
+    anbieten, der Aufruf wuerde aber mit 'unbekanntes Werkzeug' enden.
 
-    quelle = inspect.getsource(mcp_server._dispatch)
-    ohne_zweig = [name for name in ERWARTETE_WERKZEUGE if f'name == "{name}"' not in quelle]
+    Der Test pruefte frueher per Quelltext-Suche nach `name == \"...\"` in
+    _dispatch. Seit dem Registry-Umbau steht die Verzweigung als
+    Registereintrag — der Schutz ist derselbe, nur der Ort hat sich
+    geaendert.
+    """
+    ohne_handler = [name for name in ERWARTETE_WERKZEUGE if name not in mcp_server._HANDLERS]
 
-    assert not ohne_zweig, (
-        f"in _dispatch nicht behandelt: {sorted(ohne_zweig)} — "
-        "die Werkzeugliste waere dann groesser als die Dispatch-Abzweige"
+    assert not ohne_handler, (
+        f"in _HANDLERS nicht registriert: {sorted(ohne_handler)} — "
+        "die Werkzeugliste waere dann groesser als die Registry"
+    )
+
+
+def test_registry_enthaelt_genau_den_erwarteten_werkzeugsatz():
+    """Kein Handler ohne Werkzeuglisteneintrag — und umgekehrt.
+
+    Ein Ueberhang in eine Richtung waere ein totes Angebot (listet, laeuft
+    nicht) oder eine Schattenfunktion (laeuft, wird nicht angeboten und hat
+    kein Schema).
+    """
+    assert set(mcp_server._HANDLERS) == ERWARTETE_WERKZEUGE, (
+        f"Registry driftet: extra={sorted(set(mcp_server._HANDLERS) - ERWARTETE_WERKZEUGE)} "
+        f"fehlend={sorted(ERWARTETE_WERKZEUGE - set(mcp_server._HANDLERS))}"
     )
 
 
