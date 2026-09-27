@@ -25,6 +25,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   die leere zweite Spalte des entfernten Statuspanels.
 - **Markdown-Tabellen hatten einen zu breiten Rahmen** — `display: block` mit `width: 100%` legte den Rahmen um die
   volle Spaltenbreite, während die Zellen nur ihren Inhalt füllten.
+- **`__import__("os")` in der Indexierer-Hot-Path** — `app/knowledge/indexer.py` hat die Dateigrößengrenze
+  über einen dynamischen Import gelesen. Jetzt ein normaler `import os`; der Key ist damit auch für die
+  Doku-Prüfung sichtbar.
 
 ### Changed
 - **Ein Maßsystem statt zweier konkurrierender** — die Stylesheets trugen 37 Schriftgrößen und 58
@@ -54,6 +57,23 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **Einstellungen verschwendet keine leere Spalte mehr** — die Sidebar trug dort nur einen „Zurück"-Button, den es
   im Seitenkopf ohnehin schon gab.
 - **`Ctrl+S` steht am Speichern-Button** — vorher als lose Beschriftung am Ende der Editor-Leiste.
+- **Die Konfigurationsdoku ist mit dem Code synchron** — `tests/test_deployment_config.py` prüft jetzt, dass
+  jede `KIWIKI_*`-Variable, die der Code liest, in der README-Tabelle steht, dass `.env.example` keine
+  erfundenen Keys nennt, dass `values.yaml` die UI- und Session-Grenzen exponiert und dass `AGENTS.md` nur auf
+  existierende Pfade zeigt. `.env.example` führt die Betriebs-relevanten Variablen aktiv und die übrigen
+  kommentiert mit Default in Klammern; die vollständige Liste bleibt in der README.
+- **`AGENTS.md` benennt die existierenden Pfade** — die Datei verwies auf `.Codex/rules/`, `.Codex/skills/`
+  und `.Codex/agents/`. Real ist `.claude/`. Sie weist jetzt zusätzlich darauf hin, dass `.claude/` per
+  `.gitignore` nicht versioniert ist, ein frischer Klon also weder Rules noch Agents noch Skills besitzt, und
+  nennt die Qualitäts-Gates, die vor jeder Fertigmeldung grün sein müssen.
+- **`APP_VERSION` ist im Release-Konsistenztest enthalten** — `test_release_version_is_consistent` prüfte
+  `pyproject.toml`, `Chart.yaml` und `values.yaml`, nicht aber die Konstante, die als ausgelieferte Version in
+  FastAPI, `/version` und der MCP-`serverInfo` steht.
+- **Dokumentierte Umgebungsvariablen** — `KIWIKI_KEY_ATTEMPT_LIMIT` (der vom `/oauth/authorize`-Formular
+  getrennt gezählte Brute-Force-Zähler) und `KIWIKI_KNOWLEDGE_MIN_FREE_BYTES` (der Freiraum-Check vor dem
+  Schreiben des Knowledge-Index) fehlten in README, `.env.example` und Helm-Values. Ebenso standen
+  `KIWIKI_MCP_MAX_STAGED_UPLOADS` und `KIWIKI_MCP_MAX_STAGED_BYTES` hinter dem Knowledge-Absatz statt in der
+  Konfigurationstabelle, wo sie von keinem Werkzeug erfasst wurden.
 
 ## [4.0.0] - 2026-09-18
 
