@@ -31,9 +31,18 @@ def _database_path(workspace: Path) -> Path:
 def open_database(workspace: Path) -> sqlite3.Connection:
     """Öffnet oder migriert den abgeleiteten Index eines einzelnen Workspaces."""
     database = _database_path(Path(workspace))
-    connection = sqlite3.connect(database, timeout=1.0, check_same_thread=False)
+    # busy_timeout war 1000 ms. Das ist zu knapp, sobald drei Verbindungen
+    # konkurrieren: API-Request, Reconcile-Worker und Graph-Leser. Unter CI-Last
+    # fiel tests/test_knowledge_api.py dann mit "database is locked" um, ohne
+    # dass ein Codefehler vorlag — der Wartende bekam keine Gelegenheit.
+    #
+    # 10 s sind unkritisch: SQLite wartet nur, wenn wirklich jemand schreibt,
+    # und der Worker schreibt in Batches von wenigen Millisekunden. Bei
+    # unerwartet langen Schreibvorgaengen ist Warten das richtige Verhalten —
+    # ein 500er waere es nicht.
+    connection = sqlite3.connect(database, timeout=10.0, check_same_thread=False)
     connection.execute("PRAGMA foreign_keys = ON")
-    connection.execute("PRAGMA busy_timeout = 1000")
+    connection.execute("PRAGMA busy_timeout = 10000")
     connection.execute("PRAGMA synchronous = NORMAL")
     connection.execute("PRAGMA cache_size = -2048")
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
