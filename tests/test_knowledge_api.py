@@ -61,7 +61,16 @@ def _write_note(username: str, relative_path: str, content: str) -> Path:
     return path
 
 
-def _wait_until_ready(client: TestClient, key: str, timeout: float = 3.0) -> dict:
+def _wait_until_ready(client: TestClient, key: str, timeout: float = 15.0) -> dict:
+    """Warte auf den Hintergrund-Worker.
+
+    Das Timeout war 3.0 s. Das ist bei geteilten CI-Runnern zu knapp: der
+    Knowledge-Worker laeuft als asyncio-Task, und unter Last braucht der
+    Reconcile-Queue-Durchlauf gelegentlich laenger. Beim Bump auf fastapi
+    0.141.1 fiel der Test deshalb einmal in etwa zehn Laeufen um — ohne
+    Codefehler, mit drei gruenen Laeufen danach. 15 s kostet im Normalfall
+    nichts, weil der Worker meist im ersten 100-ms-Schritt fertig ist.
+    """
     deadline = time.monotonic() + timeout
     last_status: dict = {}
     while time.monotonic() < deadline:
@@ -71,7 +80,9 @@ def _wait_until_ready(client: TestClient, key: str, timeout: float = 3.0) -> dic
         if last_status.get("status") == "ready":
             return last_status
         time.sleep(0.02)
-    raise AssertionError(f"Knowledge Engine wurde nicht ready: {last_status}")
+    raise AssertionError(
+        f"Knowledge Engine wurde nach {timeout}s nicht ready: {last_status}"
+    )
 
 
 def _schedule_reindex(client: TestClient, key: str) -> dict:
