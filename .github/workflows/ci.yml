@@ -10,16 +10,24 @@ on:
 
 jobs:
   test:
-    name: Python tests
+    name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.12 ist die untere Grenze aus requires-python und laeuft ueberall;
+        # 3.13 deckt die Interpreter-Generation ab, in der sich asyncio- und
+        # typing-Verhalten geaendert hat. Ohne diese Zeile fielen
+        # Abweichungen erst auf, wenn ein Nutzer sie meldet.
+        python-version: ["3.12", "3.13"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: "pip"
 
       - name: Install dependencies
@@ -31,7 +39,14 @@ jobs:
       - name: Run pytest with coverage
         run: |
           coverage run -m pytest -q
-          coverage report --fail-under=75
+          # Das Coverage-Gate gilt nur auf der Referenzversion: auf 3.13
+          # koennen sich Branch-Anteile durch Interpreter-Unterschiede
+          # verschieben, ohne dass etwas schlechter geworden waere.
+          if [ "${{ matrix.python-version }}" = "3.12" ]; then
+            coverage report --fail-under=75
+          else
+            coverage report
+          fi
 
       - name: Audit Python dependencies
         run: pip-audit -r requirements.txt

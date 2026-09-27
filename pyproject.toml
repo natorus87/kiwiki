@@ -2,7 +2,7 @@
 name = "kiwiki"
 version = "4.0.0"
 description = "KI-gestütztes Wiki mit MCP-Server"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 license = {text = "MIT"}
 
 [tool.ruff]
