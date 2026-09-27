@@ -1,4 +1,4 @@
-fastapi==0.139.2
+fastapi==0.141.1
 # Direkt gepinnt, obwohl fastapi es nur indirekt zieht: ohne Pin loesen zwei
 # Installationen derselben Version unterschiedliche starlette-Releases auf
 # (gemessen: frisches venv 1.7.0, vorhandenes 1.6.0). 1.6.0 ist die Version,
