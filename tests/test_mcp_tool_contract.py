@@ -42,6 +42,60 @@ def _deklarierte_werkzeuge() -> set[str]:
     return {werkzeug["name"] for werkzeug in ergebnis["result"]["tools"]}
 
 
+def _schreiber_aus_registry() -> set[str]:
+    """Schreiber sind Handler mit need_write-Guard — abgeleitet, nicht geraten.
+
+    Die hartcodierte Liste in test_lesehinweise pinnt bekannte Schreiber;
+    dieser Test faengt neue ein: wer need_write in seinen Handler schreibt,
+    ohne die Annotation zu aendern, faellt hier auf (und umgekehrt).
+    """
+    import inspect
+
+    from app.mcp_tools.common import HANDLERS
+
+    return {name for name, fn in HANDLERS.items()
+            if "need_write" in inspect.getsource(fn)}
+
+
+def test_guards_und_lesehinweise_stimmen_ueberein():
+    """Guard und Annotation muessen dasselbe sagen — sonst fragt der Client
+    falsch (oder gar nicht).
+
+    Der ChatGPT-Befund: haeufige Nachfragen kommen von korrekten
+    Nicht-read-only-Flags plus Sitzungsverhalten des Clients, nicht von
+    falschen Flags. Dieser Test haelt den korrekten Stand fest: jeder
+    need_write-Handler ist nicht-read-only, jeder andere ist read-only.
+    """
+    schreiber = _schreiber_aus_registry()
+    lesend = set(mcp_server._READ_ONLY_TOOLS)
+
+    assert not (schreiber & lesend), (
+        f"schreibend, aber als read-only annotiert: {sorted(schreiber & lesend)}"
+    )
+    assert not (set(mcp_server._HANDLERS) - schreiber - lesend), (
+        "lesend, aber nicht als read-only annotiert: "
+        f"{sorted(set(mcp_server._HANDLERS) - schreiber - lesend)}"
+    )
+
+
+def test_idempotent_enthaelt_keine_schreiber():
+    """Idempotent heisst: frei wiederholbar. Das gilt nur ohne
+    Schreibseiteneffekt — build_index, reindex_all und knowledge_reindex
+    standen faelschlich drin (teure Schreibvorgaenge)."""
+    schreiber = _schreiber_aus_registry()
+
+    idempotent = {name for name in mcp_server._HANDLERS
+                  if mcp_server._tool_annotations(name)["idempotentHint"]}
+
+    assert not (schreiber & idempotent), (
+        f"schreibend, aber als idempotent annotiert: {sorted(schreiber & idempotent)}"
+    )
+    assert idempotent <= set(mcp_server._READ_ONLY_TOOLS), (
+        "idempotent ausserhalb von read-only: "
+        f"{sorted(idempotent - set(mcp_server._READ_ONLY_TOOLS))}"
+    )
+
+
 def test_werkzeugssatz_ist_unveraendert():
     """Der Satz darf nur wachsen, wenn eine Liste hier mitwaechst."""
     aktuell = _deklarierte_werkzeuge()
