@@ -67,11 +67,13 @@ def _drop_pooled_conn(db_path: str) -> None:
 def close_pool() -> None:
     """Close all pooled connections (call on shutdown)."""
     with _pool_lock:
-        for conn in _pool.values():
+        for key, conn in _pool.items():
             try:
                 conn.close()
             except Exception:
-                pass
+                # Beim Shutdown nicht fatal, aber nicht still: eine Leck
+                # Verbindung waere sonst spaeter nicht mehr zuordenbar.
+                logger.warning("Connection pool: cannot close entry %s", key, exc_info=True)
         _pool.clear()
 
 
@@ -121,7 +123,11 @@ def init_db() -> None:
                 conn.execute("DROP TABLE IF EXISTS files")
                 schema_rebuilt = True
         except Exception:
-            pass
+            # Die Tabelle wird danach ohnehin per CREATE TABLE IF NOT EXISTS
+            # angelegt; ein Fehler hier darf die Indexierung nicht abbrechen.
+            # Verschwiegen waere er nur, wenn die Migration danach dauerhaft
+            # fehlschlaegt — das zeigt der naechste Indexierungsversuch.
+            logger.warning("Search index: cannot inspect existing schema", exc_info=True)
 
         conn.execute(
             """
@@ -357,7 +363,10 @@ def search(query: str) -> list[SearchResult]:
                 )
                 conn.commit()
             except Exception:
-                pass
+                # Die Trefferliste selbst ist gueltig; nur die Historie fehlt dann.
+                # Ohne Log sieht der Nutzer eine leere Historie und weiss nicht,
+                # ob die Suche kaputt ist oder nichts gefunden hat.
+                logger.error("Search history: cannot record query %r", query, exc_info=True)
 
         return results
 
@@ -462,4 +471,4 @@ def record_search(query: str, result_count: int) -> None:
             )
             conn.commit()
         except Exception:
-            pass
+            logger.error("Search history: cannot record query %r", query, exc_info=True)

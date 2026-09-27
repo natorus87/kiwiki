@@ -22,5 +22,7 @@ branch = true
 source = ["app"]
 
 [tool.coverage.report]
-fail_under = 60
+# Reale Auslastung liegt bei 79 %. Das Gate steht bewusst darunter, damit es
+# bei einem kleinen echten Verlust anschlaegt statt bei jeder Zeile.
+fail_under = 75
 show_missing = true

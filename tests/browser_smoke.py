@@ -485,6 +485,9 @@ def main() -> None:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+        # Stille Erfolge sind schlechte Gates: CI zeigt sonst nur eine leere
+        # Zeile und kann nicht unterscheiden, "alles gruen" von "nichts lief".
+        print("Browser-Smoke: alle Checks bestanden.")
 
 
 if __name__ == "__main__":

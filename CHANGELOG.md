@@ -75,6 +75,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   Schreiben des Knowledge-Index) fehlten in README, `.env.example` und Helm-Values. Ebenso standen
   `KIWIKI_MCP_MAX_STAGED_UPLOADS` und `KIWIKI_MCP_MAX_STAGED_BYTES` hinter dem Knowledge-Absatz statt in der
   Konfigurationstabelle, wo sie von keinem Werkzeug erfasst wurden.
+- **Nach fünf Fehlversuchen war der richtige API-Key gesperrt** — die `login`-Rate-Limit-Schicht zählte jeden
+  `POST /login` dauerhaft, auch die erfolgreichen. Ab dem sechsten Versuch bekam man 429, und zwar von der
+  Middleware, bevor `login_submit` laufen und das Budget freigeben konnte: wer sich zweimal vertippt hatte,
+  kam 60 Sekunden lang nicht mehr rein, auch mit dem richtigen Key. Der Login-Pfad läuft jetzt durch und
+  entscheidet anhand der Antwort — nur ein Redirect nach erfolgreicher Prüfung gibt das Fenster frei, ein
+  401 nicht. Getrennt davon bleibt das Verhalten des OAuth-Formulars (`/oauth/authorize` liegt im
+  `oauth`-Tier und nutzt `KIWIKI_KEY_ATTEMPT_LIMIT`) unverändert.
+- **Die Such-Historie verschluckte ihre Fehler** — `record_search` und der Prune-Schritt am Ende von `search()`
+  fingen jeden Fehler mit `pass` ab. Ein Nutzer sah eine leere Historie und konnte nicht unterscheiden, ob die
+  Suche kaputt ist oder nichts gefunden hat. Beide Pfade loggen jetzt; dasselbe gilt für das Schließen der
+  Verbindungspools und die Prüfung des Suchindex-Schemas.
+- **Zwei Dashboard-Panels meldeten Fehler als „leer"** — die Fragmente für „zuletzt bearbeitet" und „Suchverlauf"
+  gaben bei jedem Fehler eine leere Antwort zurück. Im Dashboard heißt leer „nichts vorhanden", ein Fehler war
+  damit nicht von einem leeren Workspace zu unterscheiden.
+- **Der Browser-Smoke-Test war ein stummes Gate** — bei Erfolg gab er nichts aus, CI zeigte also eine leere
+  Zeile und konnte „alles grün" nicht von „nichts gelaufen" unterscheiden.
+- **Die Coverage-Schwelle stand 19 Prozent unter der Realität** — `pyproject.toml` verlangte 60 %, tatsächlich
+  erreicht sind 79 %. Ein Gate, das man so leicht erfüllt, schützt den Bestand nicht. Die Schwelle steht jetzt
+  bei 75 % in beiden Dateien, und ein Test verhindert, dass `pyproject.toml` und `ci.yml` auseinanderlaufen.
 
 ## [4.0.0] - 2026-09-18
 
