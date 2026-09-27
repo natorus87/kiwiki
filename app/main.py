@@ -488,15 +488,24 @@ async def login_submit(request: Request, api_key: str = Form(...)) -> HTMLRespon
     users_map = parse_users()
     match = _lookup_api_key(users_map, api_key)
     if match is None:
-        # Kein eigener Zaehler noetig: die RateLimitMiddleware zaehlt das
-        # login-Tier (5/min) mit und gibt es nach einem Erfolg wieder frei.
-        # Der separate _failed_key_attempts-Zaehler gilt /oauth/authorize,
-        # das im oauth-Tier (20/min) liegt und dort vor dem Handler greift.
+        # Fehlversuch gegen das gemeinsame Key-Budget buchen (app/rate_limit_store).
+        # /login hat darueber hinaus das login-Tier der Middleware; beide Grenzen
+        # greifen, aber das Budget ist dasselbe wie beim OAuth-Formular — sonst
+        # waeren nach fuenf Versuchen hier oben noch zwanzig weitere ueber
+        # /oauth/authorize moeglich.
+        from .rate_limiter import register_failed_key_attempt
+
+        register_failed_key_attempt(request)
         return templates.TemplateResponse(
             request=request, name="login.html",
             context={"error": _ui_text(request, "login_invalid_key")},
             status_code=401,
         )
+    from .rate_limiter import reset_failed_key_attempts
+
+    # Erfolg: das Budget der Quelle freigeben, sonst bleibt der richtige Key
+    # nach Fehlversuchen bis zum Fensterablauf gesperrt.
+    reset_failed_key_attempts(request)
     username, role = match
     if not is_valid_username(username):
         return templates.TemplateResponse(
