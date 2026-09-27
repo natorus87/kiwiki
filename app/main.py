@@ -488,6 +488,10 @@ async def login_submit(request: Request, api_key: str = Form(...)) -> HTMLRespon
     users_map = parse_users()
     match = _lookup_api_key(users_map, api_key)
     if match is None:
+        # Kein eigener Zaehler noetig: die RateLimitMiddleware zaehlt das
+        # login-Tier (5/min) mit und gibt es nach einem Erfolg wieder frei.
+        # Der separate _failed_key_attempts-Zaehler gilt /oauth/authorize,
+        # das im oauth-Tier (20/min) liegt und dort vor dem Handler greift.
         return templates.TemplateResponse(
             request=request, name="login.html",
             context={"error": _ui_text(request, "login_invalid_key")},
@@ -797,6 +801,9 @@ async def ui_recent(request: Request) -> HTMLResponse:
             context={"files": recent},
         )
     except Exception:
+        # Leer bedeutet im Dashboard "nichts vorhanden"; ohne Log ist ein
+        # Fehler nicht von einem leeren Workspace zu unterscheiden.
+        logging.exception("Failed to render the recent files panel")
         return HTMLResponse("")
 
 
@@ -881,6 +888,8 @@ async def ui_search_history(request: Request) -> HTMLResponse:
             context={"history": history, "user": user},
         )
     except Exception:
+        # Wie beim Recent-Panel: leer heisst hier "leer", nicht "kaputt".
+        logging.exception("Failed to render the search history panel")
         return HTMLResponse("")
 
 
