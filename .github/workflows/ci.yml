@@ -31,7 +31,7 @@ jobs:
       - name: Run pytest with coverage
         run: |
           coverage run -m pytest -q
-          coverage report --fail-under=60
+          coverage report --fail-under=75
 
       - name: Audit Python dependencies
         run: pip-audit -r requirements.txt
