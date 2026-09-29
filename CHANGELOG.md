@@ -7,7 +7,110 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Security
+- **Bearer-Header umging die Session-Prüfung aller UI-Routen** — die WebAuthMiddleware ließ
+  jeden Request mit `Authorization: Bearer <beliebig>` ungeprüft zu `/editor`, `/ui/*` und
+  `/settings` durch; kein Datenabfluss nur, weil der Namespace fehlte. Der Bypass gilt jetzt
+  ausschließlich für `POST /` (JSON-RPC-Connectoren), `/ui/export` verlangt zusätzlich
+  explizit einen angemeldeten User.
+- **Notizinhalt konnte UI-Steuerklassen setzen** — `class` auf `<a>` war frei erlaubt
+  (`kw-file-link`, `btn btn-danger` …): App-Buttons im Notiztext und globale Click-Handler
+  ohne Daten. nh3 filtert Klassen jetzt per Whitelist (`<a>`: nur `wikilink`/`missing`,
+  `<code>`: nur `language-*`), auch im HTML-Export.
+- **Session-Cookie ohne `Secure` bei direktem TLS** — das Flag hing nur an
+  `KIWIKI_TRUST_PROXY`; jetzt auch am Request-Schema `https`.
+- **Legacy-Cookie-Auth mit rohem API-Key** loggt eine Deprecation-Warnung (einmal pro
+  User und Prozess); Grenzen des RAM-basierten Refresh-Replay-Schutzes stehen in
+  `SECURITY.md`.
+- **OAuth-Registrierungszähler wuchs unbegrenzt** — nur die anfragende IP wurde bereinigt.
+  Jetzt globales Pruning plus Obergrenze `KIWIKI_OAUTH_MAX_REGISTER_SOURCES` (4096).
+
 ### Fixed
+- **MCP `list_all_files` verletzte nach einem Dashboard-Aufruf sein outputSchema** — das
+  Dashboard reicherte die gecachten Einträge um `excerpt` an; strikte Clients verwarfen
+  für bis zu 5 s die komplette Antwort. `list_all_files` liefert jetzt Kopien.
+- **Wikilinks in `~~~`-Blöcken und Inline-Code** wurden zu sichtbarem, escaptem
+  `<a …>`-Text; beide bleiben jetzt wörtlich. Die Titel-Doppelungsprüfung ignoriert
+  führende Trennlinien und Überschriften in Codeblöcken.
+- **Editor-Vorschau löste Wikilinks nicht relativ zur Quellnotiz auf** — jetzt identisch
+  zum Server (per Test gegen `_resolve_wikilink` abgeglichen).
+- **Editor-Vorschau war bis auf Wikilinks und Code leer** — der eigene Textknoten-Renderer
+  gab `undefined` zurück, was ToastUI 3 als „nichts rendern“ behandelt. Jetzt
+  `context.origin()`; der Browser-Smoke prüft Überschrift, Absatz, Tabellenzelle und
+  Aufgabentext in der Vorschau.
+- **Notizansicht ohne sichtbare Hauptüberschrift** — Server (`title_redundant`) und CSS
+  (`h1:first-child { display: none }`) blendeten gemeinsam beide Titel aus. Die CSS-Regel
+  ist weg; bei abweichendem Titel werden Body-h1 zu h2, sodass genau eine h1 bleibt.
+- **Unsichtbare Auswahl-Checkboxen waren Tab-Stopps** — jeder Baumeintrag kostete zwei
+  Tabs. Außerhalb des Auswahlmodus tragen sie jetzt `tabindex="-1"`.
+- **Escape klappte am Desktop die Sidebar zu** statt offene Suchergebnisse zu schließen.
+  Suchergebnisse haben Vorrang; per Escape schließt nur noch das mobile Overlay.
+- **Exzerpte zeigten Wikilink-Rohsyntax** (`[[../adr-001-sqliteADR 001]]`) und den Titel
+  doppelt. Wikilinks werden zu ihrem Label bzw. Dateistamm, eine führende Überschrift
+  gleich dem Titel entfällt — in Dashboard und Suchtreffern.
+- **Aufgabenlisten** (`- [ ]`/`- [x]`) erscheinen in der Notizansicht als deaktivierte
+  Checkboxen wie in der Editor-Vorschau. Die Checkbox wird nach nh3 gesetzt; Notizinhalt
+  kann weiterhin kein `<input>` einschleusen.
+- **Knowledge-Seite bei ausgeschalteter Engine** zeigte „0 Knoten / 100 % Tiefe“ und einen
+  Rebuild-Knopf, der nur scheitern konnte. Jetzt ein Hinweis, wie man sie einschaltet.
+- **Direkt aufgerufene Notiz-URLs zeigten eine ungestylte Fragmentseite** — `/ui/file` liefert
+  ein HTMX-Partial ohne Layout. Browser-Navigation (Deep-Link, geteilter Link, Reload,
+  erkannt an fehlendem `HX-Request` plus `text/html`-Accept) landet jetzt per 307 auf
+  `/?file=`, die dieselbe Notiz vollständig nachlädt. Maschinen-Clients ohne `text/html`
+  bekommen weiter das Fragment, damit Zitat-URLs abrufbar bleiben.
+- **`[[Wikilinks]]` sind jetzt klickbar** — bisher standen sie als toter Text in Notiz
+  und Editor-Vorschau. Serverseitig (`_render_markdown_safe`) und in der ToastUI-Vorschau
+  (`customHTMLRenderer`) werden sie nach Obsidian-Konvention aufgelöst (relativ zum Ordner,
+  `.md`-Ergänzung); fehlende Ziele tragen die Klasse `missing` und sind gestrichelt
+  markiert, Codeblöcke und Inline-Code bleiben wörtlich.
+- **Frontmatter leckt nicht mehr in die Editor-Vorschau** — `---`-Block, Titel und Tags
+  wurden als HR, Überschrift und Fließtext gerendert. Textknoten im Frontmatter-Bereich
+  werden unterdrückt, leere Hüllen (HR, leere Blöcke am Anfang) per Observer entfernt;
+  die Quelle bleibt unberührt.
+- **„Zuletzt erstellt" log „keine Notiz", obwohl Notizen existierten** — der Filter
+  verlangte Frontmatter-`created`. Fallback ist jetzt die Dateisystem-Zeit (birthtime,
+  sonst ctime, sonst mtime); `updated` ohne Stempel fällt auf mtime zurück.
+- **Alle Zeitstempel standen auf „Heute, 00:00"** — Schreiben speicherte nur das Datum.
+  `created`/`updated` enthalten jetzt die Uhrzeit (UTC, minutengenau); die Anzeige
+  rechnet wie bisher in Ortszeit um.
+- **Suchfelder benennen ihren Scope** — Top-Bar (`Suchen…`) und Sidebar (`Filtern…`)
+  waren zwei Lupen ohne Versprechen. Placeholder tragen jetzt Verb + Ziel
+  („Notizen durchsuchen…" / „Dateibaum filtern…", en analog).
+- **Dashboard-Listen zeigen Vorschau und Tags** — bisher nur Titel + Datum, also
+  blindes Klicken. Jede Zeile hat jetzt Exzerpt (erste ~120 Zeichen, ohne
+  Frontmatter/Markdown-Syntax, Dateien >100 KB ausgenommen) und bis zu 3 Tags.
+- **Mobile CTA-Row passt auf 375px** — drei Buttons auf Kante sind Geschichte:
+  nur `+ Neue Notiz` bleibt vollbreit, Tags/Verlauf wandern in ein `···`-Menü
+  (natives `<details>`, schließt bei Auswahl). Section-Labels laufen mobil eng
+  (Tracking 0.18em → 0.06em).
+- **Startseite nutzt die leere Hälfte** — neue Tag-Wolke (`/ui/tags?compact=1`,
+  Top-12-Chips, ohne Breadcrumb/Listen); ohne Tags bleibt die Sektion unsichtbar.
+- **Doppelte H1 in der Notizansicht** — Frontmatter-Titel == erste Body-H1 blendet
+  die View-Überschrift aus (Breadcrumb + Meta bleiben); unterschiedliche Titel
+  zeigen beide wie bisher.
+- **Interne `.kiwiki`-Dateien waren über Lese-APIs abrufbar** — `validate_content_read_path()` existierte,
+  wurde aber nur von `read_lines`/`file_info` aufgerufen. `read_file`, `fetch` und `read_many` (und damit
+  `/api/file`, `/ui/file` und der Editor) lieferten `.kiwiki/agent_log.jsonl` trotzdem aus. Der Guard steht
+  jetzt zentral in `read_file()` und `_read_frontmatter_only()`; Schreiben war bereits gesperrt und bleibt es.
+- **MCP- und UI-Suche hatten kein Query-Limit** — nur REST deckelte über `SearchRequest` auf 512 Zeichen.
+  `search()` kürzt jetzt serverseitig auf `MAX_QUERY_LENGTH`, und das `search`-Werkzeugschema deklariert
+  `maxLength: 512`. Unbegrenzt lief ein MB-Query in FTS-Sanitize und LIKE-Fallback und brannte CPU.
+- **OAuth-Refresh-Token rotieren jetzt** — vorher blieb ein Refresh-Token 30 Tage wiederverwendbar.
+  Jede erfolgreiche Einlösung liefert ein neues Refresh-Token, das präsentierte ist verbraucht
+  (Wiederverwendung → `invalid_grant`, RAM-only wie Codes und DCR-Clients). Fehlgeschlagene
+  Client/Resource-Bindungsprüfungen verbrauchen den Token bewusst nicht.
+- **Offene DCR-Registrierung ist pro IP begrenzt** — 128 Slots mit 24h-TTL ließen sich von einer Quelle
+  füllen, danach bekamen legitime Clients 503. Jetzt maximal 16 Registrierungen pro Quell-IP und Stunde
+  (`KIWIKI_OAUTH_MAX_REGISTER_PER_IP`); nur erfolgreiche Registrierungen zählen.
+- **Unbekannte MCP-Methode kommt mit HTTP 200** — `-32601` wurde als HTTP 404 ausgeliefert und ließ den
+  Server defekt aussehen. Method-not-found ist ein Protokoll-, kein Transportfehler und gehört in den
+  JSON-RPC-Fehlerkörper bei HTTP 200.
+- **Strengere MCP-Schemas für OpenAI-Clients** — `fetch` verlangt per `anyOf` entweder `id` (OpenAI-Kontrakt)
+  oder `path` (Alias für direkte Aufrufer) statt gar keiner Pflicht; ohne gesetzte `KIWIKI_BASE_URL` warnt
+  der Start, weil Zitat-URLs dann relativ und für OpenAI-Connectoren unbrauchbar wären.
+- **Dev-Abhängigkeit `httpx2` auf 2.13.1 angehoben** — 6 bekannte CVEs in 2.7.0 (WSS-over-SOCKS ohne TLS,
+  SSE-ReDoS, Multipart-Header-Injection, Decompression-Bomb, Request-Smuggling). Nur Dev-Scope, weder
+  `app/` noch `tests/` importieren das Paket; Produktion war nicht erreichbar.
 - **Die Live-Suche hat nie gefeuert** — `hx-trigger` stand auf dem Suchformular mit dem Modifier `changed`. htmx
   vergleicht dafür `elt.value` des Trigger-Elements, und ein `<form>` hat keines: der Vergleich war immer
   `undefined === undefined` und verwarf jedes Eingabe- und Submit-Event. Tippen zeigte nichts, Enter zeigte nichts,
@@ -29,7 +132,24 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   über einen dynamischen Import gelesen. Jetzt ein normaler `import os`; der Key ist damit auch für die
   Doku-Prüfung sichtbar.
 
+### Performance
+- `users.yaml` wird nur noch bei Änderung neu geparst (Stat-Signatur), statt mehrfach pro
+  Request.
+
 ### Changed
+- **Startseite für gefüllte Workspaces** — die Einführung (großes Logo, Erklärtext) bleibt
+  leeren Workspaces vorbehalten; sonst kompakte Kopfzeile „Weiterarbeiten“ mit den
+  Aktionen. „Zuletzt bearbeitet“ und „Zuletzt erstellt“ sind eine Liste mit Umschalter
+  statt zwei weitgehend identischer Spalten; die Tag-Wolke steht daneben im ersten Viewport.
+- **Tags-Ansicht als dichte Liste** — ein Tag pro Zeile mit Anzahl und direkt sichtbaren
+  Notizen statt Kartenraster mit „1 Datei“-Aufklapper.
+- **Überschriftenstruktur** — Tags, Suchverlauf und Editor haben eine h1 (Editor
+  visuell verborgen, der Kontext steht im Pfadfeld).
+- **Einstellungen** zeigen den Dateibaum statt einer leeren Sidebar-Spalte.
+- **Mobile Notizaktionen** — Export und Löschen liegen im „···“-Menü neben „Bearbeiten“,
+  statt „Löschen“ allein in eine zweite Zeile umbrechen zu lassen.
+- **Login-Hinweis** richtet sich an Nutzer statt an Betreiber (kein `user:key:role` mehr).
+- Kopier-Icon neben dem Pfad mit mindestens 24 px Zeigerziel.
 - **Ein Maßsystem statt zweier konkurrierender** — die Stylesheets trugen 37 Schriftgrößen und 58
   Abstandswerte, 71 % der Abstände lagen zwischen den Stufen. Beides läuft jetzt über Tokens:
   sieben Typo-Rollen plus Display, Abstände als Vielfache von 4 (plus 2 px für Haarabstände). Schriftgewichte

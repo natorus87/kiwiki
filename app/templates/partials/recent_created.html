@@ -3,10 +3,20 @@
   {% for f in files %}
   <a href="/?file={{ f.path|urlencode }}" class="recent-item kw-file-link" data-file-path="{{ f.path }}">
     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-    <span class="recent-name">{{ f.title }}</span>
-    {% if f.created %}
-    <time class="recent-date" title="{{ f.created|kwdate_full }}">{{ f.created|kwdate }}</time>
-    {% endif %}
+    <span class="recent-text">
+      <span class="recent-top">
+        <span class="recent-name">{{ f.title }}</span>
+        {% if f.created %}
+        <time class="recent-date" title="{{ f.created|kwdate_full }}">{{ f.created|kwdate }}</time>
+        {% endif %}
+      </span>
+      {% if f.excerpt %}
+      <span class="recent-excerpt">{{ f.excerpt }}</span>
+      {% endif %}
+      {% if f.tags %}
+      <span class="recent-tags">{{ f.tags[:3]|join(' · ') }}</span>
+      {% endif %}
+    </span>
   </a>
   {% endfor %}
 </div>

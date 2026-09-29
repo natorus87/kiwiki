@@ -6,7 +6,9 @@ import re
 import time
 import uuid
 from contextlib import asynccontextmanager
-from pathlib import Path
+from pathlib import Path, PurePath, PurePosixPath
+from posixpath import normpath as posix_normpath
+from urllib.parse import quote
 
 import markdown as md_lib
 from jinja2 import pass_context as jinja_pass_context
@@ -14,7 +16,7 @@ import nh3
 import yaml
 from fastapi import FastAPI, Depends, Form, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -31,7 +33,7 @@ from .auth import (
     require_role,
 )
 from .mcp_server import router as mcp_router
-from .constants import APP_VERSION, CSP_BASE_DIRECTIVES, NH3_ATTRS, NH3_TAGS
+from .constants import APP_VERSION, CSP_BASE_DIRECTIVES, NH3_ATTRS, NH3_TAGS, nh3_attribute_filter
 from .models import (
     AppendFileRequest,
     CreateFolderRequest,
@@ -59,7 +61,7 @@ from .i18n import (
     stamp_title,
     template_language_context,
 )
-from .search import init_db, reindex_all, reindex_changed, search as search_files
+from .search import content_excerpt, init_db, reindex_all, reindex_changed, search as search_files
 from .storage import (
     _locked_paths,
     _path_lock,
@@ -73,6 +75,7 @@ from .storage import (
     move_file,
     move_folder,
     read_file,
+    safe_path,
     update_frontmatter,
     validate_content_folder_path,
     validate_markdown_content_path,
@@ -93,18 +96,140 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
-def _render_markdown_safe(content: str) -> str:
+_WIKILINK_RE = re.compile(r"(?<!!)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]")
+
+
+def _resolve_wikilink(source_path: str, raw_target: str) -> str | None:
+    """Obsidian-Konvention: relativ zum Ordner der Quellnotiz, `.md` wird
+    ergaenzt. Absolute Pfade, URLs und Escapes aus dem Namespace → None."""
+    target = raw_target.strip()
+    if not target or "\n" in target or target.startswith(("http://", "https://", "mailto:", "/", "#")):
+        return None
+    if not target.endswith(".md"):
+        target += ".md"
+    resolved = posix_normpath(str(PurePosixPath(source_path).parent / target))
+    if resolved == ".." or resolved.startswith("../"):
+        return None
+    return resolved
+
+
+def _first_content_heading(content: str) -> str:
+    """Erste `#`-Überschrift des Bodys, normalisiert.
+
+    `content` ist bereits ohne Frontmatter (read_file trennt sie ab); ein
+    fuehrendes `---` ist hier eine Trennlinie und kein Frontmatter-Beginn.
+    Zeilen in Codezaeunen zaehlen nicht (`# Kommentar` in einem Bash-Block).
+    Für den Doppelungs-Check gegen den Frontmatter-Titel: `# **Titel**`
+    und `# Titel` sind dieselbe Überschrift.
+    """
+    fence: str | None = None
+    for line in content.splitlines():
+        stripped = line.strip()
+        fence_match = re.match(r"(`{3,}|~{3,})", stripped)
+        if fence_match:
+            marker = fence_match.group(1)
+            if fence is None:
+                fence = marker
+            elif marker[0] == fence[0] and len(marker) >= len(fence):
+                fence = None
+            continue
+        if fence is None and re.match(r"#{1,6}(\s|$)", stripped):
+            text = re.sub(r"^#+\s*", "", stripped)
+            text = re.sub(r"[*_`~\[\]()!<>-]", "", text)
+            return re.sub(r"\s+", " ", text).strip().casefold()
+    return ""
+
+
+# Code-Bereiche, in denen [[..]] wörtlich gemeint ist: umzaeunte Bloecke
+# (``` und ~~~, schliessender Zaun gleiche Art und mindestens gleich lang,
+# offener Block bis Dokumentende) und Inline-Code-Spans gleicher Backtick-Laenge.
+_CODE_SEGMENT_RE = re.compile(
+    r"^[ \t]{0,3}(?P<fence>`{3,}|~{3,})[^\n]*\n.*?(?:^[ \t]{0,3}(?P=fence)[`~]*[ \t]*$|\Z)"
+    r"|(?P<ticks>`+)(?!`)(?:(?!\n[ \t]*\n).)+?(?<!`)(?P=ticks)(?!`)",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def _linkify_wikilinks(content: str, source_path: str) -> str:
+    """`[[Ziel]]` / `[[Ziel|Label]]` werden zu internen Notiz-Links.
+
+    Nur ausserhalb von Code — in Codebloecken und Inline-Code ist [[..]]
+    wörtlich gemeint und bleibt unveraendert (siehe _CODE_SEGMENT_RE).
+    Fehlende Ziele bekommen die Klasse `missing` (Obsidian-Konvention),
+    damit tote Links sichtbar statt still sind.
+    """
+    from .storage import safe_path
+
+    def _ersetzen(match: re.Match) -> str:
+        ziel = _resolve_wikilink(source_path, match.group(1))
+        if ziel is None:
+            return match.group(0)
+        label = (match.group(2) or PurePath(ziel).stem).strip() or PurePath(ziel).stem
+        try:
+            existiert = safe_path(ziel).exists()
+        except (ValueError, FileNotFoundError):
+            existiert = False
+        klasse = "wikilink" if existiert else "wikilink missing"
+        return (
+            f'<a class="{klasse}" href="/?file={quote(ziel)}">'
+            f"{html.escape(label)}</a>"
+        )
+
+    parts: list[str] = []
+    last = 0
+    for code in _CODE_SEGMENT_RE.finditer(content):
+        parts.append(_WIKILINK_RE.sub(_ersetzen, content[last:code.start()]))
+        parts.append(code.group(0))
+        last = code.end()
+    parts.append(_WIKILINK_RE.sub(_ersetzen, content[last:]))
+    return "".join(parts)
+
+
+def _demote_body_h1(rendered: str) -> str:
+    """`<h1>` im bereinigten Notiz-HTML zu `<h2>` herabstufen.
+
+    Sicher auf nh3-Ausgabe: Tags sind normalisiert, h1 traegt keine Attribute
+    (NH3_ATTRS erlaubt keine fuer h1).
+    """
+    return rendered.replace("<h1>", "<h2>").replace("</h1>", "</h2>")
+
+
+_TASK_ITEM_RE = re.compile(r"<li>(?:\s*<p>)?\s*\[([ xX])\]\s")
+
+
+def _render_task_lists(rendered: str) -> str:
+    """`- [ ]` / `- [x]` als deaktivierte Checkbox rendern.
+
+    python-markdown kennt keine Aufgabenlisten, der ToastUI-Editor schon —
+    ohne diese Stufe sah dieselbe Notiz in Vorschau und Ansicht verschieden
+    aus. Laeuft NACH nh3: die Checkbox ist Server-Markup mit festen
+    Attributen, Notizinhalt kann so kein <input> einschleusen.
+    """
+    def _box(match: re.Match) -> str:
+        checked = " checked" if match.group(1) in "xX" else ""
+        prefix = match.group(0)[: match.group(0).index("[")]
+        return (
+            prefix.replace("<li>", '<li class="task-list-item">', 1)
+            + f'<input type="checkbox" disabled{checked}> '
+        )
+
+    return _TASK_ITEM_RE.sub(_box, rendered)
+
+
+def _render_markdown_safe(content: str, source_path: str = "") -> str:
     rendered = md_lib.markdown(
-        content,
+        _linkify_wikilinks(content, source_path),
         extensions=["fenced_code", "tables", "nl2br"],
     )
-    return nh3.clean(
+    cleaned = nh3.clean(
         rendered,
         tags=NH3_TAGS,
         attributes=NH3_ATTRS,
+        attribute_filter=nh3_attribute_filter,
         url_schemes={"http", "https", "mailto"},
         link_rel=None,
     )
+    return _render_task_lists(cleaned)
 
 
 def _reindex_moved_folder(src: str, dst: str, old_paths: list[str]) -> None:
@@ -120,6 +245,13 @@ async def _lifespan(app: FastAPI):
     from .mcp_server import validate_oauth_config
 
     validate_oauth_config()
+    if not os.getenv("KIWIKI_BASE_URL", "").strip():
+        # Ohne Basis-URL liefert fetch/search nur relative Zitat-URLs
+        # (/ui/file?path=...) — für OpenAI-Connectoren unbrauchbar.
+        logging.getLogger("kiwiki.startup").warning(
+            "KIWIKI_BASE_URL is not set — MCP fetch/search URLs will be relative, "
+            "breaking citations in OpenAI connectors. Set it to the public URL."
+        )
     users_map = parse_users()  # Validierungs-Log gleich beim Boot ausgeben
     migrate_legacy_data_dir()
     # Für jeden konfigurierten User: Workspace anlegen, DB initialisieren, Reindex
@@ -328,14 +460,20 @@ _OPEN_PREFIXES = (
 )
 
 
-def _set_session_cookie(response, token: str) -> None:
-    """Setzt bzw. erneuert das gleitende Browser-Session-Cookie."""
+def _set_session_cookie(response, token: str, request: Request | None = None) -> None:
+    """Setzt bzw. erneuert das gleitende Browser-Session-Cookie.
+
+    Secure gilt hinter einem vertrauenswuerdigen TLS-Proxy (KIWIKI_TRUST_PROXY)
+    und ebenso bei direktem TLS (Request-Schema https) — frueher fehlte das
+    Flag im zweiten Fall.
+    """
     trust_proxy = os.getenv("KIWIKI_TRUST_PROXY", "false").lower() == "true"
+    direct_tls = request is not None and request.url.scheme == "https"
     response.set_cookie(
         "kiwiki_session",
         token,
         httponly=True,
-        secure=trust_proxy,
+        secure=trust_proxy or direct_tls,
         # strict statt lax: kiwiki hat keinen Cross-Site-Einstiegspunkt (kein
         # Login-Link aus E-Mails etc.), daher schliesst strict CSRF ueber die
         # zustandsaendernden /ui/*-POST-Endpunkte, ohne einen legitimen Flow
@@ -351,11 +489,16 @@ class WebAuthMiddleware(BaseHTTPMiddleware):
         if any(path == p or path.startswith(p) for p in _OPEN_PREFIXES):
             return await call_next(request)
 
-        # Requests mit Bearer-Token kommen von API-/MCP-Clients (z. B. ChatGPT,
-        # die JSON-RPC direkt an "/" POSTen). Diese haben ihren eigenen
-        # Auth-Mechanismus im jeweiligen Endpoint — Cookie-Redirect würde sie
-        # nur fälschlich zur Login-Seite schicken.
-        if request.headers.get("Authorization", "").startswith("Bearer "):
+        # JSON-RPC-Clients (z. B. ChatGPT) POSTen direkt an "/" mit Bearer-Token;
+        # die Route prueft den Token selbst, ein Cookie-Redirect wuerde sie nur
+        # zur Login-Seite schicken. Der Bypass gilt bewusst NUR dort: frueher
+        # liess jeder beliebige Bearer-Header alle UI-Routen ungeprueft durch,
+        # geschuetzt nur zufaellig durch den fehlenden Namespace.
+        if (
+            path == "/"
+            and request.method == "POST"
+            and request.headers.get("Authorization", "").startswith("Bearer ")
+        ):
             return await call_next(request)
 
         token = request.cookies.get("kiwiki_session", "")
@@ -379,7 +522,7 @@ class WebAuthMiddleware(BaseHTTPMiddleware):
             return RedirectResponse(url="/login", status_code=302)
         set_user_ns(record.username)
         response = await call_next(request)
-        _set_session_cookie(response, token)
+        _set_session_cookie(response, token, request)
         return response
 
 
@@ -520,7 +663,7 @@ async def login_submit(request: Request, api_key: str = Form(...)) -> HTMLRespon
     # NICHT den API-Key. Token-Compromise fuehrt nicht zur API-Key-Leak.
     record = session_store.create_session(username, role, api_key)
     response = RedirectResponse(url="/", status_code=303)
-    _set_session_cookie(response, record.token)
+    _set_session_cookie(response, record.token, request)
     return response
 
 
@@ -578,10 +721,12 @@ async def knowledge_page(request: Request) -> HTMLResponse:
     user = _session_user(request)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
+    from .knowledge.service import is_enabled as knowledge_enabled
+
     return templates.TemplateResponse(
         request=request,
         name="knowledge.html",
-        context={"user": user},
+        context={"user": user, "knowledge_enabled": knowledge_enabled()},
     )
 
 
@@ -725,14 +870,32 @@ async def ui_files(request: Request, path: str = ".") -> HTMLResponse:
 
 
 @app.get("/ui/file", response_class=HTMLResponse)
-async def ui_file(request: Request, path: str) -> HTMLResponse:
+async def ui_file(request: Request, path: str) -> Response:
+    # /ui/file liefert ein HTMX-Partial ohne Layout. Browser-Navigation
+    # (Deep-Link, geteilter Link, Reload) erkennt man am fehlenden
+    # HX-Request-Header plus text/html-Accept — sie landet auf der
+    # Startseite, die dieselbe Notiz über ?file= vollständig nachlädt.
+    # Maschinen-Clients (curl, Fetch-Tools ohne text/html) bekommen weiter
+    # das Fragment, damit Zitat-URLs maschinell abrufbar bleiben.
+    if request.headers.get("HX-Request", "").lower() != "true" and "text/html" in request.headers.get("accept", ""):
+        return RedirectResponse(url=f"/?file={quote(path)}", status_code=307)
     user = _session_user(request)
     can_delete = user and ROLE_HIERARCHY.get(user.role, -1) >= ROLE_HIERARCHY["write"]
     try:
         fc = read_file(path)
-        rendered = _render_markdown_safe(fc.content)
+        rendered = _render_markdown_safe(fc.content, source_path=path)
         fm = fc.frontmatter
         title = fm.get("title", Path(path).stem.replace("-", " ").replace("_", " "))
+        # Titel doppelt? Frontmatter-Titel und erste Body-Überschrift sind
+        # oft identisch ("Willkommen" / "Willkommen bei Kiwiki" nicht, aber
+        # "Notiz" / "# Notiz" schon) — dann fällt die View-H1 weg, Breadcrumb
+        # + Meta bleiben als Orientierung.
+        first_heading = _first_content_heading(fc.content)
+        title_redundant = bool(first_heading) and first_heading == re.sub(r"\s+", " ", str(title)).strip().casefold()
+        if not title_redundant:
+            # Die Seite hat dann schon die Titel-h1; Body-h1 werden zu h2, damit
+            # genau eine h1 bleibt (frueher versteckte CSS die erste Body-h1).
+            rendered = _demote_body_h1(rendered)
         svg_edit = (
             '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"'
             ' fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
@@ -750,6 +913,7 @@ async def ui_file(request: Request, path: str) -> HTMLResponse:
             name="partials/file_view.html",
             context={
                 "title": title,
+                "title_redundant": title_redundant,
                 "path": path,
                 "updated": fm.get("updated"),
                 "owner": fm.get("owner"),
@@ -816,6 +980,25 @@ async def ui_recent(request: Request) -> HTMLResponse:
         return HTMLResponse("")
 
 
+_EXCERPT_MAX_BYTES = 100 * 1024
+
+
+def _attach_excerpts(files: list[dict]) -> None:
+    """Zweite Listenzeile: Vorschau + Tags statt nur Titel + Datum.
+
+    Nur die angezeigten Einträge lesen (nicht der ganze Scan), Dateien über
+    100 KB bekommen keinen Ausschnitt — ein dicker Export soll das
+    Dashboard nicht aufblähen.
+    """
+    for f in files:
+        f["excerpt"] = ""
+        try:
+            if safe_path(f["path"]).stat().st_size <= _EXCERPT_MAX_BYTES:
+                f["excerpt"] = content_excerpt(read_file(f["path"]).content, title=str(f.get("title") or ""))
+        except (ValueError, FileNotFoundError, OSError):
+            continue
+
+
 @app.get("/ui/recent-edited", response_class=HTMLResponse)
 async def ui_recent_edited(request: Request) -> HTMLResponse:
     """Recently edited files (sorted by frontmatter 'updated'), recursive."""
@@ -827,6 +1010,7 @@ async def ui_recent_edited(request: Request) -> HTMLResponse:
         files = [f for f in files if f["path"] not in ("index.md", "AGENTS.md")]
         files.sort(key=lambda f: f.get("updated", ""), reverse=True)
         recent = files[:8]
+        _attach_excerpts(recent)
         return templates.TemplateResponse(
             request=request,
             name="partials/recent_edited.html",
@@ -849,6 +1033,7 @@ async def ui_recent_created(request: Request) -> HTMLResponse:
         files = [f for f in files if f.get("created")]
         files.sort(key=lambda f: f.get("created", ""), reverse=True)
         recent = files[:8]
+        _attach_excerpts(recent)
         return templates.TemplateResponse(
             request=request,
             name="partials/recent_created.html",
@@ -860,7 +1045,7 @@ async def ui_recent_created(request: Request) -> HTMLResponse:
 
 
 @app.get("/ui/tags", response_class=HTMLResponse)
-async def ui_tags(request: Request) -> HTMLResponse:
+async def ui_tags(request: Request, compact: bool = False) -> HTMLResponse:
     """E4: Global tag overview page."""
     user = _session_user(request)
     try:
@@ -875,6 +1060,16 @@ async def ui_tags(request: Request) -> HTMLResponse:
             {"tag": tag, "count": len(files), "files": sorted(files)}
             for tag, files in sorted(tags.items(), key=lambda x: (-len(x[1]), x[0]))
         ]
+        if compact:
+            # Kompakte Wolke für die Startseite: nur die Top-Tags als Chips,
+            # ohne Breadcrumb und Dateilisten. Leer → leer (Sektion bleibt unsichtbar).
+            if not tag_items:
+                return HTMLResponse("")
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/tag_cloud.html",
+                context={"tags": tag_items[:12], "user": user},
+            )
         return templates.TemplateResponse(
             request=request,
             name="partials/tags_overview.html",
@@ -970,7 +1165,7 @@ async def ui_rename(
 
 
 @app.post("/ui/export")
-async def ui_export(request: Request) -> HTMLResponse:
+async def ui_export(request: Request, user: User = Depends(get_current_user)) -> HTMLResponse:
     form = await request.form()
     # Ein Feld pro Pfad: die frueher genutzte kommaseparierte Liste zerlegte
     # Dateinamen, die selbst ein Komma enthalten ("notes/Meeting, Q4.md"), in

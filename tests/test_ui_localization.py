@@ -89,3 +89,17 @@ def test_browser_copy_uses_the_shared_translation_catalog():
     assert "label: 'Löschen'" not in script
     assert "kwToast('Unerwarteter Fehler" not in script
     assert "aria-label=\"Benachrichtigungen\"" not in script
+
+
+def test_suchfelder_benennen_ihren_scope():
+    """Zwei Lupen ohne Scope sind Ratespiel — Placeholder tragen Verb + Ziel."""
+    from app.i18n import UI_TRANSLATIONS
+
+    de = UI_TRANSLATIONS["de"]
+    en = UI_TRANSLATIONS["en"]
+
+    assert "durchsuchen" in de["search_placeholder"].lower()
+    assert "baum" in de["filter"].lower()
+    assert "search" in en["search_placeholder"].lower() and "note" in en["search_placeholder"].lower()
+    assert "tree" in en["filter"].lower()
+    assert de["search_placeholder"] != de["filter"]

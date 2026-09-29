@@ -4,26 +4,29 @@
     <span class="breadcrumb-sep" aria-hidden="true">/</span>
     <span class="breadcrumb-item current" aria-current="page">{{ t.tags }}</span>
   </nav>
-  <h2 class="subview-title">{{ t.tags }}</h2>
+  <h1 class="subview-title">{{ t.tags }}</h1>
   {% if tags %}
-  <div class="tag-cloud">
+  {# Dichte Liste statt Kartenraster: ein Tag pro Zeile, Anzahl im Chip, die
+     Dateien direkt daneben. Das Raster mit "1 Datei"-Disclosure pro Karte war
+     fuer ein Verzeichnis zu schwer. #}
+  <ul class="tag-index">
     {% for tag_item in tags %}
-    <div class="tag-item">
+    {% set count_label = t.files_count.format(count=tag_item.count) if tag_item.count == 1 else t.files_count_plural.format(count=tag_item.count) %}
+    <li class="tag-index-row">
       <a href="/?search={{ ('tag:' ~ tag_item.tag)|urlencode }}" class="tag-chip kw-search-link" data-search-query="tag:{{ tag_item.tag }}">
         <span class="tag-chip-name">{{ tag_item.tag }}</span>
-        <span class="tag-count">{{ tag_item.count }}</span>
+        <span class="tag-count" title="{{ count_label }}"><span class="sr-only">{{ count_label }}</span><span aria-hidden="true">{{ tag_item.count }}</span></span>
       </a>
-      <details class="tag-files">
-        <summary>{{ t.files_count.format(count=tag_item.count) if tag_item.count == 1 else t.files_count_plural.format(count=tag_item.count) }}</summary>
-        <ul>
-          {% for f in tag_item.files %}
-          <li><a href="/?file={{ f|urlencode }}" class="kw-file-link" data-file-path="{{ f }}">{{ f }}</a></li>
-          {% endfor %}
-        </ul>
-      </details>
-    </div>
+      <span class="tag-index-files">
+        {% for f in tag_item.files[:6] %}
+        {% set name = f.rsplit('/', 1)[-1] %}
+        <a href="/?file={{ f|urlencode }}" class="kw-file-link" data-file-path="{{ f }}" title="{{ f }}">{{ name[:-3] if name.endswith('.md') else name }}</a>{% if not loop.last %}<span class="tag-index-sep" aria-hidden="true">·</span>{% endif %}
+        {% endfor %}
+        {% if tag_item.files|length > 6 %}<span class="tag-index-more">+{{ tag_item.files|length - 6 }}</span>{% endif %}
+      </span>
+    </li>
     {% endfor %}
-  </div>
+  </ul>
   {% else %}
   <div class="empty-state">
     <p>{{ t.no_tags }}</p>

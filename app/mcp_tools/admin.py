@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..constants import NH3_ATTRS
 from ..constants import NH3_TAGS
+from ..constants import nh3_attribute_filter
 from ..mcp_git import run_git as _run_git
 from ..mcp_git import validate_git_path as _validate_git_path
 from ..mcp_git import validate_git_revision as _validate_git_revision
@@ -253,7 +254,7 @@ async def _tool_export(ctx: McpContext) -> str:
             for f in all_files_list:
                 try:
                     fc = read_file(f["path"])
-                    rendered = nh3.clean(md_lib.markdown(fc.content, extensions=["fenced_code", "tables", "nl2br"]), tags=NH3_TAGS, attributes=NH3_ATTRS, url_schemes={"http", "https", "mailto"})
+                    rendered = nh3.clean(md_lib.markdown(fc.content, extensions=["fenced_code", "tables", "nl2br"]), tags=NH3_TAGS, attributes=NH3_ATTRS, attribute_filter=nh3_attribute_filter, url_schemes={"http", "https", "mailto"})
                     parts.append(f'<section id="{_slug(f["path"])}"><h2>{html.escape(f["title"])}</h2>{rendered}</section>')
                 except Exception:
                     continue

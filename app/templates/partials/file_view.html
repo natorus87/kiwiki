@@ -17,7 +17,11 @@
   <article class="file-view">
     <header class="file-header">
       <div class="file-header-main">
+        {# Bei Titel-Dopplung (Frontmatter == erste Body-H1) trägt der Body
+           die Überschrift allein — Breadcrumb und Meta bleiben. #}
+        {% if not title_redundant %}
         <h1 class="file-title">{{ title }}</h1>
+        {% endif %}
         {# Zwei Gruppen statt lose Items: Pfad mit Kopier-Button und die Fakten
            dahinter brechen so jeweils als Einheit um, statt einzelne Teile in
            die naechste Zeile zu schieben. #}
@@ -51,17 +55,28 @@
           {{ svg_edit|safe }} {{ t.edit }}
         </button>
         {% endif %}
-        <button type="button" class="btn btn-ghost" onclick="kwExportFile({{ path|tojson|forceescape }})" title="{{ t.download_markdown }}">
+        <button type="button" class="btn btn-ghost file-action-secondary" onclick="kwExportFile({{ path|tojson|forceescape }})" title="{{ t.download_markdown }}">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           {{ t.export }}
         </button>
         {% if can_delete %}
           {# Destruktiv: abgesetzt und erst im Hover/Fokus rot, damit die
              haeufige Aktion daneben nicht mit ihr konkurriert. #}
-          <button type="button" class="btn btn-danger btn-danger-quiet" onclick="deleteFile({{ path|tojson|forceescape }})">
+          <button type="button" class="btn btn-danger btn-danger-quiet file-action-secondary" onclick="deleteFile({{ path|tojson|forceescape }})">
             {{ svg_trash|safe }} {{ t.delete }}
           </button>
         {% endif %}
+        {# Mobil: Export/Loeschen ins Ueberlauf-Menue wie auf der Startseite,
+           statt "Loeschen" allein in eine zweite Zeile umbrechen zu lassen. #}
+        <details class="quick-more file-actions-more">
+          <summary class="btn btn-ghost" aria-label="{{ t.more_actions }}">···</summary>
+          <div class="quick-more-menu">
+            <button type="button" class="btn btn-ghost" onclick="this.closest('details').open=false; kwExportFile({{ path|tojson|forceescape }})">{{ t.export }}</button>
+            {% if can_delete %}
+            <button type="button" class="btn btn-danger btn-danger-quiet" onclick="this.closest('details').open=false; deleteFile({{ path|tojson|forceescape }})">{{ t.delete }}</button>
+            {% endif %}
+          </div>
+        </details>
       </div>
     </header>
     <div class="markdown-content">{{ rendered|safe }}</div>

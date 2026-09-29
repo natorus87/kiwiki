@@ -1153,6 +1153,16 @@ if (document.readyState === 'loading') {
 }
 
 document.addEventListener('click', function(e) {
+  // Startseite: Umschalter "Zuletzt bearbeitet" / "Zuletzt erstellt".
+  var recentTab = e.target.closest && e.target.closest('.recent-tab');
+  if (recentTab) {
+    var group = recentTab.parentElement;
+    group.querySelectorAll('.recent-tab').forEach(function(tab) {
+      tab.setAttribute('aria-pressed', tab === recentTab ? 'true' : 'false');
+    });
+    htmx.ajax('GET', recentTab.dataset.recentEndpoint, { target: '#recent-list', swap: 'innerHTML' });
+    return;
+  }
   var fileLink = e.target.closest && e.target.closest('.kw-file-link');
   if (fileLink) {
     e.preventDefault();
@@ -1192,17 +1202,20 @@ document.addEventListener('click', function(e) {
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
     kwCloseAccountMenu();
-    var s = document.querySelector('.sidebar');
-    var isSidebarOpen = kwIsMobileSidebar()
-      ? (s && s.classList.contains('open'))
-      : (s && !s.classList.contains('collapsed'));
-    if (isSidebarOpen) { closeSidebar(); return; }
+    // Das naechstliegende transiente Element zuerst: offene Suchergebnisse.
+    // Frueher klappte Escape am Desktop die (dauerhaft offene) Sidebar zu und
+    // liess die Ergebnisliste stehen.
     var results = document.getElementById('search-results');
-    if (results && results.innerHTML) {
+    if (results && results.innerHTML.trim()) {
       results.innerHTML = '';
       var input = document.querySelector('.search-input');
       if (input) input.focus();
+      return;
     }
+    // Nur das mobile Overlay ist transient; die Desktop-Sidebar ist
+    // Hauptnavigation und wird ueber den Menue-Button umgeschaltet.
+    var s = document.querySelector('.sidebar');
+    if (kwIsMobileSidebar() && s && s.classList.contains('open')) { closeSidebar(); return; }
   }
 });
 
@@ -1315,11 +1328,24 @@ document.addEventListener('dblclick', function(e) {
 window.__kwSelected = new Set();
 window.__kwSelectMode = false;
 
+function kwSyncTreeCheckboxFocus(root) {
+  // Ausserhalb des Auswahlmodus sind die Checkboxen unsichtbar (width 0,
+  // opacity 0) — dann duerfen sie auch keine Tab-Stopps sein.
+  var tabindex = window.__kwSelectMode ? '0' : '-1';
+  (root || document).querySelectorAll('.tree-checkbox').forEach(function(cb) {
+    cb.setAttribute('tabindex', tabindex);
+  });
+}
+document.addEventListener('htmx:afterSwap', function(e) {
+  if (e.target && e.target.closest && e.target.closest('#file-tree')) kwSyncTreeCheckboxFocus(e.target);
+});
+
 function kwToggleSelectMode() {
   window.__kwSelectMode = !window.__kwSelectMode;
   var tree = document.getElementById('file-tree');
   var btn = document.getElementById('select-toggle');
   if (tree) tree.classList.toggle('select-mode', window.__kwSelectMode);
+  kwSyncTreeCheckboxFocus(tree);
   if (btn) {
     btn.classList.toggle('active', window.__kwSelectMode);
     btn.setAttribute('aria-pressed', window.__kwSelectMode ? 'true' : 'false');

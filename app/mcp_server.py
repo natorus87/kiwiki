@@ -64,6 +64,19 @@ _SSE_QUEUE_MAX_MESSAGES = int(os.getenv("KIWIKI_MCP_SSE_QUEUE_MAX_MESSAGES", "10
 # the API key in the front-channel OAuth redirect.
 _oauth_clients: dict[str, dict] = {}
 _oauth_codes: dict[str, dict] = {}
+# Verwendete Refresh-Token (jti -> exp): Rotation mit Wiederverwendungs-Erkennung.
+# Ohne Denylist bliebe ein geleakter Refresh-Token 30 Tage nutzbar. Stateless
+# widerrufen geht nicht — ein bereits rotierter Token wird als invalid_grant
+# abgelehnt (RFC 6819 §5.2.2.3). RAM-only wie Codes/Clients: Neustart leert die
+# Liste, und jede Replica hat ihre eigene (Grenze dokumentiert in SECURITY.md).
+_oauth_refresh_seen: dict[str, float] = {}
+_OAUTH_REFRESH_SEEN_MAX = int(os.getenv("KIWIKI_OAUTH_MAX_REFRESH_SEEN", "10000"))
+# DCR-Spam-Schranke pro IP (Fenster 1h): offene Registrierung + 128 Slots +
+# 24h-TTL = sonst füllt eine Quelle alle Slots und legitime Clients kriegen 503.
+_oauth_register_hits: dict[str, list[float]] = {}
+_OAUTH_REGISTER_PER_IP_MAX = int(os.getenv("KIWIKI_OAUTH_MAX_REGISTER_PER_IP", "16"))
+_OAUTH_REGISTER_PER_IP_WINDOW = 3600
+_OAUTH_REGISTER_SOURCES_MAX = int(os.getenv("KIWIKI_OAUTH_MAX_REGISTER_SOURCES", "4096"))
 _OAUTH_CODE_TTL_SECONDS = 300
 _OAUTH_MAX_CODES = int(os.getenv("KIWIKI_OAUTH_MAX_CODES", "256"))
 _OAUTH_TOKEN_TTL_SECONDS = int(os.getenv("KIWIKI_OAUTH_TOKEN_TTL_SECONDS", "86400"))
@@ -134,9 +147,9 @@ def _log_agent_call(user: "User | None", tool: str, args: dict, success: bool, e
     except Exception:
         # Bewusst still: der Audit-Log darf nie einen MCP-Aufruf abbrechen.
         # Kosten ist ein fehlender Eintrag — der naechste erfolgreiche
-        # schreibt wieder, und der Log bricht nach _AGENT_LOG_MAX_BYTES ohne
-        #hin ab statt zu eskalieren. Wer den Verlust bemerken will, prueft
-        #die Groesse der Datei.
+        # schreibt wieder, und der Log rotiert nach _AGENT_LOG_MAX_BYTES
+        # ohnehin, statt zu eskalieren. Wer den Verlust bemerken will, prueft
+        # die Groesse der Datei.
         pass
 
 
@@ -344,6 +357,40 @@ def _prune_oauth_codes() -> None:
         _oauth_codes.pop(code, None)
 
 
+def _prune_oauth_refresh_seen(now: float | None = None) -> None:
+    now = now if now is not None else time.time()
+    expired = [jti for jti, exp in _oauth_refresh_seen.items() if exp < now]
+    for jti in expired:
+        _oauth_refresh_seen.pop(jti, None)
+    # Harte Obergrenze als Notbremse, falls Uhren/Pruning je versagen.
+    if len(_oauth_refresh_seen) > _OAUTH_REFRESH_SEEN_MAX:
+        oldest = sorted(_oauth_refresh_seen.items(), key=lambda item: item[1])
+        for jti, _exp in oldest[: len(_oauth_refresh_seen) - _OAUTH_REFRESH_SEEN_MAX]:
+            _oauth_refresh_seen.pop(jti, None)
+
+
+def _prune_oauth_register_hits(now: float | None = None) -> None:
+    """Abgelaufene Zeitstempel aller Quellen entfernen, nicht nur der aktuellen.
+
+    Frueher wurde nur die gerade anfragende IP bereinigt; jede einmal
+    gesehene Quelle blieb fuer immer im Dict. Die harte Obergrenze greift,
+    falls innerhalb eines Fensters sehr viele verschiedene Quellen auftauchen.
+    """
+    now = now if now is not None else time.time()
+    cutoff = now - _OAUTH_REGISTER_PER_IP_WINDOW
+    for source in list(_oauth_register_hits):
+        fresh = [ts for ts in _oauth_register_hits[source] if ts > cutoff]
+        if fresh:
+            _oauth_register_hits[source] = fresh
+        else:
+            del _oauth_register_hits[source]
+    overflow = len(_oauth_register_hits) - _OAUTH_REGISTER_SOURCES_MAX
+    if overflow > 0:
+        oldest = sorted(_oauth_register_hits, key=lambda src: max(_oauth_register_hits[src]))
+        for source in oldest[:overflow]:
+            del _oauth_register_hits[source]
+
+
 def _pkce_s256(verifier: str) -> str:
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
@@ -545,6 +592,14 @@ async def oauth_token(request: Request):
             return JSONResponse({"error": "invalid_grant"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
         if bound_resource and resource != bound_resource:
             return JSONResponse({"error": "invalid_target"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
+        # Rotation mit Wiederverwendungs-Erkennung: ein bereits eingelöster
+        # Refresh-Token ist verbraucht. Fehlgeschlagene Bindungsprüfungen oben
+        # verbrauchen ihn bewusst NICHT — nur der erfolgreiche Pfad rotiert.
+        _prune_oauth_refresh_seen()
+        presented_jti = str(token_payload.get("jti", ""))
+        if not presented_jti or presented_jti in _oauth_refresh_seen:
+            return JSONResponse({"error": "invalid_grant"}, status_code=400, headers=_OAUTH_NO_STORE_HEADERS)
+        _oauth_refresh_seen[presented_jti] = float(token_payload.get("exp", time.time()))
         access_token = _make_oauth_token(
             api_key,
             "access",
@@ -552,8 +607,16 @@ async def oauth_token(request: Request):
             client_id=bound_client,
             resource=bound_resource,
         )
+        rotated_refresh_token = _make_oauth_token(
+            api_key,
+            "refresh",
+            _OAUTH_REFRESH_TOKEN_TTL_SECONDS,
+            client_id=bound_client,
+            resource=bound_resource,
+        )
         return JSONResponse({
             "access_token": access_token,
+            "refresh_token": rotated_refresh_token,
             "token_type": _OAUTH_BEARER_VALUE,
             "expires_in": _OAUTH_TOKEN_TTL_SECONDS,
             "scope": "mcp",
@@ -598,9 +661,24 @@ async def oauth_token(request: Request):
 @router.post("/oauth/register")
 async def oauth_register(request: Request):
     """Dynamic Client Registration (RFC 7591) — ChatGPT registers itself before OAuth flow."""
+    from .rate_limiter import client_ip as _client_ip_for_register
+
     _prune_oauth_clients()
     if len(_oauth_clients) >= _OAUTH_MAX_CLIENTS:
         return JSONResponse({"error": "server_error", "error_description": "Too many registered OAuth clients"}, status_code=503)
+    # Pro-IP-Schranke (1h-Fenster): verhindert, dass eine Quelle alle Slots
+    # füllt und legitime Clients in 503 laufen. Nur erfolgreiche
+    # Registrierungen zählen — fehlgeschlagene Validierung kostet nichts.
+    now = time.time()
+    source = _client_ip_for_register(request)
+    _prune_oauth_register_hits(now)
+    hits = _oauth_register_hits.get(source, [])
+    if len(hits) >= _OAUTH_REGISTER_PER_IP_MAX:
+        return JSONResponse(
+            {"error": "temporarily_unavailable", "error_description": "Too many registrations from this source"},
+            status_code=429,
+            headers={"Retry-After": str(_OAUTH_REGISTER_PER_IP_WINDOW)},
+        )
     try:
         body = await request.json()
     except Exception:
@@ -620,6 +698,7 @@ async def oauth_register(request: Request):
         "redirect_uris": redirect_uris,
         "expires_at": time.time() + _OAUTH_CLIENT_TTL_SECONDS,
     }
+    _oauth_register_hits[source] = hits + [now]
     return JSONResponse({
         "client_id": client_id,
         "client_name": body.get("client_name", "mcp-client"),
@@ -674,7 +753,10 @@ TOOLS = [
                 "id": {"type": "string", "description": "Note id as returned by search (the relative path)"},
                 "path": {"type": "string", "description": "Alias for id, accepted for direct callers"},
             },
-            "required": [],
+            # Server nimmt id oder path; der OpenAI-Kontrakt sendet immer id.
+            # required: ["id"] allein bräche path-Aufrufer unter strikter
+            # Client-Validierung — deshalb anyOf statt einem Pflichtfeld.
+            "anyOf": [{"required": ["id"]}, {"required": ["path"]}],
         },
     },
     {
@@ -758,7 +840,7 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {"query": {"type": "string"}},
+            "properties": {"query": {"type": "string", "maxLength": 512}},
             "required": ["query"],
         },
     },
@@ -2622,7 +2704,12 @@ async def mcp_http(request: Request) -> Response:
     error = response.get("error") if isinstance(response, dict) else None
     if error:
         code = error.get("code", -32000)
-        status = 403 if code == -32001 else (404 if code == -32601 else 400)
+        if code == -32601:
+            # Method not found ist ein Protokoll-, kein Transportfehler: Die MCP-Spec
+            # erwartet den JSON-RPC-Fehler mit HTTP 200. 404 liess den Server
+            # defekt aussehen (eigener Regressionstest benennt das explizit).
+            return JSONResponse(response)
+        status = 403 if code == -32001 else 400
         return JSONResponse(response, status_code=status)
 
     return JSONResponse(response)

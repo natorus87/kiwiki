@@ -12,6 +12,8 @@ und Such-Empty-State.
 
 from fastapi.testclient import TestClient
 
+from pathlib import Path
+
 from app.main import app
 
 
@@ -51,7 +53,7 @@ def test_ui_file_zeigt_edit_button_fuer_admin(tmp_path, monkeypatch):
         path="notes/demo.md",
     )
     assert "openEditor(" in body
-    assert 'class="btn btn-ghost" onclick="kwExportFile(' in body
+    assert 'class="btn btn-ghost file-action-secondary" onclick="kwExportFile(' in body
     assert "deleteFile(" in body
 
 
@@ -307,3 +309,167 @@ def test_ui_export_ohne_pfade_ist_ein_fehler():
     client = _client_for((("alice", "key-alice", "admin"),), "key-alice")
 
     assert client.post("/ui/export", data={}).status_code == 400
+
+
+BROWSER_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+
+
+def test_ui_file_direktaufruf_im_browser_leitet_auf_index_um(tmp_path, monkeypatch):
+    """Deep-Link ohne Layout wäre eine nackte Fragmentseite — Browser
+    (text/html, kein HX-Request) landen auf /?file=, die den Inhalt
+    vollständig nachlädt."""
+    from app.tenancy import ensure_user_workspace
+
+    monkeypatch.setenv("KIWIKI_USERS", "admin:adminkey:admin")
+    ws = ensure_user_workspace("admin")
+    (ws / "notes").mkdir(parents=True, exist_ok=True)
+    (ws / "notes" / "demo.md").write_text("---\ntitle: Demo\n---\n\nHallo", encoding="utf-8")
+
+    client = _login((("admin", "adminkey", "admin"),), "adminkey")
+    resp = client.get("/ui/file?path=notes/demo.md", headers={"Accept": BROWSER_ACCEPT}, follow_redirects=False)
+
+    assert resp.status_code == 307
+    assert resp.headers["location"] == "/?file=notes/demo.md"
+
+
+def test_ui_file_htmx_bekommt_weiterhin_das_partial(tmp_path, monkeypatch):
+    """HTMX sendet HX-Request — kein Redirect, sondern das Partial (200)."""
+    from app.tenancy import ensure_user_workspace
+
+    monkeypatch.setenv("KIWIKI_USERS", "admin:adminkey:admin")
+    ws = ensure_user_workspace("admin")
+    (ws / "notes").mkdir(parents=True, exist_ok=True)
+    (ws / "notes" / "demo.md").write_text("---\ntitle: Demo\n---\n\nHallo", encoding="utf-8")
+
+    client = _login((("admin", "adminkey", "admin"),), "adminkey")
+    resp = client.get(
+        "/ui/file?path=notes/demo.md",
+        headers={"HX-Request": "true", "Accept": BROWSER_ACCEPT},
+    )
+
+    assert resp.status_code == 200
+    assert "Hallo" in resp.text
+    assert "<html" not in resp.text
+
+
+def test_ui_file_maschinen_client_bekommt_fragment_statt_redirect(tmp_path, monkeypatch):
+    """curl & Co. (Accept */*, kein HX-Request) bekommen weiter das
+    Fragment — Zitat-URLs bleiben maschinell abrufbar."""
+    from app.tenancy import ensure_user_workspace
+
+    monkeypatch.setenv("KIWIKI_USERS", "admin:adminkey:admin")
+    ws = ensure_user_workspace("admin")
+    (ws / "notes").mkdir(parents=True, exist_ok=True)
+    (ws / "notes" / "demo.md").write_text("---\ntitle: Demo\n---\n\nHallo", encoding="utf-8")
+
+    client = _login((("admin", "adminkey", "admin"),), "adminkey")
+    resp = client.get("/ui/file?path=notes/demo.md")
+
+    assert resp.status_code == 200
+    assert "Hallo" in resp.text
+
+
+def test_ui_file_rendert_wikilinks_als_interne_links(tmp_path, monkeypatch):
+    """[[Ziel]] wird klickbar (Obsidian-Konvention: .md-Ergänzung, relativ
+    zum Ordner); tote Ziele als .missing, Codeblöcke bleiben wörtlich."""
+    from app.tenancy import ensure_user_workspace
+
+    monkeypatch.setenv("KIWIKI_USERS", "admin:adminkey:admin")
+    ws = ensure_user_workspace("admin")
+    (ws / "notes").mkdir(parents=True, exist_ok=True)
+    (ws / "notes" / "ziel.md").write_text("---\ntitle: Ziel\n---\n\nDa", encoding="utf-8")
+    (ws / "notes" / "quelle.md").write_text(
+        "---\ntitle: Quelle\n---\n\nLink auf [[ziel]] und [[Geist|Anzeige]].\n\n```\n[[ziel]] im Code\n```\n",
+        encoding="utf-8",
+    )
+
+    client = _login((("admin", "adminkey", "admin"),), "adminkey")
+    body = client.get("/ui/file?path=notes/quelle.md", headers={"HX-Request": "true"}).text
+
+    assert '<a class="wikilink" href="/?file=notes/ziel.md">ziel</a>' in body
+    assert '<a class="wikilink missing" href="/?file=notes/Geist.md">Anzeige</a>' in body
+    assert "[[ziel]] im Code" in body
+
+
+def test_resolve_wikilink_ignoriert_urls_und_escapes():
+    from app.main import _resolve_wikilink
+
+    assert _resolve_wikilink("notes/a.md", "Ziel") == "notes/Ziel.md"
+    assert _resolve_wikilink("notes/a.md", "sub/Ziel.md") == "notes/sub/Ziel.md"
+    assert _resolve_wikilink("notes/sub/a.md", "../Ziel") == "notes/Ziel.md"
+    assert _resolve_wikilink("a.md", "../../etc/passwd") is None
+    assert _resolve_wikilink("a.md", "https://example.com/x") is None
+    assert _resolve_wikilink("a.md", "") is None
+
+
+def test_recent_zeigt_exzerpt_und_tags(tmp_path, monkeypatch):
+    """Zweite Listenzeile statt nur Titel + Datum (Informationsduft)."""
+    from app.tenancy import ensure_user_workspace
+
+    monkeypatch.setenv("KIWIKI_USERS", "admin:adminkey:admin")
+    ws = ensure_user_workspace("admin")
+    (ws / "notes").mkdir(parents=True, exist_ok=True)
+    (ws / "notes" / "eins.md").write_text(
+        "---\ntitle: Eins\ntags: [alpha, beta]\n---\n\nErster Satz zum Wiedererkennen.\n",
+        encoding="utf-8",
+    )
+
+    client = _login((("admin", "adminkey", "admin"),), "adminkey")
+    body = client.get("/ui/recent-edited").text
+
+    assert "Erster Satz zum Wiedererkennen" in body
+    assert "alpha" in body
+    assert "recent-excerpt" in body
+
+
+def test_tag_wolke_kompakt_und_leer_unsichtbar(tmp_path, monkeypatch):
+    """Home-Sektion nutzt /ui/tags?compact=1; ohne Tags bleibt sie leer."""
+    from app.tenancy import ensure_user_workspace
+
+    monkeypatch.setenv("KIWIKI_USERS", "admin:adminkey:admin")
+    ws = ensure_user_workspace("admin")
+    (ws / "notes").mkdir(parents=True, exist_ok=True)
+    (ws / "notes" / "getaggt.md").write_text(
+        "---\ntitle: G\ntags: [wolke]\n---\n\nText\n", encoding="utf-8"
+    )
+
+    client = _login((("admin", "adminkey", "admin"),), "adminkey")
+    kompakt = client.get("/ui/tags?compact=1").text
+    assert "wolke" in kompakt
+    assert "breadcrumb" not in kompakt
+
+    voll = client.get("/ui/tags").text
+    assert "wolke" in voll
+    assert "breadcrumb" in voll
+
+
+def test_titel_dopplung_blendet_view_h1_aus(tmp_path, monkeypatch):
+    """Frontmatter-Titel == erste Body-H1 → nur der Body trägt die H1."""
+    from app.tenancy import ensure_user_workspace
+
+    monkeypatch.setenv("KIWIKI_USERS", "admin:adminkey:admin")
+    ws = ensure_user_workspace("admin")
+    (ws / "notes").mkdir(parents=True, exist_ok=True)
+    (ws / "notes" / "doppelt.md").write_text(
+        "---\ntitle: Doppelt\n---\n\n# Doppelt\n\nBody\n", encoding="utf-8"
+    )
+    (ws / "notes" / "anders.md").write_text(
+        "---\ntitle: Kurz\n---\n\n# Lange Ueberschrift hier\n\nBody\n", encoding="utf-8"
+    )
+
+    client = _login((("admin", "adminkey", "admin"),), "adminkey")
+    doppelt = client.get("/ui/file?path=notes/doppelt.md", headers={"HX-Request": "true"}).text
+    anders = client.get("/ui/file?path=notes/anders.md", headers={"HX-Request": "true"}).text
+
+    assert 'class="file-title"' not in doppelt
+    assert 'class="file-title"' in anders
+
+
+def test_mobiler_ueberlauf_und_tracking_regeln_existieren():
+    """Statik-Check: quick-more-Menü + enges Tracking auf 540px."""
+    index = Path("app/templates/index.html").read_text(encoding="utf-8")
+    polish = Path("app/static/kiwiki-polish.css").read_text(encoding="utf-8")
+
+    assert 'class="quick-more"' in index
+    assert "quick-more-menu" in polish
+    assert "letter-spacing: 0.06em" in index

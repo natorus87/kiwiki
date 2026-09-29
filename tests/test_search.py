@@ -244,6 +244,18 @@ class TestSearch:
     def test_leere_suche_gibt_leere_liste(self, active_user):
         assert search("   ") == []
 
+    def test_ueberlange_query_wird_begrenzt(self, active_user):
+        """MCP/UI haben kein Pydantic-Limit — search() kuerzt selbst auf 512."""
+        from app.models import MAX_QUERY_LENGTH
+        from app.search import get_search_history, init_db
+
+        init_db()
+        assert search("z" * 2000) == []
+
+        verlauf = get_search_history(1)
+        assert verlauf, "erwartete einen Historieneintrag"
+        assert len(verlauf[0]["query"]) <= MAX_QUERY_LENGTH
+
     def test_tag_suche_trifft_nur_exakten_tag(self, tmp_file, active_user):
         tmp_file("notes/python.md", "---\ntitle: Python\ntags: [python]\n---\n\nA")
         tmp_file("notes/pythonista.md", "---\ntitle: Pythonista\ntags: [pythonista]\n---\n\nB")

@@ -270,6 +270,7 @@ def _read_frontmatter_only(path: str) -> dict:
     _invalidate_fm_cache(), so an mtime bump alone is enough to bypass
     stale entries left by out-of-band edits (e.g. a mounted volume).
     """
+    validate_content_read_path(path)
     file_path = safe_path(path)
     if not file_path.exists() or not file_path.is_file():
         return {}
@@ -299,6 +300,7 @@ def read_file(path: str) -> FileContent:
     Read markdown file with frontmatter.
     Raises FileNotFoundError if file doesn't exist.
     """
+    validate_content_read_path(path)
     file_path = safe_path(path)
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {path}")
@@ -330,7 +332,7 @@ def write_file(path: str, content: str, expected_revision: int | None = None) ->
                 f"current revision is {current_revision}"
             )
         post = _load_post(content, is_text=True) if content else frontmatter.Post("")
-        post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
+        post.metadata["updated"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
         _atomic_write_text(file_path, frontmatter.dumps(post))
         revision = file_path.stat().st_mtime_ns
     _invalidate_fm_cache(path)
@@ -351,7 +353,7 @@ def append_file(path: str, content: str) -> FileContent:
         with open(file_path, "r", encoding="utf-8") as f:
             post = _load_post(f)
         post.content += "\n" + content
-        post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
+        post.metadata["updated"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
         _atomic_write_text(file_path, frontmatter.dumps(post))
         revision = file_path.stat().st_mtime_ns
     _invalidate_fm_cache(path)
@@ -394,7 +396,7 @@ def list_files(path: str = ".") -> list[FileInfo]:
             )
         elif not item.is_symlink() and item.is_file():
             stat = item.stat()
-            mtime_str = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat().split("T")[0]
+            mtime_str = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(timespec="minutes")
             try:
                 meta = _read_frontmatter_only(rel_path)
                 updated = fm_str(meta.get("updated"), mtime_str)
@@ -485,7 +487,7 @@ def create_note(title: str, content: str, tags: list[str], owner: str, folder: s
         while safe_path(path).exists():
             path = f"{folder}/{slug}-{i}.md"
             i += 1
-        now = datetime.now(timezone.utc).isoformat().split("T")[0]
+        now = datetime.now(timezone.utc).isoformat(timespec="minutes")
         fm = {
             "title": title,
             "type": "note",
@@ -522,7 +524,7 @@ def edit_file(path: str, new_str: str, old_str: str = "") -> FileContent:
             post.content = post.content.replace(old_str, new_str, 1)
         else:
             post.content = post.content.rstrip("\n") + "\n\n" + new_str
-        post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
+        post.metadata["updated"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
         _atomic_write_text(file_path, frontmatter.dumps(post))
         revision = file_path.stat().st_mtime_ns
     _invalidate_fm_cache(path)
@@ -543,7 +545,7 @@ def update_frontmatter(path: str, updates: dict) -> FileContent:
         with open(file_path, "r", encoding="utf-8") as f:
             post = _load_post(f)
         post.metadata.update(updates)
-        post.metadata["updated"] = datetime.now(timezone.utc).isoformat().split("T")[0]
+        post.metadata["updated"] = datetime.now(timezone.utc).isoformat(timespec="minutes")
         _atomic_write_text(file_path, frontmatter.dumps(post))
         revision = file_path.stat().st_mtime_ns
     _invalidate_fm_cache(path)
@@ -623,7 +625,7 @@ def list_all_files(path: str = ".") -> list[dict]:
     with _list_cache_lock:
         cached = _list_cache.get(cache_key)
         if cached and now - cached[0] < _LIST_CACHE_TTL:
-            return cached[1]
+            return _copy_items(cached[1])
 
     # Use os.scandir for faster recursive traversal (A5)
     items = []
@@ -632,7 +634,18 @@ def list_all_files(path: str = ".") -> list[dict]:
 
     with _list_cache_lock:
         _list_cache[cache_key] = (now, items)
-    return items
+    return _copy_items(items)
+
+
+def _copy_items(items: list[dict]) -> list[dict]:
+    """Kopien fuer Aufrufer: der Cache wird zwischen UI und MCP geteilt.
+
+    Ein Aufrufer, der Eintraege anreichert (Dashboard: ``excerpt``), haette
+    sonst den gecachten Zustand veraendert — und das MCP-Werkzeug haette
+    fuer die Cache-Dauer Felder ausgeliefert, die sein outputSchema
+    (additionalProperties: false) verbietet.
+    """
+    return [{**item, "tags": list(item.get("tags") or [])} for item in items]
 
 
 def _scan_markdown_recursive(dir_path: Path, root: Path, items: list) -> None:
@@ -665,4 +678,19 @@ def _scan_markdown_recursive(dir_path: Path, root: Path, items: list) -> None:
                 updated = ""
                 created = ""
                 tags = []
+            # Ohne Frontmatter-Stempel fiele die Notiz aus beiden
+            # Dashboard-Panels ("Zuletzt erstellt" log "keine Notiz",
+            # obwohl welche existiert). Fallback: Dateisystem-Zeiten —
+            # birthtime wo vorhanden (macOS), sonst ctime, sonst mtime.
+            if not updated or not created:
+                try:
+                    st = entry.stat(follow_symlinks=False)
+                    mtime_iso = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat(timespec="minutes")
+                    birth = getattr(st, "st_birthtime", None) or st.st_ctime
+                    ctime_iso = datetime.fromtimestamp(birth, tz=timezone.utc).isoformat(timespec="minutes")
+                except OSError:
+                    mtime_iso = ""
+                    ctime_iso = ""
+                updated = updated or mtime_iso
+                created = created or ctime_iso or mtime_iso
             items.append({"path": rel_path, "title": title, "updated": updated, "created": created, "tags": tags})

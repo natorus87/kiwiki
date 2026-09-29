@@ -9,4 +9,4 @@ pytest-asyncio==1.4.0
 coverage==7.15.2
 pip-audit==2.10.1
 playwright==1.61.0
-httpx2==2.7.0
+httpx2==2.13.1
