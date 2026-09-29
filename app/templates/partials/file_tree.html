@@ -3,7 +3,7 @@
     <div class="tree-row"
          data-path="{{ item.path }}" data-kind="dir" draggable="true">
       {% if user and user.role in ['write', 'admin'] %}
-      <input type="checkbox" class="tree-checkbox" data-path="{{ item.path }}" data-kind="dir"
+      <input type="checkbox" class="tree-checkbox" data-path="{{ item.path }}" data-kind="dir" tabindex="-1"
              onclick="event.stopPropagation(); kwToggleSelect(this)" aria-label="{{ t.select_item.format(name=item.name) }}">
       {% endif %}
       <button type="button" class="file-item folder" data-path="{{ item.path }}" aria-expanded="false"
@@ -21,7 +21,7 @@
     <div class="tree-row"
          data-path="{{ item.path }}" data-kind="file" draggable="true">
       {% if user and user.role in ['write', 'admin'] %}
-      <input type="checkbox" class="tree-checkbox" data-path="{{ item.path }}" data-kind="file"
+      <input type="checkbox" class="tree-checkbox" data-path="{{ item.path }}" data-kind="file" tabindex="-1"
              onclick="event.stopPropagation(); kwToggleSelect(this)" aria-label="{{ t.select_item.format(name=item.name) }}">
       {% endif %}
       <a href="/?file={{ item.path|urlencode }}" class="file-item kw-file-link"

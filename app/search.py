@@ -6,7 +6,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from .models import SearchResult
+from .models import SearchResult, MAX_QUERY_LENGTH
 from .tenancy import user_root
 
 logger = logging.getLogger("kiwiki.search")
@@ -261,6 +261,18 @@ def _path_rows(conn, raw_query: str):
 
 
 _MD_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+# [[ziel|Label]] -> Label, [[pfad/ziel.md]] -> ziel. Muss vor _MD_NOISE laufen:
+# das entfernt `|` als Tabellen-Pipe und klebte Ziel und Label zusammen
+# ("[[../adr-001-sqliteADR 001]]").
+_WIKILINK = re.compile(r"!?\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]")
+
+
+def _wikilink_text(match: re.Match) -> str:
+    if match.group(2):
+        return match.group(2).strip()
+    stem = match.group(1).strip().rsplit("/", 1)[-1]
+    return stem[:-3] if stem.endswith(".md") else stem
+
 _MD_NOISE = re.compile(
     r"^\s{0,3}\|?[\s:|-]*\|[\s:|-]*$"      # Tabellen-Trennzeilen (|---|:--:|)
     r"|^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+|\d+\.\s+)"  # Ueberschrift, Zitat, Liste
@@ -278,6 +290,7 @@ def _clean_snippet(content: str, query: str, width: int = 180) -> str:
     """
     body = content.split("---", 2)[2] if content.lstrip().startswith("---") else content
     body = _MD_LINK.sub(r"\1", body)  # [Text](url) -> Text
+    body = _WIKILINK.sub(_wikilink_text, body)
     text = " ".join(_MD_NOISE.sub("", body).split())
     if not text:
         return ""
@@ -289,6 +302,26 @@ def _clean_snippet(content: str, query: str, width: int = 180) -> str:
         start = max(0, min(hit - width // 3, len(text) - width))
     excerpt = text[start:start + width]
     return ("…" if start else "") + excerpt.strip() + ("…" if start + width < len(text) else "")
+
+
+def content_excerpt(content: str, width: int = 120, title: str = "") -> str:
+    """Erste sinnvolle Zeilen als Vorschau (Dashboard-Listen haben keine Query).
+
+    Nutzt dieselbe Bereinigung wie die Treffer-Snippets: ohne Frontmatter
+    und ohne Markdown-Syntax, sonst staende in jeder Zeile `---\ntitle:`.
+    Eine fuehrende Ueberschrift, die dem angezeigten Titel entspricht, wird
+    uebersprungen — sonst stand der Titel in der Liste zweimal hintereinander.
+    """
+    if title:
+        lines = content.lstrip("\n").split("\n", 1)
+        heading = re.match(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$", lines[0])
+        if heading and _normalize_heading(heading.group(1)) == _normalize_heading(title):
+            content = lines[1] if len(lines) > 1 else ""
+    return _clean_snippet(content, "", width=width)
+
+
+def _normalize_heading(text: str) -> str:
+    return " ".join(re.sub(r"[*_`~]", "", text).split()).casefold()
 
 
 def _to_results(rows, query: str = "") -> list[SearchResult]:
@@ -326,6 +359,9 @@ def search(query: str) -> list[SearchResult]:
     """
     if not query.strip():
         return []
+    # MCP- und UI-Pfade haben kein Pydantic-Limit (nur REST via SearchRequest).
+    # Unbegrenzt liefe ein MB-Query in FTS-Sanitize + LIKE-Fallback und brennt CPU.
+    query = query.strip()[:MAX_QUERY_LENGTH]
     init_db()
     with get_db() as conn:
         tag_match = re.match(r'^\s*tag:(.+?)\s*$', query, re.IGNORECASE)

@@ -154,7 +154,7 @@ def test_mehrfachloeschung_verwendet_einen_batch_request():
     assert "body: JSON.stringify({ paths: paths })" in batch_delete
     assert "result.index_cleanup_pending" in batch_delete
     assert "for (" not in batch_delete
-    assert "/static/kiwiki.js?v=20260920-scale" in layout
+    assert "/static/kiwiki.js?v=20260929-ui-review" in layout
 
 
 def test_desktop_sidebar_breite_respektiert_collapsed_zustand_und_drag_abbruch():
@@ -178,8 +178,8 @@ def test_astryx_inspirierter_feinschliff_bleibt_selbst_gehostet_und_tokenbasiert
     assert polish_path.exists()
     polish = polish_path.read_text(encoding="utf-8")
 
-    assert "/static/kiwiki-polish.css?v=20260920-scale" in layout
-    assert "/static/kiwiki-polish.css?v=20260920-scale" in login
+    assert "/static/kiwiki-polish.css?v=20260929-ui-review" in layout
+    assert "/static/kiwiki-polish.css?v=20260929-ui-review" in login
     # Die Abstandsskala liegt seit der Vereinheitlichung in kiwiki.css :root,
     # damit sie nur einmal existiert. tests/test_design_tokens.py haelt sie
     # geschlossen; hier genuegt, dass das Polish-Stylesheet sie benutzt.

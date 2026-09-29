@@ -115,6 +115,9 @@
 {% endblock %}
 
 {% block content %}
+{# Sichtbarer Kontext steht im Pfadfeld; die h1 gibt Screenreadern und der
+   Ueberschriften-Navigation denselben Einstieg wie auf den anderen Seiten. #}
+<h1 class="sr-only">{{ t.editor_heading.format(path=file_path) if file_path else t.editor_heading_new }}</h1>
 <div class="editor-bar">
   <label for="file-path" class="sr-only">{{ t.file_path }}</label>
   <input type="text" id="file-path" class="editor-path"
@@ -178,6 +181,83 @@
     });
   }
 
+  // Frontmatter (--- Block am Dokumentanfang) ist Meta, kein Inhalt:
+  // Die ToastUI-Vorschau wuerde ihn als HR + Ueberschrift + Text rendern.
+  // Der Renderer blendet ihn aus, statt ihn als Fliesstext zu zeigen.
+  function kwPreviewFrontmatterEnd(markdown) {
+    var lines = String(markdown).split('\n');
+    if (!lines.length || lines[0].trim() !== '---') return 0;
+    for (var i = 1; i < lines.length && i < 50; i++) {
+      if (lines[i].trim() === '---') return i + 1; // 1-basierte Endzeile
+    }
+    return 0;
+  }
+
+  function kwPreviewMarkdown() {
+    try {
+      if (window.editor && window.editor.getMarkdown) return window.editor.getMarkdown();
+    } catch (e) { /* Editor noch im Aufbau — Fallback unten */ }
+    return initialMarkdown;
+  }
+
+  // Spiegel von _resolve_wikilink (app/main.py): relativ zum Ordner der
+  // Quellnotiz, .md-Ergaenzung; URLs, absolute Pfade, Anker und Escapes
+  // ueber den Namespace-Root hinaus -> null (bleibt wörtlicher Text).
+  function kwResolveWikilink(sourcePath, rawTarget) {
+    var target = String(rawTarget).trim();
+    if (!target || target.indexOf('\n') !== -1) return null;
+    if (/^(https?:\/\/|mailto:|\/|#)/.test(target)) return null;
+    if (target.slice(-3) !== '.md') target += '.md';
+    var parts = String(sourcePath || '').split('/');
+    parts.pop();
+    var out = [];
+    var escaped = false;
+    parts.concat(target.split('/')).forEach(function(seg) {
+      if (seg === '' || seg === '.') return;
+      if (seg === '..') {
+        if (out.length) out.pop(); else escaped = true;
+      } else {
+        out.push(seg);
+      }
+    });
+    if (escaped || !out.length) return null;
+    return out.join('/');
+  }
+
+  function kwPreviewSourcePath() {
+    var input = document.getElementById('file-path');
+    return input ? input.value.trim() : '';
+  }
+
+  // [[Ziel]] / [[Ziel|Label]] werden in der Vorschau klickbar — gleiche
+  // Konvention wie serverseitig (_linkify_wikilinks): relativer Pfad,
+  // .md-Ergänzung, kein Link in Code (Code hat keine Text-Knoten).
+  // Ein vorangestelltes ! (Embed) bleibt wörtlicher Text.
+  function kwPreviewLinkify(literal, sourcePath) {
+    var tokens = [];
+    var re = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g;
+    var last = 0, m;
+    while ((m = re.exec(literal))) {
+      var embed = m.index > 0 && literal[m.index - 1] === '!';
+      var start = embed ? m.index - 1 : m.index;
+      if (start > last) tokens.push({type: 'text', content: literal.slice(last, start)});
+      var ziel = embed ? null : kwResolveWikilink(sourcePath, m[1]);
+      if (ziel === null) {
+        tokens.push({type: 'text', content: literal.slice(start, m.index + m[0].length)});
+      } else {
+        var stem = ziel.split('/').pop().replace(/\.md$/, '');
+        tokens.push({type: 'openTag', tagName: 'a', attributes: {
+          href: '/?file=' + encodeURIComponent(ziel), 'class': 'wikilink',
+        }});
+        tokens.push({type: 'text', content: (m[2] || '').trim() || stem});
+        tokens.push({type: 'closeTag', tagName: 'a'});
+      }
+      last = m.index + m[0].length;
+    }
+    if (last < literal.length) tokens.push({type: 'text', content: literal.slice(last)});
+    return tokens;
+  }
+
   function initKiwikiEditor() {
     const editorWrap = document.getElementById('tui-editor-wrap');
     if (!window.toastui || !window.toastui.Editor) {
@@ -193,6 +273,21 @@
       theme: 'dark',
       usageStatistics: false,
       placeholder: kwText('markdownPlaceholder'),
+      customHTMLRenderer: {
+        // context.origin() ist der Default-Renderer. `return undefined` rendert
+        // in ToastUI 3 NICHTS — die Vorschau war dadurch bis auf Wikilinks und
+        // Code leer (Ueberschriften, Absaetze, Tabellenzellen, Listentexte).
+        text: function(node, context) {
+          if (typeof node.literal !== 'string') return context.origin();
+          var fmEnd = kwPreviewFrontmatterEnd(kwPreviewMarkdown());
+          var sp = node.sourcepos;
+          if (fmEnd > 0 && sp && sp[0][0] >= 1 && sp[1][0] <= fmEnd) {
+            return [{type: 'text', content: ''}];
+          }
+          if (node.literal.indexOf('[[') === -1) return context.origin();
+          return kwPreviewLinkify(node.literal, kwPreviewSourcePath());
+        },
+      },
       toolbarItems: [
         ['heading', 'bold', 'italic', 'strike'],
         ['hr', 'quote'],
@@ -204,6 +299,37 @@
     window.editor = editor;
     labelEditorControls();
     new MutationObserver(labelEditorControls).observe(editorWrap, { childList: true, subtree: true });
+
+    // Leere Frontmatter-Huellen (HR, leere Ueberschrift/Listen am
+    // Vorschau-Anfang) entfernen. Nur wenn die Quelle wirklich ein
+    // Frontmatter hat; ein legitimer HR direkt dahinter faellt im
+    // Extremfall mit — kosmetisch, kein Datenverlust (Quelle unberuehrt).
+    (function kwTidyPreviewInit() {
+      var tidying = false;
+      function tidy() {
+        if (tidying) return;
+        if (kwPreviewFrontmatterEnd(kwPreviewMarkdown()) <= 0) return;
+        tidying = true;
+        try {
+          editorWrap.querySelectorAll('.toastui-editor-contents').forEach(function(pane) {
+            var guard = 0;
+            while (pane.firstElementChild && guard < 12) {
+              guard++;
+              var first = pane.firstElementChild;
+              var tag = first.tagName;
+              var leer = (first.textContent || '').trim() === '';
+              if (tag === 'HR' || ((tag === 'P' || /^H[1-6]$/.test(tag) || tag === 'UL' || tag === 'OL') && leer)) {
+                first.remove();
+              } else break;
+            }
+          });
+        } finally {
+          tidying = false;
+        }
+      }
+      new MutationObserver(tidy).observe(editorWrap, { childList: true, subtree: true });
+      tidy();
+    })();
 
     if (initialPath) {
       kwSetActiveFile(initialPath);

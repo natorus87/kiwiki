@@ -47,6 +47,25 @@ def current_role_for_username(username: str) -> str | None:
     return None
 
 
+_LEGACY_COOKIE_WARNED: set[str] = set()
+
+
+def _warn_legacy_cookie_auth(username: str) -> None:
+    """Einmal pro User und Prozess warnen, dass der rohe API-Key als Cookie kommt.
+
+    Der Pfad bleibt aus Kompatibilitaet bestehen (externe Clients), soll aber
+    sichtbar werden, damit er in einer Major-Version entfernt werden kann.
+    """
+    if username in _LEGACY_COOKIE_WARNED:
+        return
+    _LEGACY_COOKIE_WARNED.add(username)
+    logger.warning(
+        "Deprecated: user %r authenticated with a raw API key in the kiwiki_session cookie; "
+        "use 'Authorization: Bearer' instead. This fallback will be removed in a future major version.",
+        username,
+    )
+
+
 async def get_current_user(request: Request) -> User:
     """
     Extract user from Authorization header (Bearer) or session cookie.
@@ -125,6 +144,7 @@ async def get_current_user(request: Request) -> User:
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Username contains characters not allowed as namespace",
                 )
+            _warn_legacy_cookie_auth(username)
             set_user_ns(username)
             return User(username=username, role=role)
 

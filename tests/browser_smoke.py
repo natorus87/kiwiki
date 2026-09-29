@@ -424,7 +424,7 @@ def _run_browser_checks() -> None:
         page.goto(f"{BASE_URL}/?lang=en", wait_until="networkidle")
         assert page.locator("html").get_attribute("lang") == "en"
         assert page.get_by_role("button", name="New note").is_visible()
-        assert page.get_by_placeholder("Search…").is_visible()
+        assert page.get_by_placeholder("Search notes…").is_visible()
         assert any(
             cookie["name"] == "kiwiki_language" and cookie["value"] == "en"
             for cookie in page.context.cookies()
@@ -433,7 +433,67 @@ def _run_browser_checks() -> None:
         page.locator('.tree-row[data-kind="dir"][data-path="notes"] .file-item').click(button="right")
         assert page.locator(".kw-context-menu").get_attribute("aria-label") == "Actions for notes"
 
+        _run_desktop_ui_checks(page)
+        assert page_errors == []
         browser.close()
+
+
+def _run_desktop_ui_checks(page) -> None:
+    """Befunde aus dem UI-Review (Kanban t_3a677a55, t_f0dc2f21, t_578152ff,
+    t_80383626, t_ab62b92f) im echten Browser festhalten."""
+    page.goto(f"{BASE_URL}/?lang=de", wait_until="networkidle")
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.context.add_cookies([{"name": "kiwiki_sidebar", "value": "open", "url": BASE_URL}])
+
+    # Editor-Vorschau rendert den ganzen Inhalt, Frontmatter bleibt draussen.
+    page.goto(f"{BASE_URL}/editor?path=notes/review.md", wait_until="networkidle")
+    preview = page.locator(".toastui-editor-md-preview .toastui-editor-contents")
+    page.wait_for_function(
+        "() => (document.querySelector('.toastui-editor-md-preview .toastui-editor-contents') || {}).innerText"
+        "?.includes('Abschnitt')"
+    )
+    preview_text = preview.inner_text()
+    for expected in ("Review-Titel", "Abschnitt", "Zelle-A", "Absatztext mit ziel", "erledigt"):
+        assert expected in preview_text, (expected, preview_text)
+    assert "owner:" not in preview_text
+    assert preview.locator("a.wikilink").get_attribute("href") == "/?file=notes%2Fziel.md"
+
+    # Notizansicht: genau eine sichtbare h1, Aufgabenlisten als Checkboxen.
+    page.goto(f"{BASE_URL}/?file=notes/review.md", wait_until="networkidle")
+    page.locator(".file-view").wait_for()
+    visible_h1 = page.evaluate(
+        "[...document.querySelectorAll('#main-content h1')]"
+        ".filter(h => h.getBoundingClientRect().height > 0).map(h => h.textContent.trim())"
+    )
+    assert visible_h1 == ["Review-Titel"], visible_h1
+    task_boxes = page.locator(".markdown-content li.task-list-item input[type=checkbox]")
+    assert task_boxes.count() == 2
+    assert task_boxes.nth(1).is_checked()
+    assert task_boxes.nth(0).is_disabled()
+    assert "[ ]" not in page.locator(".markdown-content").inner_text()
+
+    # Tab-Reihenfolge: versteckte Auswahl-Checkboxen sind keine Tab-Stopps.
+    page.goto(f"{BASE_URL}/", wait_until="networkidle")
+    page.locator('.tree-row[data-path="notes"]').wait_for()
+    focus_labels = []
+    for _ in range(12):
+        page.keyboard.press("Tab")
+        focus_labels.append(page.evaluate(
+            "(document.activeElement.getAttribute('aria-label') || document.activeElement.textContent || '').trim()"
+        ))
+    assert not any("auswählen" in label for label in focus_labels), focus_labels
+    page.locator("#select-toggle").click()
+    assert page.locator('.tree-checkbox[data-path="notes"]').evaluate("e => e.tabIndex") == 0
+    page.locator("#select-toggle").click()
+    assert page.locator('.tree-checkbox[data-path="notes"]').evaluate("e => e.tabIndex") == -1
+
+    # Escape schliesst zuerst die Suchergebnisse, die Desktop-Sidebar bleibt offen.
+    search = page.locator(".search-input")
+    search.fill("Absatztext")
+    page.wait_for_function("() => document.getElementById('search-results').innerText.trim().length > 0")
+    search.press("Escape")
+    assert page.locator("#search-results").inner_text().strip() == ""
+    assert page.locator(".sidebar").get_attribute("aria-hidden") == "false"
 
 
 def main() -> None:
@@ -450,6 +510,12 @@ def main() -> None:
         notes_dir = user_dir / "notes"
         notes_dir.mkdir()
         (notes_dir / "nested.md").write_text("# Verschachtelt\n\nExplorer-Test.\n", encoding="utf-8")
+        (notes_dir / "ziel.md").write_text("# Ziel\n", encoding="utf-8")
+        (notes_dir / "review.md").write_text(
+            "---\ntitle: Review-Titel\nowner: admin\n---\n\n# Review-Titel\n\n## Abschnitt\n\n"
+            "Absatztext mit [[ziel]].\n\n| Spalte |\n|---|\n| Zelle-A |\n\n- [ ] offen\n- [x] erledigt\n",
+            encoding="utf-8",
+        )
         for index in range(35):
             (notes_dir / f"browser-batch-{index}.md").write_text(
                 f"# Browser Batch {index}\n",

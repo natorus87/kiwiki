@@ -1,0 +1,11 @@
+{# Kompakte Tag-Wolke für die Startseite (ui_tags mit compact=1).
+   Nur Chips mit Zähler — keine Breadcrumb, keine Dateilisten. #}
+<p class="section-label">{{ t.tags }}</p>
+<div class="tag-cloud tag-cloud-compact">
+  {% for tag_item in tags %}
+  <a href="/?search={{ ('tag:' ~ tag_item.tag)|urlencode }}" class="tag-chip kw-search-link" data-search-query="tag:{{ tag_item.tag }}">
+    <span class="tag-chip-name">{{ tag_item.tag }}</span>
+    <span class="tag-count">{{ tag_item.count }}</span>
+  </a>
+  {% endfor %}
+</div>

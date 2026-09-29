@@ -16,9 +16,6 @@ import logging
 logger = logging.getLogger("kiwiki.mcp_tools.links")
 
 
-logger = logging.getLogger("kiwiki.mcp_tools.links")
-
-
 @tool("backlinks")
 async def _tool_backlinks(ctx: McpContext) -> str:
         ctx.need_read()

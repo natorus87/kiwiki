@@ -202,7 +202,7 @@
       color: var(--md-on-surface-v);
     }
   </style>
-  <link rel="stylesheet" href="/static/kiwiki-polish.css?v=20260920-scale">
+  <link rel="stylesheet" href="/static/kiwiki-polish.css?v=20260929-ui-review">
   <script src="/static/kiwiki-motion.bundle.js?v=20260608" defer></script>
 </head>
 <body>
@@ -235,8 +235,7 @@
     </form>
 
     <p class="hint">
-      {{ t.login_hint }}<br>
-      {{ t.login_format }}
+      {{ t.login_hint }}
     </p>
     <nav class="login-language" aria-label="{{ t.language }}">
       <a href="?lang=de" lang="de"{% if lang == 'de' %} aria-current="true"{% endif %}>DE</a>

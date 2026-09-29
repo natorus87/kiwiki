@@ -89,7 +89,7 @@
   align-items: center; justify-content: center; gap: var(--space-3); text-align: center;
   padding: var(--space-8); background: rgba(23, 23, 19, .76); backdrop-filter: blur(10px);
 }
-.knowledge-loading[hidden], .knowledge-empty[hidden], .knowledge-error[hidden] { display: none; }
+.knowledge-loading[hidden], .knowledge-empty[hidden], .knowledge-error[hidden], .knowledge-stats[hidden] { display: none; }
 .knowledge-loading strong, .knowledge-empty h2 { font: 600 var(--text-xl) var(--font-display); }
 .knowledge-loading > span:last-child, .knowledge-empty p { max-width: 45ch; color: var(--md-on-surface-v); font-size: var(--text-md); }
 .loading-orbit { position: relative; width: 76px; height: 76px; margin-bottom: var(--space-3); animation: orbit-spin 4s linear infinite; }

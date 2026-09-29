@@ -393,6 +393,23 @@ class TestListAllFiles:
         assert "notes/python/asyncio.md" in paths
         assert "projects/wiki.md" in paths
 
+    def test_ohne_stempel_greift_dateisystem_zeit(self, tmp_file, active_user, tmp_path):
+        """Ohne Frontmatter-created fiel die Notiz aus 'Zuletzt erstellt' —
+        Fallback ist die Dateisystem-Zeit (mit Uhrzeit, kein 00:00)."""
+        tmp_file("notes/ohne.md", "---\ntitle: Ohne\n---\n\nText")
+        result = list_all_files(".")
+        eintrag = next(r for r in result if r["path"] == "notes/ohne.md")
+        assert eintrag["created"], "erwartete Fallback-Zeit statt Leerstring"
+        assert eintrag["updated"], "erwartete Fallback-Zeit statt Leerstring"
+        assert "T" in eintrag["created"]
+
+    def test_schreiben_speichert_uhrzeit_mit(self, tmp_file, active_user, tmp_path):
+        """'Heute, 00:00' kam vom Datums-Only-Stempel — jetzt mit Uhrzeit."""
+        from app.storage import read_file, write_file
+
+        write_file("notes/zeit.md", "---\ntitle: Z\n---\n\nText")
+        assert "T" in read_file("notes/zeit.md").frontmatter["updated"]
+
 
 class TestFolderOps:
     """create_folder() und delete_folder()."""
@@ -445,3 +462,19 @@ class TestReadPathValidation:
 
         with pytest.raises(ValueError, match="Empty path"):
             validate_content_read_path("")
+
+    def test_lesefunktionen_sperren_kiwiki_mit(self, active_user):
+        """read_file/_read_frontmatter_only duerfen keine Systemdateien liefern.
+
+        validate_content_read_path() existierte, wurde aber nur von
+        read_lines/file_info aufgerufen — read_file/fetch/read_many lieferten
+        .kiwiki/agent_log.jsonl trotzdem aus.
+        """
+        import pytest
+
+        from app.storage import _read_frontmatter_only, read_file
+
+        with pytest.raises(ValueError, match="not readable"):
+            read_file(".kiwiki/agent_log.jsonl")
+        with pytest.raises(ValueError, match="not readable"):
+            _read_frontmatter_only(".kiwiki/agent_log.jsonl")

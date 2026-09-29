@@ -206,6 +206,35 @@ class TestOAuthFlow:
         assert token.headers["pragma"] == "no-cache"
         assert refreshed.headers["cache-control"] == "no-store"
 
+    def test_refresh_token_rotiert_und_erkennt_wiederverwendung(self, users_map):
+        """Rotation mit Reuse-Detection: eingelöst ist verbraucht (RFC 6816)."""
+        users_map(("alice", "tok1", "admin"))
+        from app.main import app
+
+        client = TestClient(app)
+        basis = {
+            "grant_type": "refresh_token",
+            "client_id": "expected-client",
+            "resource": "http://testserver/mcp",
+        }
+        original = _make_oauth_token(
+            "tok1", "refresh", 3600,
+            client_id="expected-client", resource="http://testserver/mcp",
+        )
+
+        erster = client.post("/oauth/token", data={**basis, "refresh_token": original})
+        assert erster.status_code == 200
+        assert erster.json()["refresh_token"].startswith("kiwiki1.")
+
+        erneut = client.post("/oauth/token", data={**basis, "refresh_token": original})
+        assert erneut.status_code == 400
+        assert erneut.json()["error"] == "invalid_grant"
+
+        rotiert = client.post(
+            "/oauth/token", data={**basis, "refresh_token": erster.json()["refresh_token"]}
+        )
+        assert rotiert.status_code == 200
+
     def test_refresh_token_cannot_change_client_or_resource(self, users_map):
         users_map(("alice", "tok1", "admin"))
         from app.main import app
@@ -446,6 +475,37 @@ class TestOAuthFlow:
         assert authorize.status_code == 400
         assert authorize.json()["error"] == "invalid_redirect_uri"
 
+    def test_register_pro_ip_ist_begrenzt(self, users_map, monkeypatch):
+        """Offene DCR + 128 Slots + 24h-TTL: eine Quelle darf nicht alles füllen."""
+        users_map(("alice", "tok1", "admin"))
+        from app import mcp_server
+        from app.main import app
+
+        monkeypatch.setattr(mcp_server, "_OAUTH_REGISTER_PER_IP_MAX", 2)
+        monkeypatch.setattr(mcp_server, "_oauth_register_hits", {})
+        client = TestClient(app)
+
+        for _ in range(2):
+            antwort = client.post("/oauth/register", json={"redirect_uris": ["https://client.example/callback"]})
+            assert antwort.status_code == 201
+
+        begrenzt = client.post("/oauth/register", json={"redirect_uris": ["https://client.example/callback"]})
+        assert begrenzt.status_code == 429
+
+    def test_unbekannte_methode_kommt_mit_http_200(self, users_map):
+        """-32601 ist ein Protokoll-, kein Transportfehler (kein 404)."""
+        users_map(("alice", "tok1", "admin"))
+        from app.main import app
+
+        antwort = TestClient(app).post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "gibtesnicht"},
+            headers={"Authorization": "Bearer tok1"},
+        )
+
+        assert antwort.status_code == 200
+        assert antwort.json()["error"]["code"] == -32601
+
     def test_authorization_code_store_is_bounded(self, users_map, monkeypatch):
         users_map(("alice", "tok1", "admin"))
         from app import mcp_server
@@ -542,7 +602,7 @@ class TestHandleMessage:
         body = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
         result = await _handle_message(body, User(username="alice", role="admin"))
         assert result["result"]["protocolVersion"] == "2025-06-18"
-        assert result["result"]["serverInfo"]["version"] == "4.0.0"
+        assert result["result"]["serverInfo"]["version"] == "4.1.0"
         assert "tools" in result["result"]["capabilities"]
         instructions = result["result"]["instructions"]
         assert "Authorization is already enforced by kiwiki" in instructions
@@ -1245,6 +1305,23 @@ class TestReviewRegressions:
         for tool in ("read_lines", "file_info"):
             with pytest.raises(ValueError, match="not readable"):
                 await _dispatch(tool, {"path": ".kiwiki/agent_log.jsonl"}, user)
+
+    @pytest.mark.asyncio
+    async def test_read_file_und_fetch_verschweigen_kiwiki(self, active_user, tmp_file):
+        """read_file/fetch/read_many nutzten den Lese-Guard nicht (nur read_lines/file_info)."""
+        user = User(username="alice", role="read")
+        tmp_file("notes/a.md", "---\ntitle: A\n---\n\nA")
+        internal = active_user / ".kiwiki" / "agent_log.jsonl"
+        internal.parent.mkdir(parents=True, exist_ok=True)
+        internal.write_text('{"tool": "geheim"}\n', encoding="utf-8")
+
+        for tool, args in (("read_file", {"path": ".kiwiki/agent_log.jsonl"}),
+                           ("fetch", {"id": ".kiwiki/agent_log.jsonl"})):
+            with pytest.raises(ValueError, match="not readable"):
+                await _dispatch(tool, args, user)
+
+        gelesen = json.loads(await _dispatch("read_many", {"paths": [".kiwiki/agent_log.jsonl"]}, user))
+        assert "not readable" in gelesen[".kiwiki/agent_log.jsonl"]["error"]
 
     @pytest.mark.asyncio
     async def test_grep_status_gibt_fremde_jobs_nicht_heraus(self, active_user):

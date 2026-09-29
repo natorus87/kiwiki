@@ -68,6 +68,20 @@ Loading placeholders in `index.html` (`.tree-loading`, `.recent-loading`) carry 
 
 Tags in `partials/file_view.html` are rendered as `<button class="tag" onclick="kwSearchTag('<tag>')">` (not passive `<span>`). Clicking pre-fills the search input with `tag:<value>` and triggers a search. The Python search backend (`app/search.py`) detects the `tag:` prefix and performs a LIKE search on the `tags` FTS5 column to avoid the brittleness of FTS5 column filters.
 
+## Heading Structure
+
+Every view exposes exactly one `<h1>`: the note title (or the first body heading when it
+duplicates the title — `title_redundant` in `ui_file`; other body `h1` are demoted to `h2`),
+the view title on Tags and Search history, and a visually hidden `h1` in the editor. No CSS
+rule may hide headings; the server decides redundancy.
+
+## Keyboard: Escape and Hidden Controls
+
+- `Escape` closes the nearest transient element first: open search results, then the mobile
+  sidebar overlay. The desktop sidebar is primary navigation and is not closed by `Escape`.
+- Selection checkboxes in the file tree are invisible outside select mode and carry
+  `tabindex="-1"` there; `kwToggleSelectMode()` restores them to the Tab order.
+
 ## Breadcrumb
 
 `partials/file_view.html` uses real `<button>` elements for breadcrumb parents instead of `<a href="#">` with `preventDefault`. The whole breadcrumb works without JavaScript for the current page; parent navigation still uses HTMX swaps, but degrades gracefully to a normal form/no-op.

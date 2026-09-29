@@ -39,7 +39,7 @@ def _clear_process_local_state() -> None:
 
     mcp_mod = sys.modules.get("app.mcp_server")
     if mcp_mod is not None:
-        for name in ("_sse_sessions", "_oauth_clients", "_oauth_codes"):
+        for name in ("_sse_sessions", "_oauth_clients", "_oauth_codes", "_oauth_refresh_seen", "_oauth_register_hits"):
             getattr(mcp_mod, name).clear()
     # Grep- und Upload-State wohnen seit dem Modulsplit in app.mcp_tools
     # (search/files) statt in app.mcp_server — gleiche Dicts, neuer Ort.
@@ -86,6 +86,8 @@ def _isolated_data_dir(monkeypatch, tmp_path: Path):
     user_store_mod._PARSE_DIAG_LOGGED = False
     user_store_mod._LOCAL_DIAG_LOGGED = False
     user_store_mod._MERGE_DIAG_LOGGED = False
+    user_store_mod._invalidate_local_users_cache()
+    auth_mod._LEGACY_COOKIE_WARNED.clear()
     # Clear all caches between tests
     from app.storage import _invalidate_fm_cache, _invalidate_list_cache
     _invalidate_fm_cache()

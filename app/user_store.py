@@ -106,9 +106,43 @@ def builtin_users_by_key() -> dict[str, UserRecord]:
     return result
 
 
+_LOCAL_CACHE: tuple[tuple, dict[str, UserRecord]] | None = None
+
+
+def _local_users_signature(path: Path) -> tuple | None:
+    """Stat-Signatur fuer den Parse-Cache; aendert sich bei jedem Schreiben.
+
+    _write_local_users ersetzt die Datei atomar (neuer Inode), manuelle
+    Aenderungen aendern mtime/size — beides invalidiert den Cache.
+    """
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (str(path), st.st_ino, st.st_mtime_ns, st.st_size)
+
+
 def local_users_by_key() -> dict[str, UserRecord]:
-    global _LOCAL_DIAG_LOGGED
+    """Lokale User aus users.yaml; geparst wird nur bei geaenderter Datei.
+
+    parse_users() laeuft mehrfach pro Request (Auth, Rollenpruefung,
+    OAuth-Signatur) — ohne Cache las jeder Aufruf die YAML-Datei neu.
+    """
+    global _LOCAL_CACHE
     path = _users_file()
+    signature = _local_users_signature(path)
+    if signature is None:
+        return {}
+    cached = _LOCAL_CACHE
+    if cached is not None and cached[0] == signature:
+        return dict(cached[1])
+    result = _load_local_users(path)
+    _LOCAL_CACHE = (signature, result)
+    return dict(result)
+
+
+def _load_local_users(path: Path) -> dict[str, UserRecord]:
+    global _LOCAL_DIAG_LOGGED
     if not path.exists():
         return {}
 
@@ -212,9 +246,17 @@ def _write_local_users(records: list[UserRecord]) -> None:
         os.replace(tmp_name, path)
         path.chmod(0o600)
     finally:
+        _invalidate_local_users_cache()
         tmp = Path(tmp_name)
         if tmp.exists():
             tmp.unlink()
+
+
+def _invalidate_local_users_cache() -> None:
+    """Eigene Schreibvorgaenge nie auf die Stat-Signatur allein verlassen
+    (grobe mtime-Aufloesung auf manchen Dateisystemen)."""
+    global _LOCAL_CACHE
+    _LOCAL_CACHE = None
 
 
 def create_local_user(username: str, key: str, role: str) -> UserRecord:

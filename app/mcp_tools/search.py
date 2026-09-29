@@ -24,9 +24,6 @@ import time
 logger = logging.getLogger("kiwiki.mcp_tools.search")
 
 
-logger = logging.getLogger("kiwiki.mcp_tools.search")
-
-
 _GREP_JOBS_MAX = 50
 _GREP_JOB_TTL = 600  # 10 minutes
 _grep_jobs: dict[str, dict] = {}

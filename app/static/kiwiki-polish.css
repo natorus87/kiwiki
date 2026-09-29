@@ -458,6 +458,35 @@ header {
    wären wirkungslos. */
 .hero-title em { text-shadow: none; }
 .quick-actions { margin-top: var(--space-4); }
+.quick-more { display: none; }
+
+@media (max-width: 540px) {
+  /* Drei Buttons passen nicht nebeneinander: nur die Primäraktion bleibt
+     sichtbar, Tags/Verlauf wandern ins Überlauf-Menü. */
+  .quick-actions { display: flex; gap: var(--space-2); }
+  .quick-actions > .btn-primary { flex: 1; justify-content: center; }
+  .quick-actions > a.btn-ghost { display: none; }
+  .quick-more { display: block; position: relative; }
+  .quick-more > summary { list-style: none; }
+  .quick-more > summary::-webkit-details-marker { display: none; }
+  .quick-more-menu {
+    position: absolute; right: 0; top: calc(100% + var(--space-1)); z-index: 30;
+    display: flex; flex-direction: column; gap: var(--space-1);
+    min-width: 200px; padding: var(--space-2);
+    background: var(--md-surface); border: 1px solid var(--md-outline-v);
+    border-radius: var(--radius-sm);
+  }
+  .quick-more-menu .btn { justify-content: flex-start; }
+
+  /* Notizansicht: gleiches Muster — Bearbeiten bleibt, Export/Loeschen ins
+     Menue. Ohne Schreibrecht (kein Bearbeiten) bleibt Export sichtbar. */
+  .file-actions { flex-wrap: nowrap; }
+  .file-actions:has(.btn-primary) > .file-action-secondary { display: none; }
+  .file-actions:not(:has(.btn-primary)) > .file-actions-more { display: none; }
+}
+
+/* Kopier-Icon neben dem Pfad: mindestens 24 px Zeigerziel (WCAG 2.5.8). */
+.btn-copy-path { min-width: 24px; min-height: 24px; }
 
 /* Onboarding und MCP-Zugang: vollstaendig da, aber eingeklappt. */
 .home-help {
@@ -597,6 +626,17 @@ header {
   grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
   gap: var(--space-2);
 }
+/* Kompakte Wolke auf der Startseite: Chips im Fluss statt Kartenraster.
+   Leer (keine Tags) blendet sich die Sektion selbst aus. */
+.home-tags:empty { display: none; }
+.tag-cloud-compact { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.tag-cloud-compact .tag-chip {
+  border: 1px solid var(--md-outline-v);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-sm);
+  min-height: 28px;
+}
 .tag-item {
   display: flex;
   flex-direction: column;
@@ -668,6 +708,45 @@ header {
   background: var(--md-primary-dim2);
   color: var(--md-primary);
 }
+
+/* Tag-Verzeichnis: eine Zeile pro Tag (Chip links, Dateien rechts). */
+.tag-index {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--md-outline-v);
+  max-width: var(--content-reading);
+}
+.tag-index-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 200px) minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--md-outline-v);
+}
+.tag-index-row .tag-chip { justify-content: flex-start; min-height: 28px; }
+.tag-index-files {
+  min-width: 0;
+  color: var(--md-on-surface-v);
+  font-size: var(--text-sm);
+  line-height: 1.7;
+}
+.tag-index-files a {
+  display: inline-block;
+  min-height: 24px;
+  color: var(--md-on-surface-v);
+  text-decoration: none;
+}
+.tag-index-files a:hover { color: var(--md-primary); }
+.tag-index-sep { margin: 0 var(--space-2); color: var(--md-outline); }
+.tag-index-more { margin-left: var(--space-2); color: var(--md-outline); font-family: var(--font-mono); }
+@media (max-width: 540px) {
+  .tag-index-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
+}
+
+/* Startseite: Tag-Wolke als Seitenpanel neben der Zuletzt-Liste. */
+.home-tags .section-label { margin-bottom: var(--space-3); }
 
 .search-history-list {
   margin: 0;

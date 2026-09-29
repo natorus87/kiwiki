@@ -3,7 +3,7 @@
 {% block title %}{{ t.title }} – kiwiki{% endblock %}
 
 {% block page_assets %}
-<link rel="stylesheet" href="/static/knowledge-graph.css?v=20260805-button-align">
+<link rel="stylesheet" href="/static/knowledge-graph.css?v=20260929-ui-review">
 <script src="/static/knowledge-graph.js?v=20260803-mobile-fit" defer></script>
 {% endblock %}
 
@@ -61,7 +61,7 @@
         <h1 id="knowledge-title">{{ t.atlas }}</h1>
       </div>
     </div>
-    <div class="knowledge-stats" aria-live="polite">
+    <div class="knowledge-stats" aria-live="polite"{% if not knowledge_enabled %} hidden{% endif %}>
       <span><strong id="knowledge-node-count">–</strong> {{ t.nodes }}</span>
       <span><strong id="knowledge-edge-count">–</strong> {{ t.synapses }}</span>
       <span class="knowledge-depth"><strong id="knowledge-depth">100%</strong> {{ t.depth }}</span>
@@ -86,10 +86,17 @@
     </div>
     <div class="knowledge-empty" id="knowledge-empty" hidden>
       <span class="empty-neuron" aria-hidden="true"></span>
+      {% if knowledge_enabled %}
       <h2>{{ t.empty_title }}</h2>
       <p>{{ t.empty_text }}</p>
       {% if user.role in ['write', 'admin'] %}
       <button type="button" id="knowledge-reindex" class="btn btn-primary">{{ t.reindex }}</button>
+      {% endif %}
+      {% else %}
+      {# Ausgeschaltete Engine ist kein leerer Graph: kein Rebuild-Knopf, der
+         nur scheitern kann, sondern ein Hinweis, wo man sie einschaltet. #}
+      <h2>{{ t.disabled_title }}</h2>
+      <p>{{ t.disabled_text }}</p>
       {% endif %}
     </div>
     <div class="knowledge-error" id="knowledge-error" role="alert" hidden>

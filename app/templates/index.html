@@ -158,6 +158,10 @@
     margin: 0 0 var(--space-4);
     display: flex; align-items: center; gap: var(--space-2);
   }
+  @media (max-width: 540px) {
+    /* Gesperrte Caps fressen auf 375px die Breite — mobil eng laufen. */
+    .section-label { letter-spacing: 0.06em; }
+  }
   .section-label::after {
     content: ''; flex: 1;
     height: 1px; background: var(--md-outline-v);
@@ -302,6 +306,58 @@
     }
   }
 
+  /* ── Kompakte Kopfzeile fuer gefuellte Workspaces ──────────────────── */
+  .home-head {
+    padding: var(--space-8) 0 var(--space-4);
+    margin-bottom: var(--space-4);
+  }
+  .home-head .home-head-main {
+    display: flex; flex-wrap: wrap; align-items: center;
+    justify-content: space-between; gap: var(--space-3);
+  }
+  .home-title {
+    font-family: var(--font-display);
+    font-size: var(--text-2xl);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--md-on-surface);
+    margin: 0;
+  }
+  .home-head .quick-actions { margin: 0; }
+
+  /* Liste links, Tags rechts; ohne Tags (leere Wolke) eine Spalte. */
+  .home-grid { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); align-items: start; }
+  .home-grid:has(.home-tags:empty) { grid-template-columns: minmax(0, 1fr); }
+  @media (max-width: 900px) {
+    .home-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+  .recent-switch {
+    display: inline-flex; gap: var(--space-1);
+    padding: var(--space-0-5);
+    margin-bottom: var(--space-3);
+    border: 1px solid var(--md-outline-v);
+    border-radius: var(--radius-sm);
+  }
+  .recent-tab {
+    min-height: 32px;
+    padding: 0 var(--space-3);
+    border: 0; border-radius: calc(var(--radius-sm) - 2px);
+    background: transparent;
+    color: var(--md-on-surface-v);
+    font: inherit; font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .recent-tab:hover { color: var(--md-on-surface); }
+  .recent-tab[aria-pressed="true"] {
+    background: var(--md-surface-c);
+    color: var(--md-on-surface);
+    font-weight: 600;
+  }
+  .recent-tab:focus-visible { outline: 2px solid var(--md-primary); outline-offset: 1px; }
+  @media (pointer: coarse), (max-width: 760px) {
+    .recent-tab { min-height: var(--touch-target); }
+  }
+
   /* ── Subtle noise overlay ────────────────────────────────────────── */
   .content-area::after {
     content: '';
@@ -319,13 +375,19 @@
 
 {% block content %}
 <div class="content-inner">
-  <!-- ── Hero & Info ──────────────────────────────────────────────── -->
-  <section class="hero">
-    <div>
+  {# Einfuehrung (grosses Logo + Erklaersatz) nur fuer leere Workspaces —
+     wiederkehrende Nutzer brauchen oben Weiterarbeiten und Finden, das Logo
+     steht ohnehin im Header. #}
+  <section class="{{ 'hero' if workspace_is_empty else 'home-head' }}">
+    <div class="home-head-main">
+      {% if workspace_is_empty %}
       <h1 class="hero-title">ki<em>wiki</em></h1>
       <p class="hero-sub">
         {{ t.home_intro }}
       </p>
+      {% else %}
+      <h1 class="home-title">{{ t.home_title }}</h1>
+      {% endif %}
       <div class="quick-actions">
         <button type="button" class="btn btn-primary needs-write" onclick="kwNewNote()">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
@@ -333,24 +395,38 @@
         </button>
         <a class="btn btn-ghost kw-view-link" href="/?view=tags" data-view-endpoint="/ui/tags">{{ t.tags }}</a>
         <a class="btn btn-ghost kw-view-link" href="/?view=search-history" data-view-endpoint="/ui/search-history">{{ t.search_history }}</a>
+        {# Mobil ist kein Platz für drei Buttons: Tags/Verlauf wandern ins
+           Überlauf-Menü, nur die Primäraktion bleibt vollbreit. #}
+        <details class="quick-more">
+          <summary class="btn btn-ghost" aria-label="{{ t.more_actions }}">···</summary>
+          <div class="quick-more-menu">
+            <a class="btn btn-ghost kw-view-link" href="/?view=tags" data-view-endpoint="/ui/tags" onclick="this.closest('details').open=false">{{ t.tags }}</a>
+            <a class="btn btn-ghost kw-view-link" href="/?view=search-history" data-view-endpoint="/ui/search-history" onclick="this.closest('details').open=false">{{ t.search_history }}</a>
+          </div>
+        </details>
       </div>
     </div>
   </section>
 
-  <!-- ── Dashboard: Zuletzt bearbeitet & erstellt ─────────────────── -->
-  <section class="dashboard">
+  <!-- ── Dashboard: eine Zuletzt-Liste mit Umschalter + Tags ─────────── -->
+  {# Zwei Spalten "bearbeitet"/"erstellt" zeigten im Alltag dieselben Notizen
+     doppelt. Jetzt eine Liste mit Umschalter; die Tag-Wolke steht daneben im
+     ersten Viewport statt darunter. #}
+  <section class="dashboard home-grid">
     <div class="dashboard-panel">
-      <p class="section-label">{{ t.recently_edited }}</p>
-      <div id="recent-edited" class="recent-files" hx-get="/ui/recent-edited" hx-trigger="load" hx-swap="innerHTML">
-        <div class="recent-loading">{{ t.loading }}</div>
+      <div class="recent-switch" role="group" aria-label="{{ t.recent_notes }}">
+        <button type="button" class="recent-tab" aria-pressed="true" aria-controls="recent-list"
+                data-recent-endpoint="/ui/recent-edited">{{ t.recently_edited }}</button>
+        <button type="button" class="recent-tab" aria-pressed="false" aria-controls="recent-list"
+                data-recent-endpoint="/ui/recent-created">{{ t.recently_created }}</button>
+      </div>
+      <div id="recent-list" class="recent-files" aria-live="polite"
+           hx-get="/ui/recent-edited" hx-trigger="load" hx-swap="innerHTML">
+        <div class="recent-loading" role="status">{{ t.loading }}</div>
       </div>
     </div>
-    <div class="dashboard-panel">
-      <p class="section-label">{{ t.recently_created }}</p>
-      <div id="recent-created" class="recent-files" hx-get="/ui/recent-created" hx-trigger="load" hx-swap="innerHTML">
-        <div class="recent-loading">{{ t.loading }}</div>
-      </div>
-    </div>
+    <aside class="home-tags dashboard-panel" aria-label="{{ t.tags }}"
+           hx-get="/ui/tags?compact=1" hx-trigger="load" hx-swap="innerHTML"></aside>
   </section>
 
   <details class="home-help"{% if workspace_is_empty %} open{% endif %}>

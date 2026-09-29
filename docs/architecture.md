@@ -27,12 +27,18 @@ Two users can never read each other's files, search each other's index, or share
 ## Request Flow Example: Note View
 
 1. Browser issues GET `/ui/file?path=notes/demo.md`
+   (ohne `HX-Request`-Header und mit `text/html`-Accept antwortet der Endpoint
+   mit 307 auf `/?file=…` — HTMX-Partials haben kein Layout, Deep-Links schon)
 2. `_session_user(request)` (in `app/main.py`) reads the `kiwiki_session` cookie and returns a `User`
 3. `set_user_ns(user.username)` is applied via the auth dependency
 4. `read_file("notes/demo.md")` resolves to `/data/<user>/notes/demo.md` via `tenancy.user_root()`
-5. The Markdown is sanitized through `nh3` and rendered to HTML via `markdown`
+5. The Markdown passes `_linkify_wikilinks` (`[[Ziel]]` → interne Links, Obsidian-Konvention:
+   relativ zum Ordner, `.md`-Ergänzung, fehlende Ziele als `.missing`), then sanitized
+   through `nh3` and rendered to HTML via `markdown`
 6. `templates.TemplateResponse` renders `partials/file_view.html` with the context:
-   - `title`, `path`, `updated`, `owner`, `tags`
+   - `title`, `title_redundant` (True, wenn der Frontmatter-Titel der ersten Body-H1
+     gleicht — dann entfällt die View-H1, Breadcrumb + Meta bleiben), `path`,
+     `updated`, `owner`, `tags`
    - `rendered` — sanitized HTML
    - `user` — the authenticated user (used by the template's role guard)
    - `can_delete` — write-or-admin flag for the delete button
@@ -89,6 +95,9 @@ nach `DOMContentLoaded` wäre als Sprung sichtbar. Auf Mobile hält CSS die Side
 | `partials/file_tree.html` | `GET /ui/files?path=…` | `#file-tree` |
 | `partials/file_view.html` | `GET /ui/file?path=…` | `#main-content` |
 | `partials/search_results.html` | `POST /ui/search` | `#search-results` |
+| `partials/recent_edited.html` / `partials/recent_created.html` | `GET /ui/recent-edited`, `GET /ui/recent-created` | `#recent-edited`, `#recent-created` (mit `excerpt` + `tags` je Eintrag, max. 8, Dateien >100 KB ohne Ausschnitt) |
+| `partials/tag_cloud.html` | `GET /ui/tags?compact=1` | `.home-tags` (Top-12-Chips; leer → `""`, Sektion blendet sich per `:empty` aus) |
+| `partials/tags_overview.html` | `GET /ui/tags` | Subview mit Breadcrumb + Dateilisten |
 | `partials/sidebar_account.html` | included by `index.html` and `editor.html` | `.sidebar-account` |
 
 Partials must be self-contained — they cannot rely on `<script>` tags or external `<style>` from their parent page. All interactivity for partials lives in `kiwiki.js`, which is loaded once in `layout.html`.
@@ -245,6 +254,21 @@ persisted folder restoration from exhausting the lower programmatic-read budget.
 
 Behind a reverse proxy, enable `KIWIKI_TRUST_PROXY=true` only together with `KIWIKI_TRUSTED_PROXY_CIDRS`; otherwise
 all users share the proxy peer IP and therefore one limiter window.
+
+## OAuth Token Lifecycle
+
+OAuth tokens are self-contained signed tokens (no server-side session): access tokens live 24h
+(`KIWIKI_OAUTH_TOKEN_TTL_SECONDS`), refresh tokens 30 days (`KIWIKI_OAUTH_REFRESH_TOKEN_TTL_SECONDS`).
+Refresh is single-use with reuse detection — each successful refresh returns a rotated refresh token and the
+presented one is consumed (tracked by `jti` in `_oauth_refresh_seen`, RAM-only like codes and DCR clients).
+Re-presenting a consumed token yields `invalid_grant`. Only the success path consumes; failed client/resource
+binding checks do not burn the token.
+
+Dynamic client registration (`POST /oauth/register`) is intentionally open but bounded twice: 128 clients per
+process (`KIWIKI_OAUTH_MAX_CLIENTS`, 24h TTL) and 16 registrations per source IP per hour
+(`KIWIKI_OAUTH_MAX_REGISTER_PER_IP`), so one source cannot fill all slots and lock legitimate clients into 503.
+`KIWIKI_BASE_URL` must be the public URL — without it, MCP `search`/`fetch` citation URLs stay relative
+(`/ui/file?path=...`) and are useless to OpenAI connectors; the app logs a startup warning when it is unset.
 
 ## Testing
 

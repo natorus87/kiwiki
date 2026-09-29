@@ -100,10 +100,13 @@ All runtime configuration is done through environment variables.
 | `KIWIKI_MAX_RECURSIVE_LIST_ITEMS` | `10000` | Maximum entries returned by recursive listings |
 | `KIWIKI_OAUTH_TOKEN_SECRET` | derived by app | Stable OAuth signing secret; explicitly required by the bundled Compose and Helm deployments |
 | `KIWIKI_OAUTH_TOKEN_TTL_SECONDS` | `86400` | OAuth access-token lifetime |
-| `KIWIKI_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | OAuth refresh-token lifetime |
+| `KIWIKI_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | OAuth refresh-token lifetime; rotation is single-use with reuse detection |
+| `KIWIKI_OAUTH_MAX_REFRESH_SEEN` | `10000` | Maximum consumed refresh-token ids kept for reuse detection |
 | `KIWIKI_OAUTH_ALLOWED_REDIRECT_HOSTS` | ChatGPT hosts | Additional comma-separated OAuth redirect hosts; HTTPS or loopback only |
 | `KIWIKI_OAUTH_MAX_CODES` | `256` | Maximum pending OAuth authorization codes per process |
 | `KIWIKI_OAUTH_MAX_CLIENTS` | `128` | Maximum dynamically registered OAuth clients per process |
+| `KIWIKI_OAUTH_MAX_REGISTER_PER_IP` | `16` | Maximum dynamic-client registrations per source IP per hour |
+| `KIWIKI_OAUTH_MAX_REGISTER_SOURCES` | `4096` | Maximum distinct source IPs tracked by the registration limit (oldest dropped first) |
 | `KIWIKI_OAUTH_CLIENT_TTL_SECONDS` | `86400` | Inactive dynamic-client lifetime |
 | `KIWIKI_OAUTH_MAX_REDIRECT_URIS` | `10` | Maximum redirect URIs per dynamic client |
 | `KIWIKI_MCP_MAX_SSE_SESSIONS` | `128` | Maximum simultaneous legacy SSE sessions |
