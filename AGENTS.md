@@ -81,9 +81,12 @@ Vor jeder Fertigmeldung müssen diese drei Gates lokal grün sein — genau so, 
 
 ```bash
 .venv/bin/python -m ruff check app tests        # Lint
-.venv/bin/python -m pytest -q                    # 595 Tests
+.venv/bin/python -m pytest -q                    # 722 Tests
 .venv/bin/python -m coverage report --fail-under=75
 ```
+
+Die `.venv` laeuft auf Python 3.12 wie Dockerfile und CI-Matrix (3.12/3.13); `pyproject.toml`
+erlaubt `<3.14`. Neu aufsetzen: `uv venv .venv --python 3.12 && uv pip install -r requirements-dev.txt`.
 
 Der Browser-Smoke-Test (`tests/browser_smoke.py`) läuft nur in CI, weil er Chromium
 und einen echten Server braucht.

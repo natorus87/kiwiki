@@ -7,6 +7,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-09-29
+
+### Upgrade-Hinweise
+- **Refresh-Tokens werden rotiert.** `grant_type=refresh_token` liefert jetzt zusätzlich einen
+  neuen `refresh_token`; der eingelöste ist verbraucht (`invalid_grant` bei Wiederverwendung).
+  Spec-konforme OAuth-Clients (ChatGPT, Claude) übernehmen den neuen Token automatisch.
+- **Bearer-Header öffnen keine UI-Routen mehr.** Nur `POST /` (JSON-RPC) akzeptiert Bearer ohne
+  Session; `/ui/*`, `/editor`, `/settings` verlangen die Browser-Session. REST (`/api/*`) und
+  MCP (`/mcp`) sind unverändert.
+- **Rohes API-Key-Cookie ist veraltet.** Funktioniert weiter, loggt aber eine Warnung; bitte auf
+  `Authorization: Bearer` umstellen.
+
 ### Security
 - **Bearer-Header umging die Session-Prüfung aller UI-Routen** — die WebAuthMiddleware ließ
   jeden Request mit `Authorization: Bearer <beliebig>` ungeprüft zu `/editor`, `/ui/*` und
@@ -638,7 +650,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **Container:** Docker + docker-compose
 - **Orchestration:** Helm charts for Kubernetes
 
-[Unreleased]: https://github.com/natorus87/kiwiki/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/natorus87/kiwiki/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/natorus87/kiwiki/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/natorus87/kiwiki/compare/v3.2.0...v4.0.0
 [3.2.0]: https://github.com/natorus87/kiwiki/compare/v3.1.1...v3.2.0
 [3.1.1]: https://github.com/natorus87/kiwiki/compare/v3.1.0...v3.1.1

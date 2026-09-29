@@ -245,5 +245,5 @@ def test_server_version_stimmt_mit_app_constants():
     wuerde bei der Aufteilung auseinanderlaufen."""
     from app.constants import APP_VERSION
 
-    assert APP_VERSION == "4.0.0"
+    assert APP_VERSION == "4.1.0"
     assert mcp_server.APP_VERSION == APP_VERSION
