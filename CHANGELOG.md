@@ -4,331 +4,329 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+This changelog is written in English only.
 
 ## [Unreleased]
 
 ## [4.1.0] - 2026-09-29
 
-### Upgrade-Hinweise
-- **Refresh-Tokens werden rotiert.** `grant_type=refresh_token` liefert jetzt zusätzlich einen
-  neuen `refresh_token`; der eingelöste ist verbraucht (`invalid_grant` bei Wiederverwendung).
-  Spec-konforme OAuth-Clients (ChatGPT, Claude) übernehmen den neuen Token automatisch.
-- **Bearer-Header öffnen keine UI-Routen mehr.** Nur `POST /` (JSON-RPC) akzeptiert Bearer ohne
-  Session; `/ui/*`, `/editor`, `/settings` verlangen die Browser-Session. REST (`/api/*`) und
-  MCP (`/mcp`) sind unverändert.
-- **Rohes API-Key-Cookie ist veraltet.** Funktioniert weiter, loggt aber eine Warnung; bitte auf
-  `Authorization: Bearer` umstellen.
+### Upgrade notes
+- **Refresh tokens are rotated.** `grant_type=refresh_token` now also returns a new
+  `refresh_token`; the redeemed one is consumed (`invalid_grant` on reuse). Spec-compliant OAuth
+  clients (ChatGPT, Claude) pick up the new token automatically.
+- **Bearer headers no longer open UI routes.** Only `POST /` (JSON-RPC) accepts a bearer token
+  without a session; `/ui/*`, `/editor` and `/settings` require the browser session. REST (`/api/*`)
+  and MCP (`/mcp`) are unchanged.
+- **Raw API-key cookies are deprecated.** They keep working but log a warning; please switch to
+  `Authorization: Bearer`.
 
 ### Security
-- **Bearer-Header umging die Session-Prüfung aller UI-Routen** — die WebAuthMiddleware ließ
-  jeden Request mit `Authorization: Bearer <beliebig>` ungeprüft zu `/editor`, `/ui/*` und
-  `/settings` durch; kein Datenabfluss nur, weil der Namespace fehlte. Der Bypass gilt jetzt
-  ausschließlich für `POST /` (JSON-RPC-Connectoren), `/ui/export` verlangt zusätzlich
-  explizit einen angemeldeten User.
-- **Notizinhalt konnte UI-Steuerklassen setzen** — `class` auf `<a>` war frei erlaubt
-  (`kw-file-link`, `btn btn-danger` …): App-Buttons im Notiztext und globale Click-Handler
-  ohne Daten. nh3 filtert Klassen jetzt per Whitelist (`<a>`: nur `wikilink`/`missing`,
-  `<code>`: nur `language-*`), auch im HTML-Export.
-- **Session-Cookie ohne `Secure` bei direktem TLS** — das Flag hing nur an
-  `KIWIKI_TRUST_PROXY`; jetzt auch am Request-Schema `https`.
-- **Legacy-Cookie-Auth mit rohem API-Key** loggt eine Deprecation-Warnung (einmal pro
-  User und Prozess); Grenzen des RAM-basierten Refresh-Replay-Schutzes stehen in
-  `SECURITY.md`.
-- **OAuth-Registrierungszähler wuchs unbegrenzt** — nur die anfragende IP wurde bereinigt.
-  Jetzt globales Pruning plus Obergrenze `KIWIKI_OAUTH_MAX_REGISTER_SOURCES` (4096).
+- **A bearer header bypassed the session check on every UI route** — the WebAuthMiddleware let any
+  request carrying `Authorization: Bearer <anything>` through to `/editor`, `/ui/*` and `/settings`
+  unchecked; data only stayed private because the namespace was missing. The bypass now applies to
+  `POST /` (JSON-RPC connectors) only, and `/ui/export` additionally requires an authenticated user.
+- **Note content could set UI control classes** — `class` on `<a>` was allowed freely (`kw-file-link`,
+  `btn btn-danger` …): app-styled buttons inside notes and global click handlers firing without data.
+  nh3 now filters classes through an allowlist (`<a>`: only `wikilink`/`missing`, `<code>`: only
+  `language-*`), including the HTML export.
+- **Session cookie without `Secure` on direct TLS** — the flag depended on `KIWIKI_TRUST_PROXY` only;
+  it now also follows the `https` request scheme.
+- **Legacy cookie auth with a raw API key** logs a deprecation warning (once per user and process);
+  the limits of the in-memory refresh-replay protection are documented in `SECURITY.md`.
+- **The OAuth registration counter grew without bound** — only the requesting IP was pruned. It is now
+  pruned globally and capped by `KIWIKI_OAUTH_MAX_REGISTER_SOURCES` (4096).
 
 ### Fixed
-- **MCP `list_all_files` verletzte nach einem Dashboard-Aufruf sein outputSchema** — das
-  Dashboard reicherte die gecachten Einträge um `excerpt` an; strikte Clients verwarfen
-  für bis zu 5 s die komplette Antwort. `list_all_files` liefert jetzt Kopien.
-- **Wikilinks in `~~~`-Blöcken und Inline-Code** wurden zu sichtbarem, escaptem
-  `<a …>`-Text; beide bleiben jetzt wörtlich. Die Titel-Doppelungsprüfung ignoriert
-  führende Trennlinien und Überschriften in Codeblöcken.
-- **Editor-Vorschau löste Wikilinks nicht relativ zur Quellnotiz auf** — jetzt identisch
-  zum Server (per Test gegen `_resolve_wikilink` abgeglichen).
-- **Editor-Vorschau war bis auf Wikilinks und Code leer** — der eigene Textknoten-Renderer
-  gab `undefined` zurück, was ToastUI 3 als „nichts rendern“ behandelt. Jetzt
-  `context.origin()`; der Browser-Smoke prüft Überschrift, Absatz, Tabellenzelle und
-  Aufgabentext in der Vorschau.
-- **Notizansicht ohne sichtbare Hauptüberschrift** — Server (`title_redundant`) und CSS
-  (`h1:first-child { display: none }`) blendeten gemeinsam beide Titel aus. Die CSS-Regel
-  ist weg; bei abweichendem Titel werden Body-h1 zu h2, sodass genau eine h1 bleibt.
-- **Unsichtbare Auswahl-Checkboxen waren Tab-Stopps** — jeder Baumeintrag kostete zwei
-  Tabs. Außerhalb des Auswahlmodus tragen sie jetzt `tabindex="-1"`.
-- **Escape klappte am Desktop die Sidebar zu** statt offene Suchergebnisse zu schließen.
-  Suchergebnisse haben Vorrang; per Escape schließt nur noch das mobile Overlay.
-- **Exzerpte zeigten Wikilink-Rohsyntax** (`[[../adr-001-sqliteADR 001]]`) und den Titel
-  doppelt. Wikilinks werden zu ihrem Label bzw. Dateistamm, eine führende Überschrift
-  gleich dem Titel entfällt — in Dashboard und Suchtreffern.
-- **Aufgabenlisten** (`- [ ]`/`- [x]`) erscheinen in der Notizansicht als deaktivierte
-  Checkboxen wie in der Editor-Vorschau. Die Checkbox wird nach nh3 gesetzt; Notizinhalt
-  kann weiterhin kein `<input>` einschleusen.
-- **Knowledge-Seite bei ausgeschalteter Engine** zeigte „0 Knoten / 100 % Tiefe“ und einen
-  Rebuild-Knopf, der nur scheitern konnte. Jetzt ein Hinweis, wie man sie einschaltet.
-- **Direkt aufgerufene Notiz-URLs zeigten eine ungestylte Fragmentseite** — `/ui/file` liefert
-  ein HTMX-Partial ohne Layout. Browser-Navigation (Deep-Link, geteilter Link, Reload,
-  erkannt an fehlendem `HX-Request` plus `text/html`-Accept) landet jetzt per 307 auf
-  `/?file=`, die dieselbe Notiz vollständig nachlädt. Maschinen-Clients ohne `text/html`
-  bekommen weiter das Fragment, damit Zitat-URLs abrufbar bleiben.
-- **`[[Wikilinks]]` sind jetzt klickbar** — bisher standen sie als toter Text in Notiz
-  und Editor-Vorschau. Serverseitig (`_render_markdown_safe`) und in der ToastUI-Vorschau
-  (`customHTMLRenderer`) werden sie nach Obsidian-Konvention aufgelöst (relativ zum Ordner,
-  `.md`-Ergänzung); fehlende Ziele tragen die Klasse `missing` und sind gestrichelt
-  markiert, Codeblöcke und Inline-Code bleiben wörtlich.
-- **Frontmatter leckt nicht mehr in die Editor-Vorschau** — `---`-Block, Titel und Tags
-  wurden als HR, Überschrift und Fließtext gerendert. Textknoten im Frontmatter-Bereich
-  werden unterdrückt, leere Hüllen (HR, leere Blöcke am Anfang) per Observer entfernt;
-  die Quelle bleibt unberührt.
-- **„Zuletzt erstellt" log „keine Notiz", obwohl Notizen existierten** — der Filter
-  verlangte Frontmatter-`created`. Fallback ist jetzt die Dateisystem-Zeit (birthtime,
-  sonst ctime, sonst mtime); `updated` ohne Stempel fällt auf mtime zurück.
-- **Alle Zeitstempel standen auf „Heute, 00:00"** — Schreiben speicherte nur das Datum.
-  `created`/`updated` enthalten jetzt die Uhrzeit (UTC, minutengenau); die Anzeige
-  rechnet wie bisher in Ortszeit um.
-- **Suchfelder benennen ihren Scope** — Top-Bar (`Suchen…`) und Sidebar (`Filtern…`)
-  waren zwei Lupen ohne Versprechen. Placeholder tragen jetzt Verb + Ziel
-  („Notizen durchsuchen…" / „Dateibaum filtern…", en analog).
-- **Dashboard-Listen zeigen Vorschau und Tags** — bisher nur Titel + Datum, also
-  blindes Klicken. Jede Zeile hat jetzt Exzerpt (erste ~120 Zeichen, ohne
-  Frontmatter/Markdown-Syntax, Dateien >100 KB ausgenommen) und bis zu 3 Tags.
-- **Mobile CTA-Row passt auf 375px** — drei Buttons auf Kante sind Geschichte:
-  nur `+ Neue Notiz` bleibt vollbreit, Tags/Verlauf wandern in ein `···`-Menü
-  (natives `<details>`, schließt bei Auswahl). Section-Labels laufen mobil eng
-  (Tracking 0.18em → 0.06em).
-- **Startseite nutzt die leere Hälfte** — neue Tag-Wolke (`/ui/tags?compact=1`,
-  Top-12-Chips, ohne Breadcrumb/Listen); ohne Tags bleibt die Sektion unsichtbar.
-- **Doppelte H1 in der Notizansicht** — Frontmatter-Titel == erste Body-H1 blendet
-  die View-Überschrift aus (Breadcrumb + Meta bleiben); unterschiedliche Titel
-  zeigen beide wie bisher.
-- **Interne `.kiwiki`-Dateien waren über Lese-APIs abrufbar** — `validate_content_read_path()` existierte,
-  wurde aber nur von `read_lines`/`file_info` aufgerufen. `read_file`, `fetch` und `read_many` (und damit
-  `/api/file`, `/ui/file` und der Editor) lieferten `.kiwiki/agent_log.jsonl` trotzdem aus. Der Guard steht
-  jetzt zentral in `read_file()` und `_read_frontmatter_only()`; Schreiben war bereits gesperrt und bleibt es.
-- **MCP- und UI-Suche hatten kein Query-Limit** — nur REST deckelte über `SearchRequest` auf 512 Zeichen.
-  `search()` kürzt jetzt serverseitig auf `MAX_QUERY_LENGTH`, und das `search`-Werkzeugschema deklariert
-  `maxLength: 512`. Unbegrenzt lief ein MB-Query in FTS-Sanitize und LIKE-Fallback und brannte CPU.
-- **OAuth-Refresh-Token rotieren jetzt** — vorher blieb ein Refresh-Token 30 Tage wiederverwendbar.
-  Jede erfolgreiche Einlösung liefert ein neues Refresh-Token, das präsentierte ist verbraucht
-  (Wiederverwendung → `invalid_grant`, RAM-only wie Codes und DCR-Clients). Fehlgeschlagene
-  Client/Resource-Bindungsprüfungen verbrauchen den Token bewusst nicht.
-- **Offene DCR-Registrierung ist pro IP begrenzt** — 128 Slots mit 24h-TTL ließen sich von einer Quelle
-  füllen, danach bekamen legitime Clients 503. Jetzt maximal 16 Registrierungen pro Quell-IP und Stunde
-  (`KIWIKI_OAUTH_MAX_REGISTER_PER_IP`); nur erfolgreiche Registrierungen zählen.
-- **Unbekannte MCP-Methode kommt mit HTTP 200** — `-32601` wurde als HTTP 404 ausgeliefert und ließ den
-  Server defekt aussehen. Method-not-found ist ein Protokoll-, kein Transportfehler und gehört in den
-  JSON-RPC-Fehlerkörper bei HTTP 200.
-- **Strengere MCP-Schemas für OpenAI-Clients** — `fetch` verlangt per `anyOf` entweder `id` (OpenAI-Kontrakt)
-  oder `path` (Alias für direkte Aufrufer) statt gar keiner Pflicht; ohne gesetzte `KIWIKI_BASE_URL` warnt
-  der Start, weil Zitat-URLs dann relativ und für OpenAI-Connectoren unbrauchbar wären.
-- **Dev-Abhängigkeit `httpx2` auf 2.13.1 angehoben** — 6 bekannte CVEs in 2.7.0 (WSS-over-SOCKS ohne TLS,
-  SSE-ReDoS, Multipart-Header-Injection, Decompression-Bomb, Request-Smuggling). Nur Dev-Scope, weder
-  `app/` noch `tests/` importieren das Paket; Produktion war nicht erreichbar.
-- **Die Live-Suche hat nie gefeuert** — `hx-trigger` stand auf dem Suchformular mit dem Modifier `changed`. htmx
-  vergleicht dafür `elt.value` des Trigger-Elements, und ein `<form>` hat keines: der Vergleich war immer
-  `undefined === undefined` und verwarf jedes Eingabe- und Submit-Event. Tippen zeigte nichts, Enter zeigte nichts,
-  und eine zuvor sichtbare Trefferliste blieb bei geänderter Suche stehen — also Treffer zu einer anderen Anfrage.
-- **Die Tag-Übersicht sah nur das Wurzelverzeichnis** — `/ui/tags` las mit `list_files(".")` nur die oberste Ebene
-  und meldete „Noch keine Tags vorhanden", sobald Notizen in Ordnern lagen. Sie nutzt jetzt `list_all_files(".")`,
-  das rekursiv läuft und die Tags bereits mitliefert.
-- **Der Dateikopf lief auf schmalen Geräten über den Bildschirmrand** — `.file-header` ist dort ein Column-Flex mit
-  `flex-wrap: wrap`; die Breite ist dabei die Kreuzachse und wächst auf `max-content`. Ein langer Pfad schob den
-  Kopf samt Kopier-Button aus dem sichtbaren Bereich.
-- **Dashboard-Panels schnitten die Zeitangabe ab** — Grid-Kinder haben `min-width: auto`; ein langer Notiztitel zog
-  das Panel über den Rand.
-- **Der Hero blieb auf voller Displaygröße** — `index.html` lädt sein `<style>` nach `kiwiki-polish.css`, weshalb
-  die dortigen Hero-Regeln bei gleicher Spezifität verloren: der Titel stand weiter auf 3.8rem und das Grid behielt
-  die leere zweite Spalte des entfernten Statuspanels.
-- **Markdown-Tabellen hatten einen zu breiten Rahmen** — `display: block` mit `width: 100%` legte den Rahmen um die
-  volle Spaltenbreite, während die Zellen nur ihren Inhalt füllten.
-- **`__import__("os")` in der Indexierer-Hot-Path** — `app/knowledge/indexer.py` hat die Dateigrößengrenze
-  über einen dynamischen Import gelesen. Jetzt ein normaler `import os`; der Key ist damit auch für die
-  Doku-Prüfung sichtbar.
+- **MCP `list_all_files` violated its outputSchema after a dashboard request** — the dashboard enriched
+  the cached entries with `excerpt`; strict clients rejected the whole response for up to 5 s.
+  `list_all_files` now returns copies.
+- **Wikilinks in `~~~` blocks and inline code** turned into visible, escaped `<a …>` text; both now stay
+  literal. The duplicate-title check ignores leading horizontal rules and headings inside code blocks.
+- **The editor preview did not resolve wikilinks relative to the source note** — it now matches the
+  server (verified by a test against `_resolve_wikilink`).
+- **The editor preview was empty apart from wikilinks and code** — the custom text-node renderer
+  returned `undefined`, which ToastUI 3 treats as "render nothing". It now returns `context.origin()`;
+  the browser smoke test checks heading, paragraph, table cell and task text in the preview.
+- **Note view without a visible main heading** — the server (`title_redundant`) and CSS
+  (`h1:first-child { display: none }`) together hid both titles. The CSS rule is gone; when the title
+  differs, body `h1` elements are demoted to `h2`, so exactly one `h1` remains.
+- **Invisible selection checkboxes were tab stops** — every tree entry cost two tabs. Outside select
+  mode they now carry `tabindex="-1"`.
+- **Escape collapsed the desktop sidebar** instead of closing open search results. Search results take
+  precedence; Escape now only closes the mobile overlay.
+- **Excerpts showed raw wikilink syntax** (`[[../adr-001-sqliteADR 001]]`) and repeated the title.
+  Wikilinks become their label or file stem, and a leading heading equal to the title is dropped — in
+  the dashboard and in search results.
+- **Task lists** (`- [ ]`/`- [x]`) render as disabled checkboxes in the note view, matching the editor
+  preview. The checkbox is inserted after nh3; note content still cannot inject an `<input>`.
+- **Knowledge page with the engine turned off** showed "0 nodes / 100 % depth" and a rebuild button that
+  could only fail. It now explains how to turn the engine on.
+- **Directly opened note URLs showed an unstyled fragment page** — `/ui/file` returns an HTMX partial
+  without layout. Browser navigation (deep link, shared link, reload — detected by a missing
+  `HX-Request` header plus a `text/html` Accept) is now redirected with 307 to `/?file=`, which loads the
+  same note in full. Machine clients without `text/html` still get the fragment, so citation URLs remain
+  fetchable.
+- **`[[Wikilinks]]` are clickable** — they used to be dead text in the note view and the editor preview.
+  Server-side (`_render_markdown_safe`) and in the ToastUI preview (`customHTMLRenderer`) they resolve
+  by Obsidian convention (relative to the folder, `.md` appended); missing targets carry the `missing`
+  class and a dashed underline, code blocks and inline code stay literal.
+- **Frontmatter no longer leaks into the editor preview** — the `---` block, title and tags rendered as a
+  horizontal rule, heading and body text. Text nodes inside the frontmatter range are suppressed and empty
+  shells (rule, empty leading blocks) are removed by an observer; the source is untouched.
+- **"Recently created" reported "no note" although notes existed** — the filter required a frontmatter
+  `created`. The fallback is now the filesystem time (birthtime, else ctime, else mtime); `updated`
+  without a stamp falls back to mtime.
+- **Every timestamp read "Today, 00:00"** — writes stored only the date. `created`/`updated` now include
+  the time (UTC, minute precision); the display still converts to local time.
+- **Search fields name their scope** — the top bar (`Suchen…`) and the sidebar (`Filtern…`) were two
+  magnifying glasses without a promise. Placeholders now carry verb and target ("Search notes…" /
+  "Filter file tree…", German equivalents).
+- **Dashboard lists show a preview and tags** — previously only title and date, i.e. clicking blind.
+  Every row now has an excerpt (first ~120 characters without frontmatter/Markdown syntax, files over
+  100 KB excluded) and up to 3 tags.
+- **The mobile CTA row fits at 375 px** — three buttons edge to edge are gone: only `+ New note` stays
+  full width, Tags/History move into a `···` menu (native `<details>`, closes on selection). Section
+  labels use tighter tracking on mobile (0.18em → 0.06em).
+- **The start page uses its empty half** — a new tag cloud (`/ui/tags?compact=1`, top 12 chips, no
+  breadcrumb or lists); without tags the section stays hidden.
+- **Duplicate H1 in the note view** — when the frontmatter title equals the first body H1, the view
+  heading is hidden (breadcrumb and metadata remain); different titles are shown as before.
+- **Internal `.kiwiki` files were readable through read APIs** — `validate_content_read_path()` existed
+  but was only called by `read_lines`/`file_info`. `read_file`, `fetch` and `read_many` (and with them
+  `/api/file`, `/ui/file` and the editor) still served `.kiwiki/agent_log.jsonl`. The guard now sits
+  centrally in `read_file()` and `_read_frontmatter_only()`; writing was already blocked and stays so.
+- **MCP and UI search had no query limit** — only REST capped at 512 characters via `SearchRequest`.
+  `search()` now truncates server-side to `MAX_QUERY_LENGTH`, and the `search` tool schema declares
+  `maxLength: 512`. An unbounded megabyte query ran through FTS sanitising and the LIKE fallback and
+  burned CPU.
+- **OAuth refresh tokens rotate** — previously a refresh token stayed reusable for 30 days. Every
+  successful redemption returns a new refresh token and consumes the presented one (reuse →
+  `invalid_grant`, in memory like codes and DCR clients). Failed client/resource binding checks
+  deliberately do not consume the token.
+- **Open DCR registration is limited per IP** — 128 slots with a 24 h TTL could be filled from a single
+  source, after which legitimate clients got 503. Now at most 16 registrations per source IP and hour
+  (`KIWIKI_OAUTH_MAX_REGISTER_PER_IP`); only successful registrations count.
+- **Unknown MCP methods return HTTP 200** — `-32601` was delivered as HTTP 404 and made the server look
+  broken. Method-not-found is a protocol error, not a transport error, and belongs in the JSON-RPC error
+  body with HTTP 200.
+- **Stricter MCP schemas for OpenAI clients** — `fetch` requires either `id` (OpenAI contract) or `path`
+  (alias for direct callers) via `anyOf` instead of nothing; without `KIWIKI_BASE_URL` the startup logs a
+  warning, because citation URLs would be relative and unusable for OpenAI connectors.
+- **Dev dependency `httpx2` raised to 2.13.1** — 6 known CVEs in 2.7.0 (WSS over SOCKS without TLS, SSE
+  ReDoS, multipart header injection, decompression bomb, request smuggling). Dev scope only; neither
+  `app/` nor `tests/` import the package, production was not reachable.
+- **Live search never fired** — `hx-trigger` sat on the search form with the `changed` modifier. htmx
+  compares `elt.value` of the trigger element for that, and a `<form>` has none: the comparison was
+  always `undefined === undefined` and discarded every input and submit event. Typing showed nothing,
+  Enter showed nothing, and a previously visible result list stayed up after the query changed — i.e.
+  results for a different query.
+- **The tag overview only saw the root folder** — `/ui/tags` read the top level only via
+  `list_files(".")` and reported "No tags yet" as soon as notes lived in folders. It now uses
+  `list_all_files(".")`, which is recursive and already returns the tags.
+- **The file header overflowed the screen on narrow devices** — `.file-header` is a column flex with
+  `flex-wrap: wrap` there; width is the cross axis and grows to `max-content`. A long path pushed the
+  header, including the copy button, out of view.
+- **Dashboard panels clipped the timestamp** — grid children have `min-width: auto`; a long note title
+  stretched the panel past the edge.
+- **The hero stayed at full display size** — `index.html` loads its `<style>` after `kiwiki-polish.css`,
+  so the hero rules there lost at equal specificity: the title stayed at 3.8rem and the grid kept the
+  empty second column of the removed status panel.
+- **Markdown tables had an oversized border** — `display: block` with `width: 100%` drew the border
+  around the full column width while the cells only filled their content.
+- **`__import__("os")` in the indexer hot path** — `app/knowledge/indexer.py` read the file size limit
+  through a dynamic import. It is now a normal `import os`; the key is visible to the documentation
+  check as well.
 
 ### Performance
-- `users.yaml` wird nur noch bei Änderung neu geparst (Stat-Signatur), statt mehrfach pro
-  Request.
+- `users.yaml` is only re-parsed when it changes (stat signature) instead of several times per request.
 
 ### Changed
-- **Startseite für gefüllte Workspaces** — die Einführung (großes Logo, Erklärtext) bleibt
-  leeren Workspaces vorbehalten; sonst kompakte Kopfzeile „Weiterarbeiten“ mit den
-  Aktionen. „Zuletzt bearbeitet“ und „Zuletzt erstellt“ sind eine Liste mit Umschalter
-  statt zwei weitgehend identischer Spalten; die Tag-Wolke steht daneben im ersten Viewport.
-- **Tags-Ansicht als dichte Liste** — ein Tag pro Zeile mit Anzahl und direkt sichtbaren
-  Notizen statt Kartenraster mit „1 Datei“-Aufklapper.
-- **Überschriftenstruktur** — Tags, Suchverlauf und Editor haben eine h1 (Editor
-  visuell verborgen, der Kontext steht im Pfadfeld).
-- **Einstellungen** zeigen den Dateibaum statt einer leeren Sidebar-Spalte.
-- **Mobile Notizaktionen** — Export und Löschen liegen im „···“-Menü neben „Bearbeiten“,
-  statt „Löschen“ allein in eine zweite Zeile umbrechen zu lassen.
-- **Login-Hinweis** richtet sich an Nutzer statt an Betreiber (kein `user:key:role` mehr).
-- Kopier-Icon neben dem Pfad mit mindestens 24 px Zeigerziel.
-- **Ein Maßsystem statt zweier konkurrierender** — die Stylesheets trugen 37 Schriftgrößen und 58
-  Abstandswerte, 71 % der Abstände lagen zwischen den Stufen. Beides läuft jetzt über Tokens:
-  sieben Typo-Rollen plus Display, Abstände als Vielfache von 4 (plus 2 px für Haarabstände). Schriftgewichte
-  sind auf 400/500/600/700 beschränkt — 620 und 650 waren Artefakte einer variablen Schrift.
-  `tests/test_design_tokens.py` lässt rohe Werte künftig fehlschlagen.
-- **Die Startseite hilft beim Erststart, statt sie wegzuklappen** — ein frischer Workspace zeigte zwei leere Panels
-  mit demselben Satz und ein zugeklapptes „Erste Schritte". Der Hilfeblock steht jetzt offen, solange keine Notiz
-  existiert, und jedes Panel hat seinen eigenen Leertext.
-- **Zeitstempel sind lesbar** — statt `2026-09-19T17:42:00` steht in Listen und im Dateikopf „Heute, 09:31",
-  „Gestern, 18:25", „vor 3 Tagen" oder „19. Sep."; der vollständige Zeitpunkt bleibt im `title` des `<time>`-Elements.
-- **Der Dateibaum startet offen und merkt sich seinen Zustand** — er ist die Hauptnavigation und war nach jedem
-  Seitenwechsel wieder eingeklappt. Offen/Zu liegt jetzt im Cookie `kiwiki_sidebar`, sodass der Server gleich
-  richtig rendert.
-- **Die Startseite zeigt zuerst die Arbeit** — der Hero ist kompakter, das Statuspanel mit den drei
-  unveränderlichen Fakten (`.md`, `FTS5`, Rolle) ist entfallen, und „Erste Schritte" samt MCP-Zugangsdaten stehen
-  vollständig, aber eingeklappt unter den Notizlisten.
-- **Suchtreffer führen mit dem Titel** — darunter der Pfad, darunter ein Ausschnitt rund um die Trefferstelle statt
-  der ersten 200 Rohzeichen der Datei. Frontmatter, Überschriftenzeichen, Tabellen-Pipes und Link-Ziele sind raus.
-- **Die Leseansicht nennt den Pfad einmal statt dreimal** — Breadcrumb, Titel und Pfad-Chip sagten dasselbe. Die
-  Breadcrumb führt jetzt bis zum Ordner, die Metazeile trägt Pfad, Zeitpunkt und Autor.
-- **Bearbeiten ist die Hauptaktion** — in Leseansicht und Editor war „Löschen" der auffälligste Button (auf dem
-  Handy sogar der breiteste). Es behält sein Label, ist abgesetzt und wird erst bei Hover/Fokus rot.
-- **Tag-Übersicht und Suchverlauf sind gestaltet** — beide Ansichten hatten kein eigenes CSS und keinen sichtbaren
-  Rückweg; beide haben jetzt dieselbe Kopfzeile mit Breadcrumb wie die Leseansicht.
-- **Einstellungen verschwendet keine leere Spalte mehr** — die Sidebar trug dort nur einen „Zurück"-Button, den es
-  im Seitenkopf ohnehin schon gab.
-- **`Ctrl+S` steht am Speichern-Button** — vorher als lose Beschriftung am Ende der Editor-Leiste.
-- **Die Konfigurationsdoku ist mit dem Code synchron** — `tests/test_deployment_config.py` prüft jetzt, dass
-  jede `KIWIKI_*`-Variable, die der Code liest, in der README-Tabelle steht, dass `.env.example` keine
-  erfundenen Keys nennt, dass `values.yaml` die UI- und Session-Grenzen exponiert und dass `AGENTS.md` den
-  Unterschied zwischen versionierten und lokalen Pfaden benennt. `.env.example` führt die betriebsrelevanten
-  Variablen aktiv und die übrigen kommentiert mit Default in Klammern; die vollständige Liste bleibt in der
+- **Start page for populated workspaces** — the introduction (large logo, explanatory text) is reserved
+  for empty workspaces; otherwise a compact "Pick up where you left off" header with the actions.
+  "Recently edited" and "Recently created" are one list with a toggle instead of two largely identical
+  columns; the tag cloud sits next to it in the first viewport.
+- **Tags view as a dense list** — one tag per row with its count and the notes visible directly,
+  instead of a card grid with a "1 file" disclosure.
+- **Heading structure** — Tags, Search history and the editor have an `h1` (visually hidden in the
+  editor, where the path field provides the context).
+- **Settings** show the file tree instead of an empty sidebar column.
+- **Mobile note actions** — Export and Delete live in the `···` menu next to Edit instead of Delete
+  wrapping alone onto a second line.
+- **The login hint addresses users instead of operators** (no more `user:key:role`).
+- Copy icon next to the path with a pointer target of at least 24 px.
+- **One measurement system instead of two competing ones** — the stylesheets carried 37 font sizes and
+  58 spacing values, 71 % of the spacings fell between steps. Both now run on tokens: seven type roles
+  plus display, spacings as multiples of 4 (plus 2 px for hairline gaps). Font weights are limited to
+  400/500/600/700 — 620 and 650 were artefacts of a variable font. `tests/test_design_tokens.py` fails on
+  raw values from now on.
+- **The start page helps on first launch instead of collapsing the help** — a fresh workspace showed two
+  empty panels with the same sentence and a collapsed "Getting started". The help block stays open as
+  long as no note exists, and each panel has its own empty text.
+- **Timestamps are readable** — instead of `2026-09-19T17:42:00`, lists and the file header show "Today,
+  09:31", "Yesterday, 18:25", "3 days ago" or "19 Sep"; the full timestamp stays in the `title` of the
+  `<time>` element.
+- **The file tree starts open and remembers its state** — it is the main navigation and was collapsed
+  again after every page change. Open/closed now lives in the `kiwiki_sidebar` cookie so the server
+  renders it correctly right away.
+- **The start page shows the work first** — the hero is more compact, the status panel with its three
+  unchanging facts (`.md`, `FTS5`, role) is gone, and "Getting started" including the MCP access details
+  is complete but collapsed below the note lists.
+- **Search results lead with the title** — below it the path, below that an excerpt around the match
+  instead of the first 200 raw characters of the file. Frontmatter, heading markers, table pipes and link
+  targets are stripped.
+- **The reading view names the path once instead of three times** — breadcrumb, title and path chip said
+  the same thing. The breadcrumb now ends at the folder; the metadata line carries path, time and author.
+- **Edit is the primary action** — in the reading view and the editor, Delete was the most prominent
+  button (on phones even the widest). It keeps its label, sits apart and only turns red on hover/focus.
+- **Tag overview and search history are styled** — both views had no CSS of their own and no visible way
+  back; both now share the reading view's header with a breadcrumb.
+- **Settings no longer waste an empty column** — the sidebar there only carried a Back button that
+  already existed in the page header.
+- **`Ctrl+S` sits on the Save button** — previously a loose label at the end of the editor bar.
+- **The configuration docs stay in sync with the code** — `tests/test_deployment_config.py` now checks
+  that every `KIWIKI_*` variable read by the code appears in the README table, that `.env.example`
+  names no invented keys, that `values.yaml` exposes the UI and session limits and that `AGENTS.md`
+  distinguishes versioned from local paths. `.env.example` lists the operationally relevant variables
+  actively and the rest commented with their default in brackets; the complete list stays in the
   README.
-- **`AGENTS.md` benennt die existierenden Pfade** — die Datei verwies auf `.Codex/rules/`, `.Codex/skills/`
-  und `.Codex/agents/`. Real ist `.claude/`. Sie weist jetzt zusätzlich darauf hin, dass `.claude/` per
-  `.gitignore` nicht versioniert ist, ein frischer Klon also weder Rules noch Agents noch Skills besitzt, und
-  nennt die Qualitäts-Gates, die vor jeder Fertigmeldung grün sein müssen.
-- **`APP_VERSION` ist im Release-Konsistenztest enthalten** — `test_release_version_is_consistent` prüfte
-  `pyproject.toml`, `Chart.yaml` und `values.yaml`, nicht aber die Konstante, die als ausgelieferte Version in
-  FastAPI, `/version` und der MCP-`serverInfo` steht.
-- **Dokumentierte Umgebungsvariablen** — `KIWIKI_KEY_ATTEMPT_LIMIT` (der vom `/oauth/authorize`-Formular
-  getrennt gezählte Brute-Force-Zähler) und `KIWIKI_KNOWLEDGE_MIN_FREE_BYTES` (der Freiraum-Check vor dem
-  Schreiben des Knowledge-Index) fehlten in README, `.env.example` und Helm-Values. Ebenso standen
-  `KIWIKI_MCP_MAX_STAGED_UPLOADS` und `KIWIKI_MCP_MAX_STAGED_BYTES` hinter dem Knowledge-Absatz statt in der
-  Konfigurationstabelle, wo sie von keinem Werkzeug erfasst wurden.
-- **Nach fünf Fehlversuchen war der richtige API-Key gesperrt** — die `login`-Rate-Limit-Schicht zählte jeden
-  `POST /login` dauerhaft, auch die erfolgreichen. Ab dem sechsten Versuch bekam man 429, und zwar von der
-  Middleware, bevor `login_submit` laufen und das Budget freigeben konnte: wer sich zweimal vertippt hatte,
-  kam 60 Sekunden lang nicht mehr rein, auch mit dem richtigen Key. Der Login-Pfad läuft jetzt durch und
-  entscheidet anhand der Antwort — nur ein Redirect nach erfolgreicher Prüfung gibt das Fenster frei, ein
-  401 nicht. Getrennt davon bleibt das Verhalten des OAuth-Formulars (`/oauth/authorize` liegt im
-  `oauth`-Tier und nutzt `KIWIKI_KEY_ATTEMPT_LIMIT`) unverändert.
-- **Die Such-Historie verschluckte ihre Fehler** — `record_search` und der Prune-Schritt am Ende von `search()`
-  fingen jeden Fehler mit `pass` ab. Ein Nutzer sah eine leere Historie und konnte nicht unterscheiden, ob die
-  Suche kaputt ist oder nichts gefunden hat. Beide Pfade loggen jetzt; dasselbe gilt für das Schließen der
-  Verbindungspools und die Prüfung des Suchindex-Schemas.
-- **Zwei Dashboard-Panels meldeten Fehler als „leer"** — die Fragmente für „zuletzt bearbeitet" und „Suchverlauf"
-  gaben bei jedem Fehler eine leere Antwort zurück. Im Dashboard heißt leer „nichts vorhanden", ein Fehler war
-  damit nicht von einem leeren Workspace zu unterscheiden.
-- **Der Browser-Smoke-Test war ein stummes Gate** — bei Erfolg gab er nichts aus, CI zeigte also eine leere
-  Zeile und konnte „alles grün" nicht von „nichts gelaufen" unterscheiden.
-- **Die Coverage-Schwelle stand 19 Prozent unter der Realität** — `pyproject.toml` verlangte 60 %, tatsächlich
-  erreicht sind 79 %. Ein Gate, das man so leicht erfüllt, schützt den Bestand nicht. Die Schwelle steht jetzt
-  bei 75 % in beiden Dateien, und ein Test verhindert, dass `pyproject.toml` und `ci.yml` auseinanderlaufen.
+- **`AGENTS.md` names the paths that exist** — the file pointed to `.Codex/rules/`, `.Codex/skills/` and
+  `.Codex/agents/`. The real location is `.claude/`. It now also notes that `.claude/` is excluded by
+  `.gitignore`, so a fresh clone has no rules, agents or skills, and lists the quality gates that must
+  be green before anything is reported as done.
+- **`APP_VERSION` is part of the release consistency test** — `test_release_version_is_consistent`
+  checked `pyproject.toml`, `Chart.yaml` and `values.yaml`, but not the constant that is shipped as the
+  version in FastAPI, `/version` and the MCP `serverInfo`.
+- **Documented environment variables** — `KIWIKI_KEY_ATTEMPT_LIMIT` (the brute-force counter kept
+  separately for the `/oauth/authorize` form) and `KIWIKI_KNOWLEDGE_MIN_FREE_BYTES` (the free-space check
+  before writing the knowledge index) were missing from the README, `.env.example` and Helm values.
+  Likewise, `KIWIKI_MCP_MAX_STAGED_UPLOADS` and `KIWIKI_MCP_MAX_STAGED_BYTES` sat after the knowledge
+  paragraph instead of in the configuration table, where no tool picked them up.
+- **After five failed attempts the correct API key was locked out** — the `login` rate-limit layer
+  counted every `POST /login` permanently, successful ones included. From the sixth attempt on the
+  middleware answered 429 before `login_submit` could run and release the budget: anyone who had
+  mistyped twice could not get in for 60 seconds, even with the right key. The login path now runs
+  through and decides by the response — only a redirect after a successful check releases the window,
+  a 401 does not. The OAuth form behaves as before (`/oauth/authorize` is in the `oauth` tier and uses
+  `KIWIKI_KEY_ATTEMPT_LIMIT`).
+- **Search history swallowed its errors** — `record_search` and the prune step at the end of `search()`
+  caught every error with `pass`. A user saw an empty history and could not tell whether search was
+  broken or had found nothing. Both paths now log; the same applies to closing the connection pools and
+  checking the search index schema.
+- **Two dashboard panels reported errors as "empty"** — the fragments for "recently edited" and "search
+  history" returned an empty response on any error. On the dashboard, empty means "nothing there", so
+  an error was indistinguishable from an empty workspace.
+- **The browser smoke test was a silent gate** — it printed nothing on success, so CI showed an empty
+  line and could not tell "all green" from "nothing ran".
+- **The coverage threshold was 19 points below reality** — `pyproject.toml` required 60 %, actual
+  coverage was 79 %. A gate that easy to meet does not protect anything. The threshold is now 75 % in
+  both files, and a test keeps `pyproject.toml` and `ci.yml` from drifting apart.
 
 ## [4.0.0] - 2026-09-18
 
 ### Security
-- **Dateihistorie bleibt im eigenen Namespace** — `/ui/history` validiert den `path`-Parameter jetzt mit derselben
-  Prüfung wie die MCP-Werkzeuge. Zuvor gelangte ein Pfad wie `../<anderer-user>/notes/x.md` ungefiltert in
-  `git log`; lag oberhalb des Benutzerverzeichnisses ein Repository, gab die Ansicht fremde Commit-Metadaten preis.
-- **Hintergrund-Greps sind an ihren Besitzer gebunden** — `grep_status` liefert Ergebnisse nur noch an den Benutzer
-  aus, der den Job gestartet hat. Fremde Job-IDs verhalten sich wie unbekannte.
-- **Fehlversuche am OAuth-Formular haben ein eigenes Budget** — `POST /oauth/authorize` prüft denselben API-Key wie
-  `/login`, liegt aber im großzügigeren `oauth`-Tier. Fehlgeschlagene Eingaben zählen nun gegen ein separates Limit
-  (`KIWIKI_KEY_ATTEMPT_LIMIT`, Standard 5/Minute), ohne den Connector-Handshake zu drosseln.
-- **Interne Dateien sind auch lesend gesperrt** — `find`, `read_lines` und `file_info` schließen `.kiwiki` aus,
-  passend zur bereits bestehenden Schreibsperre.
+- **File history stays inside the user's namespace** — `/ui/history` now validates the `path` parameter
+  with the same check as the MCP tools. Previously a path like `../<other-user>/notes/x.md` reached
+  `git log` unfiltered; if a repository existed above the user directory, the view exposed other users'
+  commit metadata.
+- **Background greps are bound to their owner** — `grep_status` only returns results to the user who
+  started the job. Foreign job IDs behave like unknown ones.
+- **Failed attempts on the OAuth form have their own budget** — `POST /oauth/authorize` checks the same
+  API key as `/login` but sits in the more generous `oauth` tier. Failed entries now count against a
+  separate limit (`KIWIKI_KEY_ATTEMPT_LIMIT`, default 5/minute) without throttling the connector
+  handshake.
+- **Internal files are blocked for reading too** — `find`, `read_lines` and `file_info` exclude
+  `.kiwiki`, matching the existing write block.
 
 ### Changed
-- **Die Wissens-Werkzeuge deklarieren ihre Antwort** — `entity_details`, `entity_neighbors`, `fact_timeline`,
-  `explain_relation` und `knowledge_reindex` standen bisher auf `{"type": "object", "additionalProperties": true}`
-  und sagten damit gar nichts aus. Die Schemas benennen jetzt Felder, Typen, Wertebereiche (`depth` 1–3,
-  `confidence` 0–1) und erlaubte `status`-Werte. `entity` und `relation` sind ausdrücklich nullable: `null`
-  heißt „nachgesehen, nichts gefunden", ein fehlendes Feld heißt „Wissensmaschine aus".
-- **MCP verhandelt jetzt Revision 2025-06-18** — `outputSchema` und `structuredContent` sind erst ab dieser
-  Revision Teil der Spezifikation. kiwiki lieferte beides aus, nannte im Handshake aber `2025-03-26`; ein Client,
-  der sein Tool-Modell an der ausgehandelten Revision ausrichtet, sah dort unbekannte Felder. Clients, die
-  `2024-11-05` oder `2025-03-26` anfragen, bekommen weiterhin genau diese Revision; eine neuere Anfrage
-  (etwa `2025-11-25`) wird auf `2025-06-18` beantwortet.
-- **`fetch` liefert Listen-Metadaten lesbar** — `tags: [python, mcp]` erscheint als `"python, mcp"` statt als
-  Python-Repräsentation `"['python', 'mcp']"`.
-- **BREAKING: `search` und `fetch` folgen dem OpenAI-Connector-Kontrakt** — `search` liefert
-  `{"results": [{"id", "title", "text", "url"}]}`, `fetch` liefert `{"id", "title", "text", "url", "metadata"}`.
-  Die `id` ist der Notizpfad und lässt sich unverändert an `fetch` weiterreichen; `url` zitiert über
-  `KIWIKI_BASE_URL` auf `/ui/file`. Ohne gesetzte Basis-URL bleibt der Link relativ, da im Werkzeug-Dispatcher
-  kein Request zur Verfügung steht. `read_file` behält sein bisheriges Format und ist von der Änderung nicht
-  betroffen.
-- **BREAKING: Listen-Werkzeuge liefern ein Objekt statt eines Arrays** — `list_files`, `sort`,
-  `list_all_files`, `recent_files`, `tag_index` und `search_history` geben ihre Ergebnisse jetzt unter dem
-  Schlüssel `items` zurück (`{"items": [...]}`). Die MCP-Spezifikation lässt für `outputSchema` und
-  `structuredContent` nur Objekte zu; strikt validierende Clients verwarfen die bisherigen Array-Antworten.
-  Integrationen, die `content[0].text` direkt als Array auswerten, müssen angepasst werden.
+- **Knowledge tools declare their response** — `entity_details`, `entity_neighbors`, `fact_timeline`,
+  `explain_relation` and `knowledge_reindex` used `{"type": "object", "additionalProperties": true}` and
+  thus declared nothing. The schemas now name fields, types, ranges (`depth` 1–3, `confidence` 0–1) and
+  allowed `status` values. `entity` and `relation` are explicitly nullable: `null` means "looked, found
+  nothing", a missing field means "knowledge engine off".
+- **MCP now negotiates revision 2025-06-18** — `outputSchema` and `structuredContent` only belong to the
+  specification from this revision on. kiwiki shipped both but announced `2025-03-26` in the handshake;
+  a client aligning its tool model with the negotiated revision saw unknown fields. Clients requesting
+  `2024-11-05` or `2025-03-26` still get exactly that revision; a newer request (e.g. `2025-11-25`) is
+  answered with `2025-06-18`.
+- **`fetch` returns list metadata readably** — `tags: [python, mcp]` appears as `"python, mcp"` instead
+  of the Python representation `"['python', 'mcp']"`.
+- **BREAKING: `search` and `fetch` follow the OpenAI connector contract** — `search` returns
+  `{"results": [{"id", "title", "text", "url"}]}`, `fetch` returns `{"id", "title", "text", "url",
+  "metadata"}`. The `id` is the note path and can be passed to `fetch` unchanged; `url` cites
+  `/ui/file` via `KIWIKI_BASE_URL`. Without a base URL the link stays relative, because no request is
+  available in the tool dispatcher. `read_file` keeps its previous format and is not affected.
+- **BREAKING: list tools return an object instead of an array** — `list_files`, `sort`,
+  `list_all_files`, `recent_files`, `tag_index` and `search_history` now return their results under the
+  `items` key (`{"items": [...]}`). The MCP specification only allows objects for `outputSchema` and
+  `structuredContent`; strictly validating clients rejected the previous array responses. Integrations
+  that parse `content[0].text` directly as an array need to be adjusted.
 
 ### Fixed
-- **Frei getippte Frontmatter-Werte halten die Werkzeug-Schemas ein** — `title: 2026` und `tags: python` sind
-  gültiges YAML und ergeben int bzw. Skalar. `list_all_files` und `recent_files` reichten sie ungeprüft weiter und
-  verletzten damit ihr eigenes `outputSchema`; ein validierender Client verwarf daraufhin die komplette Antwort.
-  Ein skalarer Tag wurde zudem stillschweigend verworfen statt als einelementige Liste gelesen.
-- **`batch_tag` zerlegt skalare Tags nicht mehr in Einzelbuchstaben** — `list("python")` ergab sechs Tags
-  (`p`, `y`, `t`, …) und schrieb sie in die Notiz zurück. Betroffen war jede Notiz mit `tags:` als Skalar.
-- **`template` deklariert das `template_type`-Feld, das es liefert** — das Werkzeug teilte sich `_STATUS_SCHEMA`
-  mit sechs anderen, und dieses verbot über `additionalProperties: false` jedes weitere Feld.
-- **`NaN` und `Infinity` im Frontmatter brechen die Antwort nicht mehr** — `score: .nan` landete als nacktes
-  JSON-Literal in der Ausgabe. RFC 8259 kennt beides nicht; strikte Parser scheiterten an der gesamten Antwort.
-- **`ping` wird beantwortet** — die MCP-Spezifikation verlangt in jeder Revision eine umgehende leere Antwort.
-  kiwiki lief stattdessen in `-32601 Method not found`, was als HTTP 404 ausgeliefert wurde; Clients, die mit
-  `ping` am Leben halten, verwarfen die Sitzung.
-- **Unquotierte Datumsangaben im Frontmatter brechen die Werkzeuge nicht mehr** — YAML liest `created: 2026-01-01`
-  als `datetime.date`. Dieser Wert lief bis in `json.dumps()` und in Sortierungen und ließ `read_file`,
-  `read_many`, `list_files`, `list_all_files`, `recent_files` und `statistics` mit einem internen Fehler
-  abbrechen. Die Server-Instruktionen fordern `created`/`updated` ausdrücklich ein, und `write_file` schrieb den
-  Datumswert unquotiert zurück — der Server erzeugte die unlesbare Notiz also selbst. Frontmatter wird jetzt beim
-  Parsen auf JSON-taugliche Typen normalisiert, Lese- und Schreibpfad gemeinsam.
-- **`list_all_files` hält sein eigenes `outputSchema` ein** — die Antwort enthielt `created`, das Schema verbot
-  über `additionalProperties: false` jedes weitere Feld. Strikt validierende Clients verwarfen das Ergebnis.
-- **`grep_status` liefert kein `null` mehr für `result`** — das Feld ist optional und bleibt bei `not_found` und
-  `running` weg, statt den im Schema deklarierten Objekt-Typ zu verletzen.
-- **`resources/templates/list` antwortet mit einer leeren Liste** — kiwiki bietet keine URI-Templates an, Clients
-  fragen sie im Discovery trotzdem ab. Die bisherige `-32601`-Antwort kam als HTTP 404 zurück.
-- **Notizen mit doppeltem Tag brechen den Wissensindex nicht mehr** — Frontmatter-Listen werden vor der
-  Indexierung dedupliziert. Zuvor erzeugte `tags: [python, python]` zwei Relationen mit identischem
-  Primärschlüssel; das Dokument blieb nach drei Fehlversuchen dauerhaft unindexiert und der Tenant-Status
-  meldete `degraded`.
-- **Speichern während der Indexierung geht nicht mehr verloren** — Ein Job wird nur noch abgeschlossen, wenn er
-  tatsächlich noch läuft. Wurde eine Datei währenddessen erneut gespeichert, verwarf der Abschluss bisher die
-  nachgereihte Revision, und der Wissensindex blieb bis zum Neustart veraltet.
-- **Suche erholt sich von einem entfernten Index** — `init_db()` erkennt eine verschwundene Datenbank und legt
-  Tabellen sowie Verbindungen neu an; der LIKE-Fallback fängt SQLite-Fehler ebenso ab wie der FTS-Pfad. Zuvor
-  blieb die Suche eines Benutzers nach einem Workspace-Rollback bis zum Prozessneustart defekt.
-- **Sitzungen folgen dem konfigurierten Datenverzeichnis** — Der Ablageort von `sessions.json` wird zur Laufzeit
-  aufgelöst statt beim Import eingefroren, und das Laden vom Datenträger läuft vollständig unter Sperre.
-- **Export verträgt Kommas im Dateinamen** — Die Auswahl wird als ein Formularfeld je Pfad übertragen; zuvor
-  zerfiel `notes/Meeting, Q4.md` in zwei unbrauchbare Fragmente und fehlte kommentarlos im Ergebnis.
-- **`template` meldet ungültige Eingaben** — Ein unbekannter `template_type` und ein Titel ohne verwertbare
-  Zeichen führen zu einer klaren Fehlermeldung statt zu einer leeren Notiz beziehungsweise zu `-.md`.
-- **Hintergrund-Greps bleiben referenziert** — Die Task wird festgehalten, damit sie nicht mitten im Lauf
-  eingesammelt wird und der Job dauerhaft auf `running` stehen bleibt.
+- **Free-form frontmatter values respect the tool schemas** — `title: 2026` and `tags: python` are valid
+  YAML and yield an int and a scalar. `list_all_files` and `recent_files` passed them through unchecked
+  and violated their own `outputSchema`; a validating client then rejected the whole response. A scalar
+  tag was also silently dropped instead of being read as a one-element list.
+- **`batch_tag` no longer splits scalar tags into single letters** — `list("python")` produced six tags
+  (`p`, `y`, `t`, …) and wrote them back to the note. Every note with a scalar `tags:` was affected.
+- **`template` declares the `template_type` field it returns** — the tool shared `_STATUS_SCHEMA` with
+  six others, which forbade any further field via `additionalProperties: false`.
+- **`NaN` and `Infinity` in frontmatter no longer break the response** — `score: .nan` ended up as a bare
+  JSON literal in the output. RFC 8259 knows neither; strict parsers failed on the entire response.
+- **`ping` is answered** — the MCP specification requires an immediate empty response in every
+  revision. kiwiki answered `-32601 Method not found` instead, delivered as HTTP 404; clients using
+  `ping` as keepalive dropped the session.
+- **Unquoted dates in frontmatter no longer break the tools** — YAML reads `created: 2026-01-01` as a
+  `datetime.date`. That value reached `json.dumps()` and sorting and made `read_file`, `read_many`,
+  `list_files`, `list_all_files`, `recent_files` and `statistics` fail with an internal error. The
+  server instructions explicitly ask for `created`/`updated`, and `write_file` wrote the date back
+  unquoted — the server produced the unreadable note itself. Frontmatter is now normalised to
+  JSON-compatible types during parsing, for the read and the write path alike.
+- **`list_all_files` respects its own `outputSchema`** — the response contained `created`, while the
+  schema forbade any further field via `additionalProperties: false`. Strictly validating clients
+  rejected the result.
+- **`grep_status` no longer returns `null` for `result`** — the field is optional and is omitted for
+  `not_found` and `running` instead of violating the object type declared in the schema.
+- **`resources/templates/list` answers with an empty list** — kiwiki offers no URI templates, but
+  clients query them during discovery anyway. The previous `-32601` answer came back as HTTP 404.
+- **Notes with a duplicate tag no longer break the knowledge index** — frontmatter lists are
+  deduplicated before indexing. Previously `tags: [python, python]` produced two relations with the
+  same primary key; the document stayed unindexed after three failed attempts and the tenant status
+  reported `degraded`.
+- **Saving during indexing is no longer lost** — a job is only completed if it is actually still
+  running. If a file was saved again in the meantime, completion used to discard the queued revision,
+  and the knowledge index stayed stale until restart.
+- **Search recovers from a removed index** — `init_db()` detects a vanished database and recreates
+  tables and connections; the LIKE fallback catches SQLite errors just like the FTS path. Previously a
+  user's search stayed broken until process restart after a workspace rollback.
+- **Sessions follow the configured data directory** — the location of `sessions.json` is resolved at
+  runtime instead of being frozen at import, and loading from disk runs entirely under the lock.
+- **Export copes with commas in file names** — the selection is sent as one form field per path;
+  previously `notes/Meeting, Q4.md` fell apart into two unusable fragments and was silently missing
+  from the result.
+- **`template` reports invalid input** — an unknown `template_type` and a title without usable
+  characters now produce a clear error instead of an empty note or `-.md`.
+- **Background greps stay referenced** — the task is held on to, so it is not garbage-collected mid-run
+  and the job does not stay at `running` forever.
 
 ## [3.2.0] - 2026-08-08
 
 ### Added
-- **Zentrale deutsch-englische Produktoberfläche** — Eine gemeinsame Sprachauflösung berücksichtigt explizite
-  Auswahl, persistiertes Cookie und `Accept-Language`. Seiten, HTMX-Fragmente, Browserdialoge, Toasts, ARIA-Texte,
-  Editor und Benutzerverwaltung verwenden denselben vollständigen DE/EN-Katalog.
-- **Kiwiki UI-System** — Ein schlankes, selbst gehostetes Polish-Layer bündelt Abstände, Kontrollhöhen,
-  Fokuszustände, Ebenen, Radien sowie responsive Touch-Ziele und führt Dashboard, Explorer, Editor,
-  Einstellungen, Login und Neural Atlas gestalterisch zusammen.
+- **Central German/English product UI** — a shared language resolution honours an explicit choice, a
+  persisted cookie and `Accept-Language`. Pages, HTMX fragments, browser dialogs, toasts, ARIA texts,
+  the editor and user management use the same complete DE/EN catalogue.
+- **Kiwiki UI system** — a lean, self-hosted polish layer bundles spacing, control heights, focus
+  states, layers, radii and responsive touch targets, and unifies the dashboard, explorer, editor,
+  settings, login and Neural Atlas visually.
 
 ### Changed
-- **Ruhigere Informationshierarchie** — Primäre Aktionen, Formfelder, Sidebar-Navigation und Inhaltsflächen folgen
-  einer konsistenten Editorial-Workspace-Sprache mit stabilen Zuständen statt dekorativer Hover-Bewegung.
+- **Calmer information hierarchy** — primary actions, form fields, sidebar navigation and content areas
+  follow a consistent editorial workspace language with stable states instead of decorative hover
+  motion.
 
 ### Fixed
-- **Write-Benutzer können ihren eigenen Wissensraum vollständig pflegen** — `delete_file` und
-  `knowledge_reindex` benötigen nun nur noch die `write`-Rolle. Dieselbe Regel gilt für REST-Endpunkte,
-  Kontextmenüs, Batch-Löschen, Editor und Atlas-UI; Benutzerverwaltung bleibt ausschließlich `admin`.
+- **Write users can fully maintain their own knowledge space** — `delete_file` and `knowledge_reindex`
+  now only require the `write` role. The same rule applies to REST endpoints, context menus, batch
+  delete, the editor and the Atlas UI; user management stays `admin` only.
 - **Neural Atlas action buttons stay aligned on touch devices** — Reset and motion controls no longer move vertically
   when mobile browsers retain a sticky hover state after tapping. Their circular boxes and SVG icons now use explicit,
   identical dimensions so both controls remain level in German and English layouts.
@@ -336,9 +334,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   desktop and mobile instead of consuming a separate toolbar column.
 
 ### Tests
-- **Lokalisierungs- und UI-Verträge** — Neue Server- und statische Regressionstests sichern beide Sprachen,
-  persistierte Sprachwahl, identische Katalogschlüssel, lokalisierte Fehlerfragmente, Cache-Busting sowie Fokus-,
-  Touch-, Viewport- und Reduced-Motion-Grundlagen. Der Browser-Smoke-Test prüft den englischen Kernablauf.
+- **Localisation and UI contracts** — new server-side and static regression tests cover both languages,
+  the persisted language choice, identical catalogue keys, localised error fragments, cache busting and
+  the focus, touch, viewport and reduced-motion basics. The browser smoke test covers the English core
+  flow.
 
 ## [3.1.1] - 2026-08-03
 
@@ -406,30 +405,30 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **Production health and observability** — `/livez`, dependency-aware `/readyz`, Docker/Compose/Helm health checks, request correlation IDs, latency logs and release version reporting.
 - **Real browser regression gate** — Chromium smoke test for mobile zoom, sidebar focus/inert state, note deep links, dynamic titles, responsive settings and horizontal overflow.
 - **Capacity controls** — request, tenant file/byte, list, JSON-RPC batch, SSE session/queue, OAuth state and staged-upload limits.
-- **`PATCH /api/file/frontmatter`** — Neuer REST-Endpoint, der einzelne Frontmatter-Felder (z.B. `tags`) serverseitig mit `storage.update_frontmatter()` merged, ohne Content oder andere Metadaten anzufassen. Ersetzt das bisherige, destruktive Client-seitige Regex-Merging in `kwBatchTag()`.
+- **`PATCH /api/file/frontmatter`** — New REST endpoint that merges individual frontmatter fields (e.g. `tags`) server-side via `storage.update_frontmatter()` without touching content or other metadata. Replaces the previous destructive client-side regex merging in `kwBatchTag()`.
 
 ### Fixed
 - **Security and data integrity review** — UI role checks, API-key-free hashed sessions, session revocation, central storage policy, transactional user-workspace rollback, atomic conflict-aware writes, search deindexing and thread-local SQLite connections.
 - **MCP/OAuth hardening** — PKCE token binding, authenticated SSE message sessions, bounded in-memory state, redacted `0600` audit logs, safe Git arguments/timeouts and working asynchronous grep polling.
 - **Mobile and accessibility regressions** — editor overlap, hidden-sidebar tab stops, focus visibility, pinch zoom, settings grid, incomplete ARIA tree pattern, unnamed editor controls and broken tags/search-history navigation.
 - **Persistent breadcrumb XSS and external CDN exposure** — file paths no longer enter inline JavaScript; htmx, Toast UI and fonts are vendored locally and CSP is self-hosted only.
-- **`kwBatchTag()` überschrieb Frontmatter (Datenverlust)** — Batch-Tagging über die Mehrfachauswahl baute den kompletten Frontmatter-Block per Regex neu zusammen und verlor dabei `title`/`created`/`updated`. Jetzt über `PATCH /api/file/frontmatter` serverseitig gemerged.
-- **`GET /api/file` und `GET /api/files` schlugen bei jedem Aufruf fehl** — Beide Endpunkte übergaben Pydantic-Modelle (`FileContent`/`FileInfo`) direkt an `starlette.responses.JSONResponse()`, die diese nicht serialisieren kann. Jeder erfolgreiche Read endete in einem 400er „Object of type … is not JSON serializable". Beim manuellen End-to-End-Test des Frontmatter-Fixes aufgefallen — betraf auch `kwBatchTag()`, das diesen Endpoint zum Lesen bestehender Tags braucht.
-- **Frontmatter-Cache (A3) war inaktiv** — `_fm_cache` existierte seit der A3-Performance-Arbeit inklusive Lock, wurde von `_read_frontmatter_only()` aber nie gelesen oder geschrieben. Jetzt per `(Pfad, mtime)`-Schlüssel tatsächlich verdrahtet.
-- **Test-Suite brach beim Collection-Schritt ab** — Union-Return-Type-Annotationen (`HTMLResponse | RedirectResponse`) auf `/login` liessen FastAPI beim Import mit `FastAPIError: Invalid args for response field` abstürzen. Fix: `response_model=None` an den betroffenen Routen.
-- **Interne Exception-Details im UI sichtbar** — Mehrere `/ui/*`-Handler gaben `str(exc)` roh ins gerenderte HTML zurück, auch für unerwartete (nicht bewusst geworfene) Exceptions, die potenziell interne Pfade oder Tracebacks enthalten konnten. Kontrollierte Validierungsfehler (`ValueError`/`FileNotFoundError`) bleiben weiterhin sichtbar, alles andere wird geloggt und durch eine generische Meldung ersetzt.
-- Stille `except Exception`-Blöcke in den Dashboard-Panels (`/ui/recent-edited`, `/ui/recent-created`) und beim Frontmatter-Parsing (`storage._read_frontmatter_only`) loggen den Fehler jetzt, statt ihn zu verschlucken.
+- **`kwBatchTag()` overwrote frontmatter (data loss)** — batch tagging via multi-select rebuilt the entire frontmatter block with a regex and lost `title`/`created`/`updated` in the process. It is now merged server-side via `PATCH /api/file/frontmatter`.
+- **`GET /api/file` and `GET /api/files` failed on every call** — both endpoints passed Pydantic models (`FileContent`/`FileInfo`) directly to `starlette.responses.JSONResponse()`, which cannot serialise them. Every successful read ended in a 400 "Object of type … is not JSON serializable". Found during the manual end-to-end test of the frontmatter fix — it also affected `kwBatchTag()`, which needs this endpoint to read existing tags.
+- **The frontmatter cache (A3) was inactive** — `_fm_cache` had existed since the A3 performance work, including its lock, but `_read_frontmatter_only()` never read or wrote it. It is now actually wired up with a `(path, mtime)` key.
+- **The test suite aborted during collection** — union return type annotations (`HTMLResponse | RedirectResponse`) on `/login` made FastAPI crash at import with `FastAPIError: Invalid args for response field`. Fix: `response_model=None` on the affected routes.
+- **Internal exception details visible in the UI** — several `/ui/*` handlers returned `str(exc)` raw into the rendered HTML, including for unexpected (not deliberately raised) exceptions that could contain internal paths or tracebacks. Controlled validation errors (`ValueError`/`FileNotFoundError`) remain visible; everything else is logged and replaced by a generic message.
+- Silent `except Exception` blocks in the dashboard panels (`/ui/recent-edited`, `/ui/recent-created`) and in frontmatter parsing (`storage._read_frontmatter_only`) now log the error instead of swallowing it.
 
 ### Changed
 - **Deployment defaults hardened** — Compose binds loopback and requires secrets; Helm supports existing Secrets/PVCs, enforces one replica, uses read-only root filesystem/seccomp and disables broad CORS defaults.
 - **Reproducible delivery** — exact direct dependency pins, digest-pinned base images, unified version `3.0.0`, CI coverage/security/browser gates, and release SBOM/provenance.
-- **Session-Cookie: `SameSite=Lax` → `SameSite=Strict`** — schliesst CSRF über die zustandsändernden `/ui/*`-POST-Endpunkte (Rename, Export, Search); kiwiki hat keinen legitimen Cross-Site-Einstiegspunkt (kein Login-Link aus E-Mails o.ä.).
-- **API-Key-Vergleich zeitkonstant** — Bearer-Token- und Login-Prüfung nutzen jetzt `secrets.compare_digest()` über alle konfigurierten Keys statt eines Dict-Lookups, der auf dem ersten Hash-Bucket-Treffer kurzschliessen kann.
-- **`init_db()` prüft das FTS5-Schema nur noch einmal pro Prozess und Namespace**, statt bei jedem `search()`-/`index_file()`-/Reindex-Aufruf erneut die `sqlite_master`-Abfrage und `CREATE TABLE IF NOT EXISTS`-Statements auszuführen.
-- **Session-Persistenz gedrosselt** — Sliding-Expiration-Renewal schrieb bisher bei jedem authentifizierten Request die komplette `sessions.json` neu; jetzt nur, wenn sich `expires_at` um mehr als 60s verschoben hat.
-- **`@app.on_event("startup"/"shutdown")` → `lifespan`-Context-Manager** — behebt die DeprecationWarning bei jedem Testlauf, Verhalten unverändert.
-- Toter Code `getKey()` in `kiwiki.js` entfernt (nie aufgerufen; täuschte API-Key-Retrieval vor, machte aber nur ein `localStorage.removeItem`).
-- **Startseite Layout-Reihenfolge** — Dashboard-Panels („Zuletzt bearbeitet" / „Zuletzt erstellt") erscheinen jetzt unter dem kiwiki-Hero-Block statt darüber. Fokus liegt jetzt zuerst auf Branding/Tagline, dann auf recent activity.
+- **Session cookie: `SameSite=Lax` → `SameSite=Strict`** — closes CSRF via the state-changing `/ui/*` POST endpoints (rename, export, search); kiwiki has no legitimate cross-site entry point (no login links from e-mails or similar).
+- **Constant-time API key comparison** — bearer token and login checks now use `secrets.compare_digest()` across all configured keys instead of a dict lookup that can short-circuit on the first hash bucket hit.
+- **`init_db()` checks the FTS5 schema only once per process and namespace** instead of re-running the `sqlite_master` query and `CREATE TABLE IF NOT EXISTS` statements on every `search()`/`index_file()`/reindex call.
+- **Session persistence throttled** — sliding-expiration renewal used to rewrite the whole `sessions.json` on every authenticated request; now only when `expires_at` has moved by more than 60 s.
+- **`@app.on_event("startup"/"shutdown")` → `lifespan` context manager** — fixes the DeprecationWarning on every test run; behaviour unchanged.
+- Removed dead code `getKey()` in `kiwiki.js` (never called; pretended to retrieve the API key but only ran a `localStorage.removeItem`).
+- **Start page layout order** — the dashboard panels ("Recently edited" / "Recently created") now appear below the kiwiki hero block instead of above it. Focus is on branding/tagline first, then on recent activity.
 
 ### Tests
 - 221 tests pass with 64% branch coverage, including new regression tests for auth/session revocation, quotas, atomic writes, OAuth/MCP limits, browser accessibility, deployment configuration and health probes.
@@ -445,62 +444,62 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [2.5.0] - 2026-07-03
 
 ### Added
-- **Dashboard auf der Startseite** — Zwei Panels „Zuletzt bearbeitet" und „Zuletzt erstellt" oben auf der Startseite (je bis zu 8 Dateien, rekursiv durchsucht). Ermöglicht schnellen Zugriff auf letzte Arbeitsschritte. Hero-Sektion mit Info-Panel darunter verschoben.
-- **`/ui/recent-edited`** — Neuer HTMX-Endpoint: Dateien sortiert nach Frontmatter `updated` (rekursiv).
-- **`/ui/recent-created`** — Neuer HTMX-Endpoint: Dateien sortiert nach Frontmatter `created` (rekursiv).
-- **`created`-Feld in `list_all_files`** — `storage.py` liefert jetzt auch das `created`-Frontmatter-Feld für alle Dateien.
+- **Dashboard on the start page** — two panels "Recently edited" and "Recently created" at the top of the start page (up to 8 files each, searched recursively). Gives quick access to recent work. The hero section with its info panel moved below.
+- **`/ui/recent-edited`** — new HTMX endpoint: files sorted by frontmatter `updated` (recursive).
+- **`/ui/recent-created`** — new HTMX endpoint: files sorted by frontmatter `created` (recursive).
+- **`created` field in `list_all_files`** — `storage.py` now also returns the `created` frontmatter field for all files.
 
 ### Fixed
-- **Touch-Swipe-Geste komplett tot auf iPad** — Zwei kritische Bugs: (1) `kiwiki.js` wurde vor dem DOM geladen (Script in `layout.html` Zeile 32, Sidebar-Element erst Zeile 58), IIFE fand `null` und boundete keine Listener. Fix: `DOMContentLoaded`-Wrapper + `querySelector` inside `bind()`. (2) Breakpoint `max-width: 768px` schloss alle iPads aus (810–1024px). Fix: Alle Breakpoints auf `1024px` erweitert (CSS + JS).
-- **Häufige Abmeldung** — Session-Store war rein in-memory; bei jedem Container-Restart gingen alle Sessions verloren. Sessions nutzten `time.monotonic()` (reset bei Neustart) und hatten keine Sliding Expiration (Ablauf nach 12h egal ob aktiv). Fix: JSON-Datei-Persistenz (`/data/sessions.json`), `time.time()`, Sliding Expiration bei jedem Zugriff.
+- **Touch swipe gesture completely dead on iPad** — two critical bugs: (1) `kiwiki.js` was loaded before the DOM (script in `layout.html` line 32, sidebar element only at line 58), so the IIFE found `null` and bound no listeners. Fix: `DOMContentLoaded` wrapper plus `querySelector` inside `bind()`. (2) The `max-width: 768px` breakpoint excluded every iPad (810–1024px). Fix: all breakpoints extended to `1024px` (CSS and JS).
+- **Frequent logouts** — the session store was purely in memory; every container restart lost all sessions. Sessions used `time.monotonic()` (reset on restart) and had no sliding expiration (expiry after 12 h regardless of activity). Fix: JSON file persistence (`/data/sessions.json`), `time.time()`, sliding expiration on every access.
 
 ### Changed
-- **Touch-Swipe-Geste** für Sidebar: Swipe-Right zum Öffnen funktioniert jetzt vom **gesamten Content-Bereich** (nicht mehr nur von der linken Bildschirmkante). Swipe-Left zum Schließen funktioniert von überall auf der Sidebar. `edgeZone`-Threshold entfernt, `openThreshold` auf 60px gesetzt. Handler wird immer gebunden (kein viewport-Check bei Laden mehr).
+- **Touch swipe gesture** for the sidebar: swipe right to open now works from the **entire content area** (no longer only from the left screen edge). Swipe left to close works from anywhere on the sidebar. The `edgeZone` threshold was removed and `openThreshold` set to 60px. The handler is always bound (no viewport check at load time any more).
 
 ## [2.2.0] - 2026-07-01
 
 ### Added — Accessibility
-- **`<main>` landmark + Skip-Link** („Zum Inhalt springen") für Tastatur-Screader-Nutzer (`layout.html`)
-- **ARIA tree roles**: Dateibaum jetzt als `role="tree"` mit `treeitem`/`group`/`aria-level`/`aria-expanded`
-- **Focus-Trap** in `kwDialog`-Modalen — Tab/Shift+Tab bleibt im Dialog
-- **Mobile-Sidebar-Escape**: `Esc` schließt Sidebar, Fokus springt zurück an Hamburger
-- **`aria-live`** auf Toast-Stack und Search-Ergebnisse; Error-Toasts sind `role="alert"`
-- **`aria-label`** auf Mobile Selektions-Buttons (Verschieben/Tags/Export/Löschen)
-- **Tags klickbar**: Erzeugen auf Klick eine Suche mit `tag:<value>`-Präfix
-- **Tag-Suche** (`tag:<value>`) in FTS5-Suche via LIKE-Fallback auf `tags`-Spalte
-- **Reduced-Motion** globaler Schutz bereits am Top des Stylesheets + im Login
+- **`<main>` landmark and skip link** ("Zum Inhalt springen") for keyboard and screen reader users (`layout.html`)
+- **ARIA tree roles**: the file tree is now `role="tree"` with `treeitem`/`group`/`aria-level`/`aria-expanded`
+- **Focus trap** in `kwDialog` modals — Tab/Shift+Tab stays inside the dialog
+- **Mobile sidebar Escape**: `Esc` closes the sidebar and focus returns to the hamburger
+- **`aria-live`** on the toast stack and search results; error toasts are `role="alert"`
+- **`aria-label`** on the mobile selection buttons (move/tags/export/delete)
+- **Clickable tags**: clicking starts a search with a `tag:<value>` prefix
+- **Tag search** (`tag:<value>`) in FTS5 search via a LIKE fallback on the `tags` column
+- **Reduced motion** global guard at the top of the stylesheet and in the login page
 
 ### Added — UX
-- **`kwNewNote()`** — „Neue Notiz" fragt Dateinamen ab statt `notes/neue-notiz.md` zu überschreiben
-- **Editor `beforeunload`-Warnung** bei ungespeicherten Änderungen
-- **„Keine Treffer für …"** als `role="status"` in den Suchergebnissen
-- **Sidebar-Resizer** jetzt sichtbar (4px Hover-Indikator statt versteckt)
+- **`kwNewNote()`** — "New note" asks for a file name instead of overwriting `notes/neue-notiz.md`
+- **Editor `beforeunload` warning** for unsaved changes
+- **"No results for …"** as `role="status"` in the search results
+- **Sidebar resizer** is now visible (4px hover indicator instead of hidden)
 
 ### Changed
-- **`.btn-danger`** klar rot abgesetzt (Error-dim Hintergrund, Error-Border) — Löschaktionen wirken nicht mehr harmlos
-- **`.file-meta`** nutzt `--md-on-surface-v` statt schwachem `--md-outline` (besserer Kontrast)
-- **Breadcrumb** als `<button>` statt `<a href="#">` (funktionierte ohne JS tot)
-- **Editor-Save-Toast** via zentralem `kwToast()` statt eigenem `.save-toast`-Markup
-- **Tree-Filter** + Select-Toggle auf Mobile jetzt 44×44px / 16px Font (WCAG 2.2, kein iOS-Zoom)
-- **Settings-Grid** responsive bis 1024px (2-Spalten, Submit in eigener Zeile)
-- **Hint-Text "Doppelklick zum Umbenennen"** statt englischsprachigem „double-click to rename"
-- **`#file-tree` `tabindex="0"`** entfernt (keine doppelten Tab-Stops neben inneren Buttons)
-- **`role="status"` + `aria-busy`-markiertes Loading-Hint** für Tree/Recent-Reloads
+- **`.btn-danger`** clearly set apart in red (error-dim background, error border) — delete actions no longer look harmless
+- **`.file-meta`** uses `--md-on-surface-v` instead of the faint `--md-outline` (better contrast)
+- **Breadcrumb** as `<button>` instead of `<a href="#">` (was dead without JS)
+- **Editor save toast** via the central `kwToast()` instead of its own `.save-toast` markup
+- **Tree filter** and select toggle on mobile now 44×44px / 16px font (WCAG 2.2, no iOS zoom)
+- **Settings grid** responsive up to 1024px (two columns, submit on its own row)
+- **Hint text** now reads the German "Doppelklick zum Umbenennen" instead of the English "double-click to rename" in the German UI
+- **`#file-tree` `tabindex="0"`** removed (no duplicate tab stops next to the inner buttons)
+- **Loading hint marked with `role="status"` and `aria-busy`** for tree/recent reloads
 
 ### Fixed — Codebase
-- **CSS-Konsolidierung**: Redundantes zweites `:root` aus dem „Professional UI refresh"-Block entfernt — Token-Quelle jetzt eindeutig
-- **Leerer `header-right`-Platzhalter** entfernt
+- **CSS consolidation**: removed the redundant second `:root` from the "Professional UI refresh" block — the token source is now unambiguous
+- **Empty `header-right` placeholder** removed
 
 ### Tests
-- `tests/test_ui_file.py` um Regression-Tests für: Tags als klickbare Buttons, Tag-Suche, `<main>`-Landmark + Skip-Link ergänzt
-- 136 Tests grün, Ruff clean
+- `tests/test_ui_file.py` extended with regression tests for: tags as clickable buttons, tag search, `<main>` landmark and skip link
+- 136 tests green, Ruff clean
 
 ### Docs
-- **`docs/ui-accessibility.md`** neu: WCAG 2.2 AA-Modell, Tastatur-Shortcuts, ARIA-Tree, Touch-Targets, Fokus-Management, PR-Checkliste
-- **`docs/architecture.md`** neu: Template-Hierarchie, Tenancy/Request-Flow, Helper-Konventionen, Cache-Busting, Test-Matrix
-- **`README.md`** um v2.2-Features, Keyboard-Shortcuts-Tabelle und Architektur-Verweis ergänzt
-- **`CONTRIBUTING.md`** um Frontend-Workflow, UI-PR-Checkliste, Helper-Naming ergänzt
-- **In-Code-Kommentare** an `kwDialog` (Focus-Trap), `openSidebar`/`closeSidebar` (Fokus-Management), `kwNewNote`/`kwSearchTag` (Zweck) und `beforeunload`-Guard
+- **`docs/ui-accessibility.md`** new: WCAG 2.2 AA model, keyboard shortcuts, ARIA tree, touch targets, focus management, PR checklist
+- **`docs/architecture.md`** new: template hierarchy, tenancy/request flow, helper conventions, cache busting, test matrix
+- **`README.md`** extended with v2.2 features, a keyboard shortcut table and an architecture reference
+- **`CONTRIBUTING.md`** extended with the frontend workflow, UI PR checklist and helper naming
+- **In-code comments** on `kwDialog` (focus trap), `openSidebar`/`closeSidebar` (focus management), `kwNewNote`/`kwSearchTag` (purpose) and the `beforeunload` guard
 
 ## [2.1.1] - 2026-07-01
 
