@@ -164,3 +164,62 @@
   .knowledge-pulse, .loading-orbit { animation: none; }
   .knowledge-inspector { animation: none; }
 }
+
+/* ── Atlas 2.0: Material & Tiefe (Bildsprache der kiwiki-Website) ───────
+   Flächen mit Innenlicht-Kante statt flacher Transparenz, weicher Rand-
+   Vignette um den Raum, Korn gegen „Plastik“. Das Korn liegt als statische
+   Hintergrundebene, nicht als Overlay mit Blend-Mode über dem Canvas —
+   das hätte jeden Frame neu komponiert. */
+.knowledge-stage {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .92 0 0 0 0 .8 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 72% 18%, rgba(227, 169, 79, 0.07), transparent 30%),
+    #171713;
+}
+
+.knowledge-hud {
+  background: linear-gradient(180deg, rgba(255, 244, 222, 0.035), rgba(255, 244, 222, 0)), rgba(31, 30, 27, 0.9);
+  border-bottom-color: rgba(227, 169, 79, 0.14);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.35), 0 12px 30px -20px rgba(0, 0, 0, 0.8);
+}
+
+/* Randvignette: der Raum fällt nach außen ins Dunkel ab */
+.knowledge-viewport::after {
+  content: '';
+  position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(12, 11, 9, 0.55) 100%);
+}
+
+.knowledge-pulse {
+  animation: knowledge-breathe 2.6s ease-in-out infinite, knowledge-ping 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@keyframes knowledge-ping {
+  0% { box-shadow: 0 0 0 0 rgba(227, 169, 79, 0.5), 0 0 22px var(--md-primary); }
+  70%, 100% { box-shadow: 0 0 0 10px rgba(227, 169, 79, 0), 0 0 22px var(--md-primary); }
+}
+
+.knowledge-inspector {
+  background: linear-gradient(180deg, rgba(255, 244, 222, 0.05), rgba(255, 244, 222, 0.01) 40%), rgba(36, 34, 29, 0.96);
+  border-color: rgba(227, 169, 79, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 200, 0.08),
+    0 36px 90px -24px rgba(0, 0, 0, 0.75),
+    0 0 80px -30px rgba(227, 169, 79, 0.4);
+  animation: inspector-in 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes inspector-in { from { opacity: 0; transform: translateX(16px) scale(0.98); filter: blur(4px); } }
+
+.knowledge-help {
+  background: linear-gradient(180deg, rgba(255, 244, 222, 0.04), rgba(255, 244, 222, 0)), rgba(31, 30, 27, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 236, 200, 0.06);
+}
+
+.knowledge-icon-button { transition: color var(--t), border-color var(--t), background var(--t), box-shadow var(--t); }
+.knowledge-icon-button:hover { box-shadow: 0 0 0 4px rgba(227, 169, 79, 0.06), 0 0 18px -4px rgba(227, 169, 79, 0.55); }
+
+.legend-document { animation: legend-glow 3.2s ease-in-out infinite; }
+@keyframes legend-glow { 50% { box-shadow: 0 0 16px var(--md-primary); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .legend-document { animation: none; }
+}

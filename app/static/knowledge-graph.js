@@ -33,13 +33,41 @@
   var MAX_NODE_SPEED = 4;
   var MAX_NODE_RADIUS = 700;
   var MAX_SIMULATION_STEPS = 240;
+  // Aufbau-Animation: Knoten spiralen von außen an ihren Platz (innen zuerst)
+  var INTRO_NODE_MS = 1100;
+  var MAX_PULSES = 32;
+  var IDLE_ROTATE_AFTER_MS = 3500;
   var state = {
     nodes: [], edges: [], nodeById: new Map(), adjacency: new Map(),
     width: 1, height: 1, dpr: 1, yaw: -0.35, pitch: 0.18, distance: 720, defaultDistance: 720,
     targetX: 0, targetY: 0, targetZ: 0, selected: null, hovered: null,
     dragging: false, moved: false, lastX: 0, lastY: 0, paused: prefersReducedMotion,
     pointers: new Map(), pinchDistance: null,
-    neighborhoodOnly: false, frame: 0, lastTime: performance.now(), settled: false, simulationSteps: 0
+    neighborhoodOnly: false, frame: 0, lastTime: performance.now(), settled: false, simulationSteps: 0,
+    intro: { start: 0, end: 0, done: true, waveFired: false },
+    pulses: [], rings: [], waves: [], nextPulse: 0, goal: null, distanceGoal: null,
+    lastInteraction: 0, graphRadius: 300, bgGlow: null, refitted: false, userZoomed: false
+  };
+
+  function clamp01(value) { return value < 0 ? 0 : (value > 1 ? 1 : value); }
+  function easeOut(value) { return 1 - Math.pow(1 - value, 3); }
+
+  // Leuchtpunkte einmal vorrendern: drawImage ist pro Frame deutlich billiger
+  // als ein neuer Radialverlauf je Knoten (wichtig für 500-Knoten-Graphen).
+  function makeGlow(rgb) {
+    var size = 64; var sprite = document.createElement('canvas');
+    sprite.width = size; sprite.height = size;
+    var g = sprite.getContext('2d');
+    var gradient = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    gradient.addColorStop(0, 'rgba(' + rgb + ',.85)');
+    gradient.addColorStop(0.28, 'rgba(' + rgb + ',.3)');
+    gradient.addColorStop(1, 'rgba(' + rgb + ',0)');
+    g.fillStyle = gradient; g.fillRect(0, 0, size, size);
+    return sprite;
+  }
+  var glow = {
+    document: makeGlow('227,169,79'), tag: makeGlow('159,183,216'),
+    concept: makeGlow('159,170,160'), hot: makeGlow('253,240,212')
   };
 
   var palette = {
@@ -78,6 +106,16 @@
         sx: 0, sy: 0, depth: 0, radius: node.kind === 'document' ? 6.5 : 4.2
       });
     });
+    var maxHome = state.nodes.reduce(function (largest, node) {
+      return Math.max(largest, Math.sqrt(node.homeX * node.homeX + node.homeY * node.homeY + node.homeZ * node.homeZ));
+    }, 1);
+    state.nodes.forEach(function (node) {
+      var home = Math.sqrt(node.homeX * node.homeX + node.homeY * node.homeY + node.homeZ * node.homeZ);
+      var seed = hash(node.id);
+      node.delay = 120 + (home / maxHome) * 1300 + (seed % 280);
+      node.swirl = 1 + (seed % 100) / 70;
+      node.k = 1; node.flash = 0;
+    });
     state.nodeById = new Map(state.nodes.map(function (node) { return [node.id, node]; }));
     state.edges = payload.edges.filter(function (edge) {
       return state.nodeById.has(edge.source) && state.nodeById.has(edge.target);
@@ -91,6 +129,35 @@
     document.getElementById('knowledge-edge-count').textContent = String(state.edges.length);
     document.getElementById('knowledge-a11y-status').textContent = copy.loaded(state.nodes.length, state.edges.length);
     state.settled = false; state.simulationSteps = 0;
+    state.pulses = []; state.rings = []; state.waves = [];
+  }
+
+  function startIntro() {
+    if (prefersReducedMotion || !state.nodes.length) {
+      state.intro.done = true;
+      state.nodes.forEach(function (node) { node.k = 1; });
+      return;
+    }
+    var now = performance.now();
+    state.intro = { start: now, end: 0, done: false, waveFired: false };
+    state.nodes.forEach(function (node) {
+      node.k = 0;
+      state.intro.end = Math.max(state.intro.end, node.delay + INTRO_NODE_MS);
+    });
+  }
+
+  function updateIntro(now) {
+    if (state.intro.done) return;
+    var elapsed = now - state.intro.start;
+    state.nodes.forEach(function (node) { node.k = easeOut(clamp01((elapsed - node.delay) / INTRO_NODE_MS)); });
+    if (!state.intro.waveFired && elapsed > state.intro.end - 250) {
+      state.intro.waveFired = true; state.waves.push(now);
+      for (var i = 0; i < 8; i += 1) spawnPulse(null, now);
+    }
+    if (elapsed > state.intro.end + 700) {
+      state.intro.done = true;
+      state.nodes.forEach(function (node) { node.k = 1; });
+    }
   }
 
   function resize() {
@@ -104,6 +171,8 @@
     canvas.style.width = state.width + 'px';
     canvas.style.height = state.height + 'px';
     context.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+    state.bgGlow = context.createRadialGradient(state.width * .52, state.height * .48, 0, state.width * .52, state.height * .48, Math.max(state.width, state.height) * .62);
+    state.bgGlow.addColorStop(0, 'rgba(110, 78, 30, .16)'); state.bgGlow.addColorStop(.45, 'rgba(52, 38, 18, .06)'); state.bgGlow.addColorStop(1, 'rgba(23, 23, 19, 0)');
     if (state.nodes.length && wasFitted) setDistance(fitGraphDistance(), true);
   }
 
@@ -191,7 +260,15 @@
   }
 
   function project(node) {
-    var x = node.x - state.targetX; var y = node.y - state.targetY; var z = node.z - state.targetZ;
+    var px = node.x; var py = node.y; var pz = node.z;
+    if (node.k < 1) {
+      // Während des Aufbaus: weiter draußen und um die Hochachse verdreht
+      var turn = (1 - node.k) * node.swirl; var spread = 1 + (1 - node.k) * 1.2;
+      var cosT = Math.cos(turn); var sinT = Math.sin(turn);
+      var tx = px * cosT - pz * sinT; var tz = px * sinT + pz * cosT;
+      px = tx * spread; py *= spread; pz = tz * spread;
+    }
+    var x = px - state.targetX; var y = py - state.targetY; var z = pz - state.targetZ;
     var cosY = Math.cos(state.yaw); var sinY = Math.sin(state.yaw);
     var rx = x * cosY - z * sinY; var rz = x * sinY + z * cosY;
     var cosP = Math.cos(state.pitch); var sinP = Math.sin(state.pitch);
@@ -200,6 +277,12 @@
     node.sx = state.width / 2 + rx * scale;
     node.sy = state.height / 2 + ry * scale;
     node.depth = depth; node.scale = scale;
+    // Tiefennebel: vordere Knoten klar, hintere treten zurück
+    node.fog = clamp01(1 - (depth - (state.distance - state.graphRadius)) / (2.2 * Math.max(1, state.graphRadius)) * 0.7);
+  }
+
+  function isHoverNeighbor(node) {
+    return !!(state.hovered && state.hovered !== node && state.adjacency.get(state.hovered.id).has(node.id));
   }
 
   function isConnected(node) {
@@ -207,44 +290,131 @@
     return node.id === state.selected.id || state.adjacency.get(state.selected.id).has(node.id);
   }
 
-  function drawBackground(time) {
+  function drawBackground(time, dt) {
     context.fillStyle = palette.background;
     context.fillRect(0, 0, state.width, state.height);
-    var glow = context.createRadialGradient(state.width * .52, state.height * .48, 0, state.width * .52, state.height * .48, Math.max(state.width, state.height) * .62);
-    glow.addColorStop(0, 'rgba(110, 78, 30, .12)'); glow.addColorStop(.45, 'rgba(52, 38, 18, .05)'); glow.addColorStop(1, 'rgba(23, 23, 19, 0)');
-    context.fillStyle = glow; context.fillRect(0, 0, state.width, state.height);
-    if (!state.paused && !prefersReducedMotion) state.yaw += Math.sin(time * 0.00017) * 0.00009;
+    if (state.bgGlow) { context.fillStyle = state.bgGlow; context.fillRect(0, 0, state.width, state.height); }
+    if (state.paused || prefersReducedMotion || state.dragging) return;
+    // Langsame Drehung, sobald niemand bedient; beim Aufbau mit abklingendem Schwung
+    var introSpin = state.intro.done ? 0 : 0.0007 * Math.pow(1 - clamp01((time - state.intro.start) / (state.intro.end + 700)), 2);
+    if (time - state.lastInteraction > IDLE_ROTATE_AFTER_MS || introSpin) state.yaw += dt * (0.00006 + introSpin);
+  }
+
+  function drawWaves(time) {
+    for (var i = state.waves.length - 1; i >= 0; i -= 1) {
+      var age = (time - state.waves[i]) / 1500;
+      if (age >= 1) { state.waves.splice(i, 1); continue; }
+      var cx = state.width / 2; var cy = state.height / 2;
+      var radius = Math.max(state.width, state.height) * (0.05 + easeOut(age) * 0.6);
+      var ring = context.createRadialGradient(cx, cy, radius * 0.82, cx, cy, radius);
+      ring.addColorStop(0, 'rgba(227,169,79,0)');
+      ring.addColorStop(0.85, 'rgba(237,186,102,' + (0.16 * (1 - age)).toFixed(3) + ')');
+      ring.addColorStop(1, 'rgba(227,169,79,0)');
+      context.fillStyle = ring; context.beginPath(); context.arc(cx, cy, radius, 0, Math.PI * 2); context.fill();
+    }
+  }
+
+  // ── Aktionspotenziale: Impulse wandern über Kanten und springen weiter ──
+  function spawnPulse(fromId, now, edge) {
+    if (state.pulses.length >= MAX_PULSES || !state.edges.length) return;
+    var candidate = edge;
+    if (!candidate && fromId) {
+      var options = state.edges.filter(function (item) { return item.source === fromId || item.target === fromId; });
+      if (!options.length) return;
+      candidate = options[Math.floor(Math.random() * options.length)];
+    }
+    if (!candidate) candidate = state.edges[Math.floor(Math.random() * state.edges.length)];
+    var forward = fromId ? candidate.source === fromId : Math.random() < 0.5;
+    state.pulses.push({
+      from: forward ? candidate.source : candidate.target, to: forward ? candidate.target : candidate.source,
+      t: 0, speed: 0.55 + Math.random() * 0.5, hot: !!fromId && !!state.selected && fromId === state.selected.id
+    });
+  }
+
+  function updatePulses(time, dt) {
+    if (state.paused || prefersReducedMotion) return;
+    for (var i = state.pulses.length - 1; i >= 0; i -= 1) {
+      var pulse = state.pulses[i];
+      pulse.t += dt * 0.001 * pulse.speed;
+      if (pulse.t >= 1) {
+        state.pulses.splice(i, 1);
+        var arrived = state.nodeById.get(pulse.to);
+        if (arrived) arrived.flash = Math.max(arrived.flash, pulse.hot ? 0.8 : 0.35);
+        if (Math.random() < 0.4) spawnPulse(pulse.to, time);
+      }
+    }
+    // Umgebungs-Impulse nur bei kleineren Graphen; große bleiben ruhig
+    if (state.intro.done && state.nodes.length <= MAX_PAIRWISE_NODES && time > state.nextPulse) {
+      spawnPulse(null, time);
+      state.nextPulse = time + 450 + Math.random() * 700;
+    }
+    state.nodes.forEach(function (node) { if (node.flash > 0) node.flash = Math.max(0, node.flash - dt / 1400); });
+  }
+
+  function drawPulses() {
+    state.pulses.forEach(function (pulse) {
+      var a = state.nodeById.get(pulse.from); var b = state.nodeById.get(pulse.to);
+      if (!a || !b || a.depth < 100 || b.depth < 100) return;
+      if (state.neighborhoodOnly && state.selected && !(isConnected(a) && isConnected(b))) return;
+      var x = a.sx + (b.sx - a.sx) * pulse.t; var y = a.sy + (b.sy - a.sy) * pulse.t;
+      var size = (pulse.hot ? 22 : 14) * Math.min(1.4, (a.scale + b.scale) / 2);
+      context.globalAlpha = Math.sin(Math.PI * pulse.t) * (0.55 + 0.45 * ((a.fog + b.fog) / 2));
+      context.drawImage(pulse.hot ? glow.hot : glow.document, x - size / 2, y - size / 2, size, size);
+    });
+    context.globalAlpha = 1;
+  }
+
+  function drawRings(time) {
+    for (var i = state.rings.length - 1; i >= 0; i -= 1) {
+      var ring = state.rings[i]; var age = (time - ring.start) / 1100;
+      if (age >= 1 || ring.node.depth < 100) { state.rings.splice(i, 1); continue; }
+      context.strokeStyle = 'rgba(237,186,102,' + (0.75 * (1 - age)).toFixed(3) + ')';
+      context.lineWidth = 1.5; context.beginPath();
+      context.arc(ring.node.sx, ring.node.sy, 8 + easeOut(age) * 46 * Math.min(1.4, ring.node.scale), 0, Math.PI * 2);
+      context.stroke();
+    }
   }
 
   function drawEdge(edge, time) {
     var source = state.nodeById.get(edge.source); var target = state.nodeById.get(edge.target);
     if (!source || !target || source.depth < 100 || target.depth < 100) return;
-    var selected = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id);
-    var muted = state.neighborhoodOnly && state.selected && !selected;
-    context.beginPath(); context.moveTo(source.sx, source.sy); context.lineTo(target.sx, target.sy);
-    context.strokeStyle = selected ? palette.lineHot : (muted ? 'rgba(159,170,160,.025)' : palette.line);
-    context.lineWidth = selected ? 1.45 : 0.7; context.stroke();
-    if (!state.paused && !muted && state.nodes.length <= MAX_PAIRWISE_NODES) {
-      var offset = (time * 0.00012 + (hash(edge.id) % 100) / 100) % 1;
-      var px = source.sx + (target.sx - source.sx) * offset;
-      var py = source.sy + (target.sy - source.sy) * offset;
-      context.beginPath(); context.arc(px, py, selected ? 1.8 : 1.1, 0, Math.PI * 2);
-      context.fillStyle = selected ? '#fdf0d4' : 'rgba(227,169,79,.48)'; context.fill();
+    // Beim Aufbau wächst eine Kante erst, wenn beide Enden angekommen sind
+    var grow = 1;
+    if (!state.intro.done) {
+      grow = easeOut(clamp01((time - state.intro.start - Math.max(source.delay, target.delay) - 300) / 650));
+      if (grow <= 0) return;
     }
+    var selected = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id);
+    var hoverEdge = state.hovered && (edge.source === state.hovered.id || edge.target === state.hovered.id);
+    var muted = state.neighborhoodOnly && state.selected && !selected;
+    var fog = (source.fog + target.fog) / 2;
+    context.beginPath(); context.moveTo(source.sx, source.sy);
+    context.lineTo(source.sx + (target.sx - source.sx) * grow, source.sy + (target.sy - source.sy) * grow);
+    if (selected) context.strokeStyle = palette.lineHot;
+    else if (muted) context.strokeStyle = 'rgba(159,170,160,.025)';
+    else if (hoverEdge) context.strokeStyle = 'rgba(237,186,102,.42)';
+    else context.strokeStyle = 'rgba(227,169,79,' + (0.035 + fog * fog * 0.15).toFixed(3) + ')';
+    context.lineWidth = selected ? 1.45 : (hoverEdge ? 1 : 0.7); context.stroke();
   }
 
   function nodeColor(node) { return palette[node.kind] || palette.concept; }
 
   function drawNode(node) {
-    if (node.depth < 100) return;
+    if (node.depth < 100 || node.k <= 0.001) return;
     var connected = isConnected(node); var selected = state.selected === node; var hovered = state.hovered === node;
-    var radius = Math.max(2.2, node.radius * Math.min(1.65, node.scale));
+    var neighbor = isHoverNeighbor(node);
+    // Kurzes Aufglühen beim Ankommen während des Aufbaus
+    var land = state.intro.done ? 0 : Math.max(0, 1 - Math.abs(node.k - 0.9) / 0.2) * 0.9;
+    var lift = Math.min(1, node.flash + land + (neighbor ? 0.35 : 0));
+    var radius = Math.max(2.2, node.radius * Math.min(1.65, node.scale)) * (0.35 + 0.65 * node.k) * (1 + lift * 0.45);
+    var light = selected || hovered ? 1 : Math.min(1, 0.4 + node.fog * 0.6 + lift);
     context.save();
-    context.globalAlpha = connected ? 1 : .1;
-    if ((node.kind === 'document' && state.nodes.length <= MAX_PAIRWISE_NODES) || selected || hovered) {
-      var halo = context.createRadialGradient(node.sx, node.sy, 0, node.sx, node.sy, radius * (selected ? 5 : 3.2));
-      halo.addColorStop(0, selected ? 'rgba(253,240,212,.38)' : 'rgba(227,169,79,.22)'); halo.addColorStop(1, 'rgba(227,169,79,0)');
-      context.fillStyle = halo; context.beginPath(); context.arc(node.sx, node.sy, radius * (selected ? 5 : 3.2), 0, Math.PI * 2); context.fill();
+    context.globalAlpha = (connected ? 1 : .1) * light * node.k;
+    if ((node.kind === 'document' && state.nodes.length <= MAX_PAIRWISE_NODES) || selected || hovered || lift > 0.05) {
+      var haloSize = radius * (selected ? 11 : 7 + lift * 6);
+      context.globalAlpha = (connected ? 1 : .1) * node.k * (selected ? 0.9 : 0.35 + 0.4 * lift) * light;
+      context.drawImage(selected || lift > 0.5 ? glow.hot : (glow[node.kind] || glow.concept), node.sx - haloSize / 2, node.sy - haloSize / 2, haloSize, haloSize);
+      context.globalAlpha = (connected ? 1 : .1) * light * node.k;
     }
     context.beginPath(); context.arc(node.sx, node.sy, radius + (selected ? 2 : 0), 0, Math.PI * 2);
     context.fillStyle = nodeColor(node); context.fill();
@@ -252,7 +422,8 @@
       context.strokeStyle = node.kind === 'tag' ? 'rgba(214,226,242,.72)' : 'rgba(240,233,220,.5)';
       context.lineWidth = 1; context.stroke();
     }
-    if (selected || hovered || (node.kind === 'document' && node.scale > .85 && state.nodes.length < 180)) {
+    if (node.k > 0.97 && (selected || hovered || neighbor || (node.kind === 'document' && node.scale > .85 && state.nodes.length < 180))) {
+      if (!selected && !hovered) context.globalAlpha = (connected ? 1 : .1) * Math.min(1, 0.35 + node.fog * 0.65 + (neighbor ? 0.3 : 0));
       context.font = (selected ? '600 13px ' : '500 11px ') + '"Geist Sans", sans-serif';
       context.textAlign = 'center'; context.textBaseline = 'top';
       context.fillStyle = selected ? palette.text : (hovered ? '#f6e8cc' : 'rgba(240,233,220,.72)');
@@ -262,20 +433,52 @@
     context.restore();
   }
 
+  function updateCamera() {
+    // Kamerafahrten weich statt Sprung (Fokus, Zurücksetzen)
+    if (state.goal) {
+      state.targetX += (state.goal.x - state.targetX) * 0.12;
+      state.targetY += (state.goal.y - state.targetY) * 0.12;
+      state.targetZ += (state.goal.z - state.targetZ) * 0.12;
+      if (Math.abs(state.goal.x - state.targetX) + Math.abs(state.goal.y - state.targetY) + Math.abs(state.goal.z - state.targetZ) < 0.5) {
+        state.targetX = state.goal.x; state.targetY = state.goal.y; state.targetZ = state.goal.z; state.goal = null;
+      }
+    }
+    if (state.distanceGoal !== null) {
+      var next = state.distance + (state.distanceGoal - state.distance) * 0.12;
+      if (Math.abs(state.distanceGoal - next) < 1) { next = state.distanceGoal; state.distanceGoal = null; }
+      setDistance(next);
+    }
+  }
+
+  function refitAfterSettle() {
+    // fitGraphDistance() läuft beim Laden auf den Startpositionen; die Simulation
+    // zieht den Graphen danach deutlich zusammen. Einmal nachführen.
+    if (state.refitted || !state.settled || state.userZoomed || state.selected || !state.nodes.length) return;
+    state.refitted = true;
+    var fitted = fitGraphDistance();
+    state.defaultDistance = fitted;
+    if (prefersReducedMotion) setDistance(fitted, true);
+    else state.distanceGoal = fitted;
+  }
+
   function render(time) {
     state.frame = window.requestAnimationFrame(render);
-    simulate(); drawBackground(time);
+    var dt = Math.min(64, Math.max(0, time - state.lastTime)); state.lastTime = time;
+    simulate(); refitAfterSettle(); updateIntro(time); updateCamera(); updatePulses(time, dt);
+    drawBackground(time, dt); drawWaves(time);
     state.nodes.forEach(project);
     state.edges.slice().sort(function (a, b) {
       return state.nodeById.get(b.source).depth - state.nodeById.get(a.source).depth;
     }).forEach(function (edge) { drawEdge(edge, time); });
+    drawPulses();
     state.nodes.slice().sort(function (a, b) { return b.depth - a.depth; }).forEach(drawNode);
+    drawRings(time);
   }
 
   function nearestNode(x, y) {
     var best = null; var bestDistance = 22;
     state.nodes.forEach(function (node) {
-      if (!isConnected(node)) return;
+      if (!isConnected(node) || node.k < 0.5) return;
       var distance = Math.hypot(node.sx - x, node.sy - y);
       if (distance < bestDistance) { best = node; bestDistance = distance; }
     });
@@ -292,8 +495,9 @@
     var radius = state.nodes.reduce(function (largest, node) {
       return Math.max(largest, Math.sqrt(node.x * node.x + node.y * node.y + node.z * node.z));
     }, 1);
+    state.graphRadius = radius;
     var visibleRadius = Math.max(90, Math.min(state.width, state.height) * 0.44);
-    return Math.max(520, Math.min(4000, radius + radius * 620 / visibleRadius));
+    return Math.max(260, Math.min(4000, radius + radius * 620 / visibleRadius));
   }
 
   function setDistance(distance, updateDefault) {
@@ -322,6 +526,12 @@
       var row = document.createElement('div'); var dt = document.createElement('dt'); var dd = document.createElement('dd');
       dt.textContent = item[0]; dd.textContent = String(item[1]); row.append(dt, dd); meta.append(row);
     });
+    if (!prefersReducedMotion) {
+      var now = performance.now();
+      node.flash = 1; state.rings.push({ node: node, start: now });
+      state.edges.filter(function (edge) { return edge.source === node.id || edge.target === node.id; })
+        .slice(0, 14).forEach(function (edge) { spawnPulse(node.id, now, edge); });
+    }
     var open = document.getElementById('knowledge-open');
     open.hidden = !node.path; open.href = node.path ? '/?file=' + encodeURIComponent(node.path) : '#';
     inspector.hidden = false;
@@ -330,13 +540,20 @@
 
   function focusNode(node) {
     if (!node) return;
-    state.targetX = node.x; state.targetY = node.y; state.targetZ = node.z;
-    setDistance(Math.max(300, state.distance * .72));
+    if (prefersReducedMotion) {
+      state.targetX = node.x; state.targetY = node.y; state.targetZ = node.z;
+      setDistance(Math.max(300, state.distance * .72));
+      return;
+    }
+    state.goal = { x: node.x, y: node.y, z: node.z };
+    state.distanceGoal = Math.max(300, state.distance * .72);
   }
 
   function resetView() {
     state.yaw = -.35; state.pitch = .18;
-    state.targetX = 0; state.targetY = 0; state.targetZ = 0; state.neighborhoodOnly = false;
+    state.neighborhoodOnly = false; state.distanceGoal = null; state.refitted = false; state.userZoomed = false;
+    if (prefersReducedMotion) { state.targetX = 0; state.targetY = 0; state.targetZ = 0; state.goal = null; }
+    else state.goal = { x: 0, y: 0, z: 0 };
     restoreGraphPositions(true);
     selectNode(null, false);
     setDistance(fitGraphDistance(), true);
@@ -345,6 +562,7 @@
   canvas.addEventListener('pointerdown', function (event) {
     if (!state.pointers.has(event.pointerId) && state.pointers.size >= 2) return;
     canvas.setPointerCapture(event.pointerId);
+    state.lastInteraction = performance.now(); state.distanceGoal = null;
     state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (state.pointers.size === 1) {
       state.dragging = true; state.moved = false;
@@ -361,6 +579,7 @@
     if (state.pointers.size === 2) {
       var distance = pointerDistance();
       if (distance && state.pinchDistance) {
+        state.userZoomed = true; state.distanceGoal = null;
         setDistance(state.distance * state.pinchDistance / distance);
       }
       state.pinchDistance = distance; state.moved = true;
@@ -397,10 +616,12 @@
   });
   canvas.addEventListener('wheel', function (event) {
     event.preventDefault();
+    state.lastInteraction = performance.now(); state.distanceGoal = null; state.userZoomed = true;
     setDistance(state.distance * Math.exp(event.deltaY * .001));
   }, { passive: false });
   canvas.addEventListener('keydown', function (event) {
     var step = Math.max(10, state.distance * .025); var handled = true;
+    state.lastInteraction = performance.now(); state.goal = null;
     if (event.key === 'w' || event.key === 'W') state.targetZ -= step;
     else if (event.key === 's' || event.key === 'S') state.targetZ += step;
     else if (event.key === 'a' || event.key === 'A') state.targetX -= step;
@@ -448,7 +669,7 @@
           document.getElementById('knowledge-edge-count').textContent = '0';
           return;
         }
-        prepareGraph(payload); resetView();
+        prepareGraph(payload); resetView(); startIntro();
       })
       .catch(function () {
         document.getElementById('knowledge-loading').hidden = true;

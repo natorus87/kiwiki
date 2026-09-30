@@ -8,6 +8,29 @@ This changelog is written in English only.
 
 ## [Unreleased]
 
+### Changed
+- **Neural Atlas comes alive.** Same visual language as the new kiwiki.xyz hero:
+  - **Build-up on load:** nodes spiral in from the outside to their place (inner ones first),
+    glow briefly as they land, edges grow only once both ends have arrived, and a light wave
+    closes the sequence and fires the first impulses. Skipped entirely with
+    `prefers-reduced-motion`; nodes still in flight cannot be selected.
+  - **Action potentials:** impulses travel along edges, light up the node they reach and
+    sometimes jump on. Capped at 32 at a time; graphs above 180 nodes get no ambient impulses,
+    only the ones triggered by selection.
+  - **Selecting a node** sends a ring and an impulse down every connection (up to 14).
+    Hovering highlights the node's neighbours, their edges and labels.
+  - **Depth fog:** far nodes, edges and labels recede; near ones stay crisp.
+  - **Camera:** focus ("Explore connections") and reset glide instead of jumping; the view
+    re-fits once after the layout settles, so small graphs no longer sit in a fifth of the space
+    (minimum fitted distance 520 → 260). Manual wheel/pinch zoom disables the re-fit.
+  - **Idle rotation** after 3.5 s without interaction; pauses while dragging and with the
+    existing pause button.
+  - **Material:** HUD, inspector and help bar with inner-light edge and soft depth, edge vignette
+    and static grain on the stage, softer inspector entrance.
+- Glows are pre-rendered sprites (`drawImage`) instead of one radial gradient per node and frame;
+  the background gradient is cached per resize. Measured in headless Chromium: 61 fps with 21 nodes,
+  56 fps during and 54 fps after the build-up with 500 nodes.
+
 ## [4.2.0] - 2026-09-30
 
 ### Upgrade notes

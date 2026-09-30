@@ -178,3 +178,45 @@ def test_graph_api_returns_bounded_tenant_local_graph(monkeypatch):
     assert {node["kind"] for node in payload["nodes"]} <= {"document", "tag", "concept"}
     assert "atlas" in str(payload).lower()
     assert "/home/" not in str(payload)
+
+
+def test_atlas_builds_up_on_load_and_respects_reduced_motion():
+    """Aufbau-Animation darf bei prefers-reduced-motion nie laufen und muss enden."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "function startIntro(" in script
+    assert "prepareGraph(payload); resetView(); startIntro();" in script
+    # reduced motion: sofort fertig, keine Knoten im Anflug
+    assert "if (prefersReducedMotion || !state.nodes.length) {" in script
+    assert "state.intro.done = true;" in script
+    # noch nicht angekommene Knoten sind nicht anwählbar
+    assert "node.k < 0.5" in script
+
+
+def test_atlas_pulses_are_bounded_and_skip_large_graphs():
+    """Impulse sind gedeckelt; 500-Knoten-Graphen bekommen keine Umgebungs-Impulse."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "var MAX_PULSES =" in script
+    assert "state.pulses.length >= MAX_PULSES" in script
+    assert "state.nodes.length <= MAX_PAIRWISE_NODES && time > state.nextPulse" in script
+    # Glows als vorgerenderte Sprites statt Verlauf pro Knoten und Frame
+    assert "function makeGlow(" in script
+    assert "context.drawImage(" in script
+
+
+def test_atlas_refits_camera_once_after_simulation_settles_unless_user_zoomed():
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "function refitAfterSettle(" in script
+    assert "state.userZoomed" in script
+    assert "state.userZoomed = true" in script
+
+
+def test_atlas_assets_are_cache_busted_for_the_motion_release(monkeypatch):
+    client = _login(monkeypatch)
+
+    for lang in ("de", "en"):
+        page = client.get(f"/knowledge?lang={lang}").text
+        assert "/static/knowledge-graph.js?v=20260930-atlas-motion" in page
+        assert "/static/knowledge-graph.css?v=20260930-atlas-motion" in page
