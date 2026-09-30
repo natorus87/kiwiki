@@ -8,12 +8,18 @@ This changelog is written in English only.
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-09-30
+
+### Upgrade notes
+- **Theme customizations:** custom CSS that referenced `--md-warm` must switch to `--md-tertiary`.
+
 ### Changed
 - **New brand color: honey amber (`#e3a94f`) replaces Kiwi Green.** Primary actions, focus rings,
   links, the wordmark and the Neural Atlas now use amber so kiwiki is visually distinct from the
   similar KiwiFS project. Tag nodes and the admin role pill moved to a cool blue (`--md-tertiary`,
   formerly `--md-warm`) to stay distinguishable from the new primary. Static asset versions were
   bumped so browsers pick up the new theme.
+- **README screenshots** refreshed for the amber theme.
 
 ## [4.1.0] - 2026-09-29
 
@@ -656,7 +662,8 @@ This changelog is written in English only.
 - **Container:** Docker + docker-compose
 - **Orchestration:** Helm charts for Kubernetes
 
-[Unreleased]: https://github.com/natorus87/kiwiki/compare/v4.1.0...HEAD
+[Unreleased]: https://github.com/natorus87/kiwiki/compare/v4.2.0...HEAD
+[4.2.0]: https://github.com/natorus87/kiwiki/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/natorus87/kiwiki/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/natorus87/kiwiki/compare/v3.2.0...v4.0.0
 [3.2.0]: https://github.com/natorus87/kiwiki/compare/v3.1.1...v3.2.0

@@ -2,7 +2,7 @@
 image:
   repository: natorus87/kiwiki
   pullPolicy: IfNotPresent
-  tag: "4.1.0"
+  tag: "4.2.0"
 
 # Deployment
 replicaCount: 1
