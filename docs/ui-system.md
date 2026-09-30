@@ -1,6 +1,6 @@
 # Kiwiki UI-System
 
-Kiwiki nutzt eine ruhige, werkzeugartige Oberfläche: dunkle, warme Flächen, klare Typografie und Limettengrün nur
+Kiwiki nutzt eine ruhige, werkzeugartige Oberfläche: dunkle, warme Flächen, klare Typografie und Honig-Bernstein (`#e3a94f`) nur
 für Fokus, Status und primäre Aktionen. Der Feinschliff orientiert sich an der Präzision moderner Developer-Tools,
 bleibt aber eine eigenständige, vollständig selbst gehostete Kiwiki-Oberfläche ohne Astryx- oder React-Abhängigkeit.
 

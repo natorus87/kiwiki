@@ -43,9 +43,9 @@
   };
 
   var palette = {
-    background: '#171713', document: '#b8df78', tag: '#d6ab6d',
-    concept: '#9faaa0', line: 'rgba(184, 223, 120, .13)',
-    lineHot: 'rgba(196, 234, 134, .72)', text: '#f0e9dc', muted: '#a99d8d'
+    background: '#171713', document: '#e3a94f', tag: '#9fb7d8',
+    concept: '#9faaa0', line: 'rgba(227, 169, 79, .13)',
+    lineHot: 'rgba(237, 186, 102, .72)', text: '#f0e9dc', muted: '#a99d8d'
   };
 
   function hash(value) {
@@ -211,7 +211,7 @@
     context.fillStyle = palette.background;
     context.fillRect(0, 0, state.width, state.height);
     var glow = context.createRadialGradient(state.width * .52, state.height * .48, 0, state.width * .52, state.height * .48, Math.max(state.width, state.height) * .62);
-    glow.addColorStop(0, 'rgba(79, 104, 48, .12)'); glow.addColorStop(.45, 'rgba(38, 48, 27, .05)'); glow.addColorStop(1, 'rgba(23, 23, 19, 0)');
+    glow.addColorStop(0, 'rgba(110, 78, 30, .12)'); glow.addColorStop(.45, 'rgba(52, 38, 18, .05)'); glow.addColorStop(1, 'rgba(23, 23, 19, 0)');
     context.fillStyle = glow; context.fillRect(0, 0, state.width, state.height);
     if (!state.paused && !prefersReducedMotion) state.yaw += Math.sin(time * 0.00017) * 0.00009;
   }
@@ -229,7 +229,7 @@
       var px = source.sx + (target.sx - source.sx) * offset;
       var py = source.sy + (target.sy - source.sy) * offset;
       context.beginPath(); context.arc(px, py, selected ? 1.8 : 1.1, 0, Math.PI * 2);
-      context.fillStyle = selected ? '#eefbcf' : 'rgba(184,223,120,.48)'; context.fill();
+      context.fillStyle = selected ? '#fdf0d4' : 'rgba(227,169,79,.48)'; context.fill();
     }
   }
 
@@ -243,19 +243,19 @@
     context.globalAlpha = connected ? 1 : .1;
     if ((node.kind === 'document' && state.nodes.length <= MAX_PAIRWISE_NODES) || selected || hovered) {
       var halo = context.createRadialGradient(node.sx, node.sy, 0, node.sx, node.sy, radius * (selected ? 5 : 3.2));
-      halo.addColorStop(0, selected ? 'rgba(238,251,207,.38)' : 'rgba(184,223,120,.22)'); halo.addColorStop(1, 'rgba(184,223,120,0)');
+      halo.addColorStop(0, selected ? 'rgba(253,240,212,.38)' : 'rgba(227,169,79,.22)'); halo.addColorStop(1, 'rgba(227,169,79,0)');
       context.fillStyle = halo; context.beginPath(); context.arc(node.sx, node.sy, radius * (selected ? 5 : 3.2), 0, Math.PI * 2); context.fill();
     }
     context.beginPath(); context.arc(node.sx, node.sy, radius + (selected ? 2 : 0), 0, Math.PI * 2);
     context.fillStyle = nodeColor(node); context.fill();
     if (node.kind !== 'document') {
-      context.strokeStyle = node.kind === 'tag' ? 'rgba(255,236,190,.72)' : 'rgba(240,233,220,.5)';
+      context.strokeStyle = node.kind === 'tag' ? 'rgba(214,226,242,.72)' : 'rgba(240,233,220,.5)';
       context.lineWidth = 1; context.stroke();
     }
     if (selected || hovered || (node.kind === 'document' && node.scale > .85 && state.nodes.length < 180)) {
       context.font = (selected ? '600 13px ' : '500 11px ') + '"Geist Sans", sans-serif';
       context.textAlign = 'center'; context.textBaseline = 'top';
-      context.fillStyle = selected ? palette.text : (hovered ? '#e8f4d0' : 'rgba(240,233,220,.72)');
+      context.fillStyle = selected ? palette.text : (hovered ? '#f6e8cc' : 'rgba(240,233,220,.72)');
       var label = node.label.length > 34 ? node.label.slice(0, 32) + '…' : node.label;
       context.fillText(label, node.sx, node.sy + radius + 7);
     }

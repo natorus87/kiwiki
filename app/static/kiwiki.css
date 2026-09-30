@@ -3,7 +3,7 @@
 /* Safari: blauen Tap-Highlight entfernen */
 * { -webkit-tap-highlight-color: transparent; }
 
-/* ── Warm dark workspace theme – Kiwi Green identity ───────────────── */
+/* ── Warm dark workspace theme – Amber identity ───────────────── */
 :root {
   color-scheme: dark;
 
@@ -15,15 +15,15 @@
   --md-surface-ch:  #38342d;
   --md-surface-cht: #423d34;
 
-  /* Product identity: Kiwi Green stays the primary accent. */
-  --md-primary:       #b8df78;
-  --md-primary-hover: #c4ea86;
-  --md-primary-c:     #354823;
-  --md-primary-c-on:  #f2f8df;
-  --md-primary-ink:   #223016;
-  --md-primary-dim:   rgba(184, 223, 120, 0.16);
-  --md-primary-dim2:  rgba(184, 223, 120, 0.08);
-  --md-primary-border: rgba(184, 223, 120, 0.34);
+  /* Product identity: Honey amber is the primary accent (replaced Kiwi Green to stand apart from KiwiFS). */
+  --md-primary:       #e3a94f;
+  --md-primary-hover: #edba66;
+  --md-primary-c:     #4a3517;
+  --md-primary-c-on:  #fbf0dc;
+  --md-primary-ink:   #2b1d08;
+  --md-primary-dim:   rgba(227, 169, 79, 0.16);
+  --md-primary-dim2:  rgba(227, 169, 79, 0.08);
+  --md-primary-border: rgba(227, 169, 79, 0.34);
 
   /* Text and borders */
   --md-on-surface:    #f0e9dc;
@@ -42,7 +42,7 @@
   --md-secondary-c:   #3b3429;
   --md-accent:        var(--md-primary);
   --md-accent-dim:    var(--md-primary-dim);
-  --md-warm:          #d6ab6d;
+  --md-tertiary:      #9fb7d8;
 
   /* Fonts */
   --font-display: 'Bricolage Grotesque', 'Geist Sans', ui-sans-serif, system-ui, sans-serif;
@@ -106,7 +106,7 @@ header, .app-layout { position: relative; z-index: 1; }
 
 ::selection { background: var(--md-primary-dim); color: var(--md-primary); }
 :focus-visible {
-  outline: 3px solid rgba(184, 223, 120, 0.42);
+  outline: 3px solid rgba(227, 169, 79, 0.42);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
@@ -236,7 +236,7 @@ header::before {
   outline: none;
   border-color: var(--md-primary);
   background-color: var(--md-surface-ch);
-  box-shadow: 0 0 0 3px rgba(163, 217, 107, 0.18);
+  box-shadow: 0 0 0 3px rgba(227, 169, 79, 0.18);
 }
 .search-wrap:focus-within svg.search-icon { color: var(--md-primary); }
 
@@ -293,7 +293,7 @@ header::before {
   text-transform: uppercase; letter-spacing: 0.06em;
   padding: var(--space-0-5) var(--space-2); border-radius: var(--radius-xl);
 }
-.role-pill.role-admin { background: rgba(214, 171, 109, 0.16); color: var(--md-warm); }
+.role-pill.role-admin { background: rgba(159, 183, 216, 0.16); color: var(--md-tertiary); }
 .role-pill.role-write { background: rgba(143, 170, 122, 0.16); color: #b6d5a1; }
 .role-pill.role-read  { background: var(--md-primary-dim); color: var(--md-primary); }
 
@@ -319,7 +319,7 @@ header::before {
 .hamburger:hover { background: none; color: var(--md-on-surface-v); }
 .hamburger:focus { background: none; color: var(--md-on-surface-v); outline: none; }
 .hamburger:focus-visible {
-  outline: 3px solid rgba(184, 223, 120, 0.58);
+  outline: 3px solid rgba(227, 169, 79, 0.58);
   outline-offset: -4px;
 }
 .hamburger svg { width: 23px; height: 23px; }
@@ -415,8 +415,8 @@ header::before {
   margin-bottom: var(--space-0-5);
   position: relative;
 }
-.tree-row:hover { background: rgba(184, 223, 120, 0.07); }
-.tree-row:focus-within { background: rgba(184, 223, 120, 0.1); }
+.tree-row:hover { background: rgba(227, 169, 79, 0.07); }
+.tree-row:focus-within { background: rgba(227, 169, 79, 0.1); }
 
 .tree-row .file-item {
   flex: 1; min-width: 0;
@@ -886,12 +886,12 @@ body.role-read  .needs-write { display: none !important; }
   background: var(--md-primary);
   color: var(--md-primary-ink);
   border-color: var(--md-primary-border);
-  box-shadow: 0 1px 3px rgba(184, 223, 120, 0.15);
+  box-shadow: 0 1px 3px rgba(227, 169, 79, 0.15);
 }
 .btn-primary:hover {
   background: var(--md-primary-hover);
   color: var(--md-primary-ink);
-  box-shadow: 0 4px 12px rgba(184, 223, 120, 0.25);
+  box-shadow: 0 4px 12px rgba(227, 169, 79, 0.25);
   transform: translateY(-1px);
 }
 .btn-primary:active { transform: translateY(0); box-shadow: none; }
@@ -1124,7 +1124,7 @@ button:hover { background: var(--md-primary-hover); color: var(--md-primary-ink)
   cursor: pointer; transition: all var(--t);
   text-decoration: none;
 }
-.mobile-nav-btn:hover { background: var(--md-primary-dim); border-color: rgba(163,217,107,0.3); color: var(--md-primary); }
+.mobile-nav-btn:hover { background: var(--md-primary-dim); border-color: rgba(227,169,79,0.3); color: var(--md-primary); }
 
 .mobile-user-row {
   display: flex; align-items: center; gap: var(--space-2);
@@ -1161,7 +1161,7 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
   background: var(--md-primary);
   color: var(--md-primary-ink);
   border: none;
-  box-shadow: 0 4px 16px rgba(184, 223, 120, 0.35);
+  box-shadow: 0 4px 16px rgba(227, 169, 79, 0.35);
   cursor: pointer;
   z-index: 200;
   align-items: center;
@@ -1429,7 +1429,7 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
   width: min(100%, 440px);
   padding: var(--space-8) var(--space-8) var(--space-6);
   box-shadow:
-    0 0 0 1px rgba(184, 223, 120, 0.04),
+    0 0 0 1px rgba(227, 169, 79, 0.04),
     var(--shadow-raised);
   transform: translateY(8px) scale(0.98);
   transition: transform 0.2s ease;
@@ -1487,7 +1487,7 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
   outline: none;
   border-color: var(--md-primary);
   background: var(--md-surface-ch);
-  box-shadow: 0 0 0 3px rgba(163, 217, 107, 0.18);
+  box-shadow: 0 0 0 3px rgba(227, 169, 79, 0.18);
 }
 
 .kw-modal-actions {
@@ -1652,7 +1652,7 @@ header {
 }
 
 .tree-row:hover {
-  background: rgba(184, 223, 120, 0.07);
+  background: rgba(227, 169, 79, 0.07);
 }
 
 .file-item.active {
@@ -1723,7 +1723,7 @@ header {
   color: var(--md-on-surface);
 }
 
-.role-pill.role-admin { background: rgba(214, 171, 109, 0.16); color: var(--md-warm); }
+.role-pill.role-admin { background: rgba(159, 183, 216, 0.16); color: var(--md-tertiary); }
 .role-pill.role-write { background: rgba(143, 170, 122, 0.16); color: #b6d5a1; }
 .role-pill.role-read  { background: var(--md-accent-dim); color: var(--md-accent); }
 
@@ -1806,7 +1806,7 @@ header::before,
   border-radius: var(--radius-md);
 }
 .sidebar-btn:hover {
-  background: rgba(184, 223, 120, 0.12);
+  background: rgba(227, 169, 79, 0.12);
   border-color: transparent;
 }
 .file-tree {
@@ -1974,7 +1974,7 @@ header::before,
 }
 .hero-eyebrow {
   border: 0;
-  background: rgba(184, 223, 120, 0.1);
+  background: rgba(227, 169, 79, 0.1);
 }
 .hero-panel,
 .step-card,
