@@ -249,7 +249,7 @@
     context.beginPath(); context.arc(node.sx, node.sy, radius + (selected ? 2 : 0), 0, Math.PI * 2);
     context.fillStyle = nodeColor(node); context.fill();
     if (node.kind !== 'document') {
-      context.strokeStyle = node.kind === 'tag' ? 'rgba(255,236,190,.72)' : 'rgba(240,233,220,.5)';
+      context.strokeStyle = node.kind === 'tag' ? 'rgba(214,226,242,.72)' : 'rgba(240,233,220,.5)';
       context.lineWidth = 1; context.stroke();
     }
     if (selected || hovered || (node.kind === 'document' && node.scale > .85 && state.nodes.length < 180)) {
