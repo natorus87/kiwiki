@@ -86,6 +86,13 @@ Format: `<type>(<scope>): <description>`
 Types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `perf`
 Example: `feat(ui): add tag-to-search in note view`
 
+## Changelog and Release Notes
+
+`CHANGELOG.md` and GitHub release notes are written in **English only**. German UI strings may
+appear only as quoted interface text (e.g. the German placeholder "Notizen durchsuchen…").
+`tests/test_changelog_language.py` fails the build on German prose in the changelog. Release notes
+for a version are the matching changelog section plus the Docker digest.
+
 ---
 
 Thank you for your support!
