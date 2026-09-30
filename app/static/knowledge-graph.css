@@ -12,7 +12,7 @@
   grid-template-rows: auto minmax(0, 1fr);
   color: var(--md-on-surface);
   background:
-    radial-gradient(circle at 72% 18%, rgba(184, 223, 120, 0.07), transparent 30%),
+    radial-gradient(circle at 72% 18%, rgba(227, 169, 79, 0.07), transparent 30%),
     #171713;
 }
 
@@ -49,7 +49,7 @@
   height: 10px;
   border-radius: 50%;
   background: var(--md-primary);
-  box-shadow: 0 0 0 5px rgba(184, 223, 120, 0.09), 0 0 22px var(--md-primary);
+  box-shadow: 0 0 0 5px rgba(227, 169, 79, 0.09), 0 0 22px var(--md-primary);
   animation: knowledge-breathe 2.6s ease-in-out infinite;
 }
 @keyframes knowledge-breathe { 50% { opacity: .42; transform: scale(.75); } }
@@ -67,7 +67,7 @@
 }
 .knowledge-icon-button:hover { color: var(--md-primary); border-color: var(--md-primary-border); background: var(--md-primary-dim2); }
 .knowledge-icon-button svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.knowledge-icon-button[aria-pressed="true"] { color: var(--md-warm); border-color: rgba(214, 171, 109, .4); }
+.knowledge-icon-button[aria-pressed="true"] { color: var(--md-tertiary); border-color: rgba(159, 183, 216, .4); }
 
 .knowledge-viewport { position: relative; min-height: 0; overflow: hidden; isolation: isolate; }
 #knowledge-graph { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; z-index: 2; }
@@ -76,8 +76,8 @@
 .knowledge-atmosphere {
   position: absolute; inset: 0; z-index: 1; pointer-events: none;
   background:
-    linear-gradient(rgba(184, 223, 120, .018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(184, 223, 120, .018) 1px, transparent 1px);
+    linear-gradient(rgba(227, 169, 79, .018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(227, 169, 79, .018) 1px, transparent 1px);
   background-size: 52px 52px;
   mask-image: radial-gradient(circle at center, black, transparent 78%);
 }
@@ -93,7 +93,7 @@
 .knowledge-loading strong, .knowledge-empty h2 { font: 600 var(--text-xl) var(--font-display); }
 .knowledge-loading > span:last-child, .knowledge-empty p { max-width: 45ch; color: var(--md-on-surface-v); font-size: var(--text-md); }
 .loading-orbit { position: relative; width: 76px; height: 76px; margin-bottom: var(--space-3); animation: orbit-spin 4s linear infinite; }
-.loading-orbit::before { content: ''; position: absolute; inset: 12px; border: 1px solid rgba(184, 223, 120, .2); border-radius: 50%; }
+.loading-orbit::before { content: ''; position: absolute; inset: 12px; border: 1px solid rgba(227, 169, 79, .2); border-radius: 50%; }
 .loading-orbit i { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--md-primary); box-shadow: 0 0 14px var(--md-primary); }
 .loading-orbit i:nth-child(1) { left: 34px; top: 0; }
 .loading-orbit i:nth-child(2) { left: 6px; bottom: 10px; opacity: .65; }
@@ -106,7 +106,7 @@
 .knowledge-inspector {
   position: absolute; z-index: 7; top: 24px; right: 24px;
   width: min(340px, calc(100% - 32px)); padding: var(--space-6);
-  border: 1px solid rgba(184, 223, 120, .22); border-radius: var(--radius-lg);
+  border: 1px solid rgba(227, 169, 79, .22); border-radius: var(--radius-lg);
   background: rgba(38, 36, 31, .94); box-shadow: 0 28px 80px rgba(0, 0, 0, .36);
   backdrop-filter: blur(18px); animation: inspector-in .22s ease-out both;
 }
@@ -144,7 +144,7 @@
 .knowledge-legend span { display: flex; align-items: center; gap: var(--space-3); color: var(--md-on-surface-v); font-size: var(--text-sm); }
 .legend-node { width: 8px; height: 8px; border-radius: 50%; }
 .legend-document { background: var(--md-primary); box-shadow: 0 0 10px var(--md-primary); }
-.legend-tag { background: var(--md-warm); box-shadow: 0 0 8px rgba(214, 171, 109, .7); }
+.legend-tag { background: var(--md-tertiary); box-shadow: 0 0 8px rgba(159, 183, 216, .7); }
 .legend-concept { border: 1px solid #9faaa0; }
 .knowledge-keymap h3 { margin-bottom: var(--space-3); color: var(--md-outline); font: 600 var(--text-xs) var(--font-mono); letter-spacing: .14em; text-transform: uppercase; }
 .knowledge-keymap dl { display: grid; gap: var(--space-2); }

@@ -8,6 +8,13 @@ This changelog is written in English only.
 
 ## [Unreleased]
 
+### Changed
+- **New brand color: honey amber (`#e3a94f`) replaces Kiwi Green.** Primary actions, focus rings,
+  links, the wordmark and the Neural Atlas now use amber so kiwiki is visually distinct from the
+  similar KiwiFS project. Tag nodes and the admin role pill moved to a cool blue (`--md-tertiary`,
+  formerly `--md-warm`) to stay distinguishable from the new primary. Static asset versions were
+  bumped so browsers pick up the new theme.
+
 ## [4.1.0] - 2026-09-29
 
 ### Upgrade notes

@@ -178,8 +178,8 @@ def test_astryx_inspirierter_feinschliff_bleibt_selbst_gehostet_und_tokenbasiert
     assert polish_path.exists()
     polish = polish_path.read_text(encoding="utf-8")
 
-    assert "/static/kiwiki-polish.css?v=20260929-ui-review" in layout
-    assert "/static/kiwiki-polish.css?v=20260929-ui-review" in login
+    assert "/static/kiwiki-polish.css?v=20260930-amber" in layout
+    assert "/static/kiwiki-polish.css?v=20260930-amber" in login
     # Die Abstandsskala liegt seit der Vereinheitlichung in kiwiki.css :root,
     # damit sie nur einmal existiert. tests/test_design_tokens.py haelt sie
     # geschlossen; hier genuegt, dass das Polish-Stylesheet sie benutzt.
