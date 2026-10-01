@@ -7,15 +7,14 @@
 
   var viewport = document.getElementById('knowledge-viewport');
   var context = canvas.getContext('2d', { alpha: false, desynchronized: true });
-  // Bewegung: Systemwunsch "weniger Bewegung" ist der Standard, der Knopf in
-  // der Atlas-Leiste kann ihn bewusst übersteuern (gemerkt pro Browser).
-  // Vorher blieb der Atlas bei reduzierter Bewegung dauerhaft still, und der
-  // Knopf schaltete nur "paused" um, das nie etwas freigab.
-  var MOTION_KEY = 'kiwiki_atlas_motion';
+  // Bewegung: Der Atlas spielt beim Laden immer kurz an (Aufbau + Datenfluss)
+  // und kommt danach weich zur Ruhe; ▶ setzt die Bewegung fort, ⏸ beruhigt
+  // sie wieder. Bei "Bewegung reduzieren" im System ist die Vorführung kürzer.
   var systemReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var motionChoice = null;
-  try { motionChoice = localStorage.getItem(MOTION_KEY); } catch (e) { motionChoice = null; }
-  var prefersReducedMotion = systemReducedMotion && motionChoice !== 'on';
+  var prefersReducedMotion = false;
+  var SHOWCASE_MS = systemReducedMotion ? 2500 : 7000;
+  var CALM_MS = 1800;
+  var CALM_ON_PAUSE_MS = 700;
   var language = document.documentElement.lang === 'en' ? 'en' : 'de';
   var copy = {
     de: {
@@ -63,7 +62,8 @@
     nodes: [], edges: [], nodeById: new Map(), adjacency: new Map(),
     width: 1, height: 1, dpr: 1, yaw: -0.35, pitch: 0.18, distance: 720, defaultDistance: 720,
     targetX: 0, targetY: 0, targetZ: 0, selected: null, hovered: null,
-    dragging: false, moved: false, lastX: 0, lastY: 0, paused: prefersReducedMotion || motionChoice === 'off',
+    dragging: false, moved: false, lastX: 0, lastY: 0, paused: false,
+    restAt: Infinity, calm: null, energy: 1,
     pointers: new Map(), pinchDistance: null,
     neighborhoodOnly: false, frame: 0, lastTime: performance.now(), settled: false, simulationSteps: 0,
     intro: { start: 0, end: 0, done: true, waveFired: false },
@@ -216,10 +216,10 @@
       if (pulse.t >= 1) {
         state.fieldPulses.splice(i, 1);
         state.field[pulse.b].flash = 0.8;
-        if (Math.random() < PULSE_HOP) spawnFieldPulse(pulse.b);
+        if (!state.calm && Math.random() < PULSE_HOP) spawnFieldPulse(pulse.b);
       }
     }
-    if (state.intro.done && time > state.nextFieldPulse) {
+    if (state.intro.done && !state.calm && time > state.nextFieldPulse) {
       spawnFieldPulse();
       state.nextFieldPulse = time + PULSE_EVERY_MS * 0.6 + Math.random() * PULSE_EVERY_MS * 0.6;
     }
@@ -247,7 +247,7 @@
     });
     state.fieldPulses.forEach(function (pulse) {
       var a = state.field[pulse.a]; var b = state.field[pulse.b];
-      if (fieldVisible(a) && fieldVisible(b)) drawPacket(a, b, pulse.t, false, 0.95 * hush);
+      if (fieldVisible(a) && fieldVisible(b)) drawPacket(a, b, pulse.t, false, 0.95 * hush * state.energy);
     });
     state.field.forEach(function (node) {
       if (!fieldVisible(node)) return;
@@ -292,6 +292,7 @@
     if (elapsed > state.intro.end + 700) {
       state.intro.done = true;
       state.nextRecall = now + 1600;
+      state.restAt = now + SHOWCASE_MS;
       state.nodes.forEach(function (node) { node.k = 1; });
       state.field.forEach(function (node) { node.k = 1; });
     }
@@ -435,7 +436,7 @@
     // Langsame Drehung, sobald niemand bedient; beim Aufbau mit abklingendem Schwung
     var introSpin = state.intro.done ? 0 : 0.0007 * Math.pow(1 - clamp01((time - state.intro.start) / (state.intro.end + 700)), 2);
     // ~5°/s wie der Hero der Website; waehrend des Aufbaus mit zusaetzlichem Schwung
-    if (time - state.lastInteraction > IDLE_ROTATE_AFTER_MS || introSpin) state.yaw += dt * (0.00009 + introSpin);
+    if (time - state.lastInteraction > IDLE_ROTATE_AFTER_MS || introSpin) state.yaw += dt * (0.00009 * state.energy + introSpin);
   }
 
   function drawWaves(time) {
@@ -473,7 +474,7 @@
   // ── Abruf wie im Website-Hero: ein Dokument leuchtet auf, zeigt seinen
   // Namen und schickt Daten an alle Nachbarn. Nur sichtbare, vordere Knoten.
   function maybeRecall(time) {
-    if (!state.intro.done || state.paused || prefersReducedMotion || state.dragging || state.selected) return;
+    if (!state.intro.done || state.paused || state.calm || prefersReducedMotion || state.dragging || state.selected) return;
     if (time < state.nextRecall) return;
     var large = state.nodes.length > MAX_PAIRWISE_NODES;
     state.nextRecall = time + (large ? RECALL_EVERY_MS * 1.6 : RECALL_EVERY_MS) + Math.random() * 2600;
@@ -499,15 +500,44 @@
         state.pulses.splice(i, 1);
         var arrived = state.nodeById.get(pulse.to);
         if (arrived) arrived.flash = Math.max(arrived.flash, pulse.hot ? 0.8 : 0.35);
-        if (Math.random() < PULSE_HOP) spawnPulse(pulse.to, time);
+        if (!state.calm && Math.random() < PULSE_HOP) spawnPulse(pulse.to, time);
       }
     }
     // Umgebungs-Impulse nur bei kleineren Graphen; große bleiben ruhig
-    if (state.intro.done && state.nodes.length <= MAX_PAIRWISE_NODES && time > state.nextPulse) {
+    if (state.intro.done && !state.calm && state.nodes.length <= MAX_PAIRWISE_NODES && time > state.nextPulse) {
       spawnPulse(null, time);
       state.nextPulse = time + PULSE_EVERY_MS + Math.random() * PULSE_EVERY_MS;
     }
     state.nodes.forEach(function (node) { if (node.flash > 0) node.flash = Math.max(0, node.flash - dt / 1400); });
+  }
+
+  // ── Zur Ruhe kommen: nach der Vorführung (oder auf ⏸) blenden Pakete und
+  // Drehung weich aus, danach steht der Atlas. ▶ bringt alles zurück.
+  function beginCalm(time, duration) {
+    if (state.paused || state.calm) return;
+    state.calm = { start: time, duration: duration, from: state.energy };
+    state.restAt = Infinity;
+  }
+
+  function updateRest(time) {
+    if (!state.paused && !state.calm && time >= state.restAt) beginCalm(time, CALM_MS);
+    if (!state.calm) return;
+    var k = clamp01((time - state.calm.start) / state.calm.duration);
+    state.energy = state.calm.from * (1 - easeOut(k));
+    if (k >= 1) {
+      state.calm = null; state.energy = 0; state.paused = true;
+      state.pulses = []; state.fieldPulses = [];
+      syncMotionButton();
+    }
+  }
+
+  function resumeMotion(time) {
+    state.paused = false; state.calm = null; state.energy = 1;
+    state.restAt = Infinity; state.lastInteraction = -IDLE_ROTATE_AFTER_MS;
+    if (state.intro.done) {
+      state.nextRecall = time + 600;
+      for (var i = 0; i < 6; i += 1) { spawnPulse(null, time); spawnFieldPulse(); }
+    }
   }
 
   // Datenpaket: heller Kopf, Leuchtschweif entlang der Kante (wie Website)
@@ -538,7 +568,7 @@
       var a = state.nodeById.get(pulse.from); var b = state.nodeById.get(pulse.to);
       if (!a || !b || a.depth < 100 || b.depth < 100) return;
       if (state.neighborhoodOnly && state.selected && !(isConnected(a) && isConnected(b))) return;
-      drawPacket(a, b, pulse.t, pulse.hot, 1);
+      drawPacket(a, b, pulse.t, pulse.hot, state.energy);
     });
   }
 
@@ -653,7 +683,7 @@
   function render(time) {
     state.frame = window.requestAnimationFrame(render);
     var dt = Math.min(64, Math.max(0, time - state.lastTime)); state.lastTime = time;
-    simulate(); refitAfterSettle(); updateIntro(time); updateCamera(); updatePulses(time, dt); maybeRecall(time); updateField(time, dt);
+    simulate(); refitAfterSettle(); updateIntro(time); updateCamera(); updatePulses(time, dt); maybeRecall(time); updateField(time, dt); updateRest(time);
     drawBackground(time, dt); drawWaves(time);
     projectField(); drawField(time);
     state.nodes.forEach(project);
@@ -832,20 +862,16 @@
   document.getElementById('knowledge-reset').addEventListener('click', resetView);
   var motionButton = document.getElementById('knowledge-motion');
   function syncMotionButton() {
-    motionButton.setAttribute('aria-pressed', String(state.paused));
-    motionButton.setAttribute('aria-label', state.paused ? copy.resume : copy.pause);
-    motionButton.title = state.paused ? copy.resume : copy.pause;
+    var resting = state.paused || !!state.calm;
+    motionButton.setAttribute('aria-pressed', String(resting));
+    motionButton.setAttribute('aria-label', resting ? copy.resume : copy.pause);
+    motionButton.title = resting ? copy.resume : copy.pause;
   }
   motionButton.addEventListener('click', function () {
-    state.paused = !state.paused;
-    if (!state.paused) {
-      // Bewusst eingeschaltet: gilt auch gegen den Systemwunsch
-      prefersReducedMotion = false;
-      state.lastInteraction = -IDLE_ROTATE_AFTER_MS;
-      if (state.intro.done && state.nextRecall === Infinity) state.nextRecall = performance.now() + 600;
-      for (var i = 0; i < 6; i += 1) { spawnPulse(null, performance.now()); spawnFieldPulse(); }
-    }
-    try { localStorage.setItem(MOTION_KEY, state.paused ? 'off' : 'on'); } catch (e) { /* privat-Modus */ }
+    var now = performance.now();
+    // Ruhend oder gerade beim Ausklingen -> fortsetzen (bleibt an, bis ⏸)
+    if (state.paused || state.calm) resumeMotion(now);
+    else beginCalm(now, CALM_ON_PAUSE_MS);
     syncMotionButton();
   });
   syncMotionButton();

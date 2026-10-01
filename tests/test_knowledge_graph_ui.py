@@ -218,15 +218,15 @@ def test_atlas_assets_are_cache_busted_for_the_motion_release(monkeypatch):
 
     for lang in ("de", "en"):
         page = client.get(f"/knowledge?lang={lang}").text
-        assert "/static/knowledge-graph.js?v=20261001-flow" in page
-        assert "/static/knowledge-graph.css?v=20261001-flow" in page
+        assert "/static/knowledge-graph.js?v=20261001-rest" in page
+        assert "/static/knowledge-graph.css?v=20261001-rest" in page
 
 
 def test_atlas_motion_matches_the_website_hero():
     """Drehung, Impulsrate und Zeiger-Licht wie auf kiwiki.xyz; Kamera fuellt den Raum."""
     script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
 
-    assert "state.yaw += dt * (0.00009 + introSpin)" in script
+    assert "state.yaw += dt * (0.00009 * state.energy + introSpin)" in script
     assert "var POINTER_GLOW_RADIUS =" in script
     assert "canvas.addEventListener('pointerleave'" in script
     # Fit am robusten Radius (95. Perzentil), laufend waehrend des Einschwingens
@@ -252,7 +252,7 @@ def test_atlas_data_flow_like_website_hero():
     assert "context.createLinearGradient(tx, ty, x, y)" in script
     assert "function maybeRecall(" in script
     # kein Abruf waehrend Aufbau, Pause, reduzierter Bewegung oder Auswahl
-    assert "if (!state.intro.done || state.paused || prefersReducedMotion || state.dragging || state.selected) return;" in script
+    assert "if (!state.intro.done || state.paused || state.calm || prefersReducedMotion || state.dragging || state.selected) return;" in script
     assert "maybeRecall(time);" in script
 
 
@@ -274,14 +274,18 @@ def test_atlas_has_website_synapse_field_around_the_graph():
     assert "state.field" not in nearest
 
 
-def test_atlas_motion_button_can_override_reduced_motion_and_is_remembered():
-    """Mit 'Bewegung reduzieren' im System stand der Atlas still und der Knopf
-    zeigte trotzdem 'Pausieren'. Jetzt: startet pausiert mit Play-Symbol, der
-    Knopf schaltet die Bewegung bewusst ein, die Wahl bleibt erhalten."""
+def test_atlas_plays_briefly_then_fades_to_rest_and_play_resumes():
+    """Beim Laden kurz animiert (Aufbau + Datenfluss), dann weich zur Ruhe;
+    ▶ setzt fort und bleibt an, ⏸ blendet wieder aus. Keine gemerkte Wahl:
+    jeder Besuch bekommt die kurze Vorfuehrung."""
     script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
-    assert "var prefersReducedMotion = systemReducedMotion && motionChoice !== 'on';" in script
-    assert "paused: prefersReducedMotion || motionChoice === 'off'" in script
-    assert "localStorage.setItem(MOTION_KEY, state.paused ? 'off' : 'on')" in script
-    assert "prefersReducedMotion = false;" in script
+    assert "var SHOWCASE_MS =" in script
+    assert "state.restAt = now + SHOWCASE_MS;" in script
+    assert "function beginCalm(" in script and "function updateRest(" in script
+    # Ausklingen: keine neuen Pakete, Pakete und Drehung blenden mit energy aus
+    assert "state.intro.done && !state.calm && state.nodes.length <= MAX_PAIRWISE_NODES" in script
+    assert "drawPacket(a, b, pulse.t, pulse.hot, state.energy)" in script
+    assert "if (state.paused || state.calm) resumeMotion(now);" in script
+    assert "localStorage.setItem(MOTION_KEY" not in script
     template = (ROOT / "app/templates/knowledge.html").read_text(encoding="utf-8")
     assert 'class="motion-play"' in template
