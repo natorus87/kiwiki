@@ -1007,8 +1007,14 @@ body > header.is-reading::after { opacity: 1; }
   box-shadow: var(--edge-light), var(--lift-1);
 }
 
-/* Segment-Umschalter wie ein System-Control: ein gleitender Daumen */
+/* Segment-Umschalter wie ein System-Control: ein gleitender Daumen.
+   Jedes Segment ist so breit wie sein Text plus gleicher Innenabstand;
+   der Daumen wird per JS exakt auf das aktive Segment vermessen
+   (--seg-x/--seg-w). Gleich breite Spalten hätten kurze Labels mit
+   doppelt so viel Rand stehen lassen wie lange — das wirkt schief. */
 .recent-switch.has-thumb {
+  display: inline-flex;
+  gap: 0;
   position: relative;
   isolation: isolate;
   background: rgba(0, 0, 0, 0.22);
@@ -1020,15 +1026,33 @@ body > header.is-reading::after { opacity: 1; }
   z-index: -1;
   top: var(--space-0-5);
   bottom: var(--space-0-5);
-  left: var(--space-0-5);
-  width: calc((100% - var(--space-1) - (var(--seg-count, 2) - 1) * var(--space-1)) / var(--seg-count, 2));
-  transform: translateX(calc(var(--seg-index, 0) * (100% + var(--space-1))));
+  left: 0;
+  width: var(--seg-w, 0px);
+  transform: translateX(var(--seg-x, 0px));
   border-radius: calc(var(--radius-sm) - 2px);
   background: linear-gradient(180deg, #3d3830, #312d27);
   box-shadow: inset 0 1px 0 rgba(255, 236, 200, 0.08), 0 1px 3px rgba(0, 0, 0, 0.45);
-  transition: transform var(--d-std) var(--ease-spring);
+  transition: transform var(--d-std) var(--ease-spring), width var(--d-std) var(--ease-spring);
 }
-.recent-switch.has-thumb .recent-tab { flex: 1 1 0; white-space: nowrap; transition: color var(--d-std) var(--ease-calm); }
+.recent-switch.has-thumb.is-measuring::before { transition: none; }
+.recent-switch.has-thumb .recent-tab {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  transition: color var(--d-std) var(--ease-calm);
+}
+/* Platz für die fette Variante reservieren: sonst wird das Label beim
+   Aktivieren breiter und der Text springt seitlich. */
+.recent-switch .recent-tab::after {
+  content: attr(data-label);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: 600;
+  pointer-events: none;
+}
 .recent-switch.has-thumb .recent-tab[aria-pressed="true"] { background: transparent; }
 
 /* Zuletzt-Liste: Zeilen heben sich beim Zeigen leicht an */
@@ -1475,3 +1499,103 @@ body.login-page {
 .file-actions { gap: var(--space-3); }
 .file-actions .btn { min-height: var(--control-height); padding: 0 var(--space-4); }
 .settings-head { gap: var(--space-6); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   4.3 Bewegung in der App — Sidebar, Baum, Menüs, Startseite
+   ───────────────────────────────────────────────────────────────────────
+   Gleiche Sprache wie oben: Federkurve für Dinge, die ankommen; ruhige
+   Kurve für Dinge, die gehen. Animiert wird nur transform/opacity bzw.
+   die Sidebar-Breite (vorher schon animiert). Bei reduzierter Bewegung
+   greift die globale 0,01-ms-Regel weiter oben: Zustände bleiben gleich,
+   nur der Weg entfällt.
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: no-preference) {
+  /* ── Sidebar Desktop: Breite gleitet, Inhalt blendet versetzt mit ──── */
+  @media (min-width: 1025px) {
+    .sidebar {
+      transition: width var(--d-slow) var(--ease-calm), border-color var(--d-std) var(--ease-calm);
+    }
+    /* Beim Ziehen am Griff folgt die Breite direkt der Maus */
+    body:has(.sidebar-resizer.dragging) .sidebar { transition: none; }
+    .sidebar > * {
+      transition: opacity var(--d-std) var(--ease-calm), transform var(--d-slow) var(--ease-calm);
+    }
+    .sidebar.collapsed > * { opacity: 0; transform: translateX(-14px); }
+    .sidebar:not(.collapsed) > :nth-child(2) { transition-delay: 40ms; }
+    .sidebar:not(.collapsed) > :nth-child(3) { transition-delay: 80ms; }
+    .sidebar:not(.collapsed) > :nth-child(4) { transition-delay: 110ms; }
+    .sidebar:not(.collapsed) > :nth-child(n+5) { transition-delay: 140ms; }
+  }
+  /* ── Sidebar Mobil: schiebt mit Feder herein, Inhalt folgt ──────────── */
+  @media (max-width: 1024px) {
+    .sidebar { transition: transform var(--d-slow) var(--ease-calm); }
+    .sidebar.open > * { animation: kw-row-in var(--d-slow) var(--ease-calm) backwards; }
+    .sidebar.open > :nth-child(2) { animation-delay: 60ms; }
+    .sidebar.open > :nth-child(3) { animation-delay: 100ms; }
+    .sidebar.open > :nth-child(n+4) { animation-delay: 140ms; }
+  }
+  .sidebar.kw-opening .file-tree > .tree-row {
+    animation: kw-row-in var(--d-slow) var(--ease-calm) backwards;
+  }
+  .sidebar.kw-opening .file-tree > .tree-row:nth-child(2) { animation-delay: 60ms; }
+  .sidebar.kw-opening .file-tree > .tree-row:nth-child(3) { animation-delay: 90ms; }
+  .sidebar.kw-opening .file-tree > .tree-row:nth-child(4) { animation-delay: 120ms; }
+  .sidebar.kw-opening .file-tree > .tree-row:nth-child(5) { animation-delay: 150ms; }
+  .sidebar.kw-opening .file-tree > .tree-row:nth-child(n+6) { animation-delay: 180ms; }
+
+  /* Hamburger: die Linien federn ins X */
+  .hamburger-lines span { transition: transform var(--d-std) var(--ease-spring), opacity var(--d-quick) var(--ease-calm); }
+
+  /* ── Ordner: Inhalt klappt auf statt aufzuploppen ───────────────────── */
+  .subtree > .tree-row,
+  .subtree > .subtree { animation: kw-row-in var(--d-std) var(--ease-calm) backwards; }
+  .subtree > :nth-child(2) { animation-delay: 25ms; }
+  .subtree > :nth-child(3) { animation-delay: 50ms; }
+  .subtree > :nth-child(4) { animation-delay: 75ms; }
+  .subtree > :nth-child(5) { animation-delay: 100ms; }
+  .subtree > :nth-child(n+6) { animation-delay: 120ms; }
+  .tree-row.open > .file-item .chevron.has-ch { transition: transform var(--d-std) var(--ease-spring); }
+  .tree-row .file-item svg:not(.chevron) { transition: transform var(--d-std) var(--ease-spring), color var(--d-quick) var(--ease-calm); }
+  .tree-row:hover .file-item svg:not(.chevron) { transform: translateY(-1px) scale(1.08); color: var(--md-primary); }
+
+  /* ── Konto-Menü: wächst aus dem Button, Einträge folgen ─────────────── */
+  .sidebar-account-menu {
+    transform-origin: 50% 100%;
+    transform: translateY(10px) scale(0.96);
+    transition: opacity var(--d-std) var(--ease-calm), transform var(--d-std) var(--ease-spring);
+  }
+  .sidebar-account.open .sidebar-account-menu > * { animation: kw-rise-in var(--d-std) var(--ease-calm) backwards; }
+  .sidebar-account.open .sidebar-account-menu > :nth-child(2) { animation-delay: 30ms; }
+  .sidebar-account.open .sidebar-account-menu > :nth-child(3) { animation-delay: 60ms; }
+  .sidebar-account.open .sidebar-account-menu > :nth-child(4) { animation-delay: 90ms; }
+  .sidebar-account.open .sidebar-account-menu > :nth-child(n+5) { animation-delay: 110ms; }
+  .sidebar-account-chevron { transition: transform var(--d-std) var(--ease-spring); }
+
+  /* ── Startseite: Kopf, Panels und Listen bauen sich auf ─────────────── */
+  .home-head,
+  .dashboard > *,
+  .home-grid > * { animation: kw-rise-in var(--d-slow) var(--ease-calm) backwards; }
+  .home-grid > :nth-child(2) { animation-delay: 90ms; }
+  .recent-list > .recent-item { animation: kw-rise-in var(--d-std) var(--ease-calm) backwards; }
+  .recent-list > .recent-item:nth-child(2) { animation-delay: 35ms; }
+  .recent-list > .recent-item:nth-child(3) { animation-delay: 70ms; }
+  .recent-list > .recent-item:nth-child(4) { animation-delay: 105ms; }
+  .recent-list > .recent-item:nth-child(5) { animation-delay: 140ms; }
+  .recent-list > .recent-item:nth-child(n+6) { animation-delay: 170ms; }
+  .tag-cloud-compact > * { animation: kw-pop-in var(--d-std) var(--ease-spring) backwards; }
+  .tag-cloud-compact > :nth-child(3n+2) { animation-delay: 40ms; }
+  .tag-cloud-compact > :nth-child(3n) { animation-delay: 80ms; }
+
+  /* ── Atlas-Seite: Seitenleiste und HUD kommen mit dem Graphen ───────── */
+  .knowledge-nav > * { animation: kw-row-in var(--d-slow) var(--ease-calm) backwards; }
+  .knowledge-nav > :nth-child(2) { animation-delay: 60ms; }
+  .knowledge-nav > :nth-child(3) { animation-delay: 100ms; }
+  .knowledge-nav > :nth-child(4) { animation-delay: 140ms; }
+  .knowledge-nav > :nth-child(n+5) { animation-delay: 180ms; }
+  .knowledge-hud > * { animation: kw-rise-in var(--d-slow) var(--ease-calm) backwards; }
+  .knowledge-hud > :nth-child(2) { animation-delay: 120ms; }
+  .knowledge-hud > :nth-child(3) { animation-delay: 200ms; }
+}
+@keyframes kw-row-in { from { opacity: 0; transform: translateX(-10px); } }
+@keyframes kw-rise-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes kw-pop-in { from { opacity: 0; transform: scale(0.86); } }

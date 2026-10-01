@@ -396,20 +396,33 @@
   }
 
   /* ── Segment-Umschalter: Daumen folgt der Auswahl ──────────────────── */
-  function syncSegments() {
+  // Der Daumen wird auf das aktive Segment vermessen (Position + Breite),
+  // damit er bei unterschiedlich langen Labels genau passt.
+  function syncSegments(instant) {
     document.querySelectorAll('.recent-switch').forEach(function (group) {
       var tabs = Array.prototype.slice.call(group.querySelectorAll('.recent-tab'));
-      var index = Math.max(0, tabs.findIndex(function (tab) { return tab.getAttribute('aria-pressed') === 'true'; }));
-      group.style.setProperty('--seg-index', index);
-      group.style.setProperty('--seg-count', tabs.length || 1);
+      var active = tabs.filter(function (tab) { return tab.getAttribute('aria-pressed') === 'true'; })[0] || tabs[0];
+      if (!active) return;
+      // Breite der fetten Variante reservieren (CSS ::after liest data-label)
+      tabs.forEach(function (tab) { if (!tab.dataset.label) tab.dataset.label = tab.textContent.trim(); });
+      var first = !group.classList.contains('has-thumb');
+      if (first || instant) group.classList.add('is-measuring');
       group.classList.add('has-thumb');
+      group.style.setProperty('--seg-x', (active.getBoundingClientRect().left - group.getBoundingClientRect().left - group.clientLeft) + 'px');
+      group.style.setProperty('--seg-w', active.getBoundingClientRect().width + 'px');
+      if (first || instant) {
+        void group.offsetWidth;
+        requestAnimationFrame(function () { group.classList.remove('is-measuring'); });
+      }
     });
   }
   document.addEventListener('click', function (e) {
-    if (e.target.closest && e.target.closest('.recent-tab')) requestAnimationFrame(syncSegments);
+    if (e.target.closest && e.target.closest('.recent-tab')) requestAnimationFrame(function () { syncSegments(false); });
   });
+  window.addEventListener('resize', function () { syncSegments(true); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { syncSegments(true); });
 
-  function init() { decorateHeader(); bindProgress(); syncSegments(); }
+  function init() { decorateHeader(); bindProgress(); syncSegments(true); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 }());

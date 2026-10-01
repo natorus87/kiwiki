@@ -218,8 +218,8 @@ def test_atlas_assets_are_cache_busted_for_the_motion_release(monkeypatch):
 
     for lang in ("de", "en"):
         page = client.get(f"/knowledge?lang={lang}").text
-        assert "/static/knowledge-graph.js?v=20261001-review" in page
-        assert "/static/knowledge-graph.css?v=20261001-review" in page
+        assert "/static/knowledge-graph.js?v=20261001-motion" in page
+        assert "/static/knowledge-graph.css?v=20261001-motion" in page
 
 
 def test_atlas_motion_matches_the_website_hero():
@@ -242,3 +242,15 @@ def test_back_link_uses_a_real_icon(monkeypatch):
         page = client.get(f"/knowledge?lang={lang}").text
         link = page.split('class="knowledge-back-link"', 1)[1].split("</a>", 1)[0]
         assert "<svg" in link and "←" not in link
+
+
+def test_atlas_data_flow_like_website_hero():
+    """Datenpakete mit Leuchtschweif und periodischer Abruf eines Dokuments."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "var PULSE_TAIL =" in script
+    assert "context.createLinearGradient(tx, ty, x, y)" in script
+    assert "function maybeRecall(" in script
+    # kein Abruf waehrend Aufbau, Pause, reduzierter Bewegung oder Auswahl
+    assert "if (!state.intro.done || state.paused || prefersReducedMotion || state.dragging || state.selected) return;" in script
+    assert "maybeRecall(time);" in script

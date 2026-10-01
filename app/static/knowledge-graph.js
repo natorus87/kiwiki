@@ -36,6 +36,10 @@
   // Aufbau-Animation: Knoten spiralen von außen an ihren Platz (innen zuerst)
   var INTRO_NODE_MS = 1100;
   var MAX_PULSES = 32;
+  // Datenfluss wie im Website-Hero: Schweiflänge (Anteil der Kante) und Abruf-Takt
+  var PULSE_TAIL = 0.28;
+  var RECALL_EVERY_MS = 4200;
+  var RECALL_LABEL_MS = 2600;
   // Nach eigener Bedienung kurz stillhalten, dann weiterdrehen (Website: sofort)
   var IDLE_ROTATE_AFTER_MS = 1500;
   var POINTER_GLOW_RADIUS = 140;
@@ -47,7 +51,7 @@
     pointers: new Map(), pinchDistance: null,
     neighborhoodOnly: false, frame: 0, lastTime: performance.now(), settled: false, simulationSteps: 0,
     intro: { start: 0, end: 0, done: true, waveFired: false },
-    pulses: [], rings: [], waves: [], nextPulse: 0, goal: null, distanceGoal: null,
+    pulses: [], rings: [], waves: [], nextPulse: 0, nextRecall: Infinity, goal: null, distanceGoal: null,
     lastInteraction: -IDLE_ROTATE_AFTER_MS, pointer: { x: 0, y: 0, active: false }, graphRadius: 300, bgGlow: null, refitted: false, userZoomed: false
   };
 
@@ -131,7 +135,7 @@
     document.getElementById('knowledge-edge-count').textContent = String(state.edges.length);
     document.getElementById('knowledge-a11y-status').textContent = copy.loaded(state.nodes.length, state.edges.length);
     state.settled = false; state.simulationSteps = 0;
-    state.pulses = []; state.rings = []; state.waves = [];
+    state.pulses = []; state.rings = []; state.waves = []; state.nextRecall = Infinity;
   }
 
   function startIntro() {
@@ -158,6 +162,7 @@
     }
     if (elapsed > state.intro.end + 700) {
       state.intro.done = true;
+      state.nextRecall = now + 1600;
       state.nodes.forEach(function (node) { node.k = 1; });
     }
   }
@@ -318,7 +323,7 @@
   }
 
   // ── Aktionspotenziale: Impulse wandern über Kanten und springen weiter ──
-  function spawnPulse(fromId, now, edge) {
+  function spawnPulse(fromId, now, edge, hot) {
     if (state.pulses.length >= MAX_PULSES || !state.edges.length) return;
     var candidate = edge;
     if (!candidate && fromId) {
@@ -330,8 +335,29 @@
     var forward = fromId ? candidate.source === fromId : Math.random() < 0.5;
     state.pulses.push({
       from: forward ? candidate.source : candidate.target, to: forward ? candidate.target : candidate.source,
-      t: 0, speed: 0.55 + Math.random() * 0.5, hot: !!fromId && !!state.selected && fromId === state.selected.id
+      t: 0, speed: 0.55 + Math.random() * 0.5,
+      hot: !!hot || (!!fromId && !!state.selected && fromId === state.selected.id)
     });
+  }
+
+  // ── Abruf wie im Website-Hero: ein Dokument leuchtet auf, zeigt seinen
+  // Namen und schickt Daten an alle Nachbarn. Nur sichtbare, vordere Knoten.
+  function maybeRecall(time) {
+    if (!state.intro.done || state.paused || prefersReducedMotion || state.dragging || state.selected) return;
+    if (time < state.nextRecall) return;
+    var large = state.nodes.length > MAX_PAIRWISE_NODES;
+    state.nextRecall = time + (large ? RECALL_EVERY_MS * 1.6 : RECALL_EVERY_MS) + Math.random() * 2600;
+    var pool = state.nodes.filter(function (node) {
+      return node.kind === 'document' && node.k >= 1 && node.depth > 100 && node.fog > 0.55 &&
+        node.sx > 70 && node.sx < state.width - 70 && node.sy > 60 && node.sy < state.height - 110 &&
+        (state.adjacency.get(node.id) || new Set()).size > 0;
+    });
+    if (!pool.length) return;
+    var node = pool[Math.floor(Math.random() * pool.length)];
+    node.flash = 1; node.recallUntil = time + RECALL_LABEL_MS;
+    state.rings.push({ node: node, start: time });
+    state.edges.filter(function (edge) { return edge.source === node.id || edge.target === node.id; })
+      .slice(0, 8).forEach(function (edge) { spawnPulse(node.id, time, edge, true); });
   }
 
   function updatePulses(time, dt) {
@@ -354,17 +380,31 @@
     state.nodes.forEach(function (node) { if (node.flash > 0) node.flash = Math.max(0, node.flash - dt / 1400); });
   }
 
+  // Datenpakete: heller Kopf, Leuchtschweif entlang der Kante (wie Website)
   function drawPulses() {
+    context.lineCap = 'round';
     state.pulses.forEach(function (pulse) {
       var a = state.nodeById.get(pulse.from); var b = state.nodeById.get(pulse.to);
       if (!a || !b || a.depth < 100 || b.depth < 100) return;
       if (state.neighborhoodOnly && state.selected && !(isConnected(a) && isConnected(b))) return;
-      var x = a.sx + (b.sx - a.sx) * pulse.t; var y = a.sy + (b.sy - a.sy) * pulse.t;
-      var size = (pulse.hot ? 22 : 14) * Math.min(1.4, (a.scale + b.scale) / 2);
-      context.globalAlpha = Math.sin(Math.PI * pulse.t) * (0.55 + 0.45 * ((a.fog + b.fog) / 2));
+      var dx = b.sx - a.sx; var dy = b.sy - a.sy;
+      var x = a.sx + dx * pulse.t; var y = a.sy + dy * pulse.t;
+      var tail = Math.max(0, pulse.t - PULSE_TAIL);
+      var tx = a.sx + dx * tail; var ty = a.sy + dy * tail;
+      var depthLight = 0.6 + 0.4 * ((a.fog + b.fog) / 2);
+      var fade = Math.min(1, Math.sin(Math.PI * pulse.t) * 1.6) * depthLight;
+      var trail = context.createLinearGradient(tx, ty, x, y);
+      trail.addColorStop(0, 'rgba(237,186,102,0)');
+      trail.addColorStop(1, pulse.hot ? 'rgba(253,240,212,' + (0.95 * fade).toFixed(3) + ')' : 'rgba(240,196,120,' + (0.75 * fade).toFixed(3) + ')');
+      context.strokeStyle = trail; context.lineWidth = pulse.hot ? 2.4 : 1.7;
+      context.beginPath(); context.moveTo(tx, ty); context.lineTo(x, y); context.stroke();
+      var size = (pulse.hot ? 30 : 22) * Math.min(1.4, (a.scale + b.scale) / 2);
+      context.globalAlpha = fade;
       context.drawImage(pulse.hot ? glow.hot : glow.document, x - size / 2, y - size / 2, size, size);
+      context.fillStyle = pulse.hot ? '#fff7e6' : '#f6deb2';
+      context.beginPath(); context.arc(x, y, pulse.hot ? 2.2 : 1.6, 0, Math.PI * 2); context.fill();
     });
-    context.globalAlpha = 1;
+    context.globalAlpha = 1; context.lineCap = 'butt';
   }
 
   function drawRings(time) {
@@ -389,6 +429,7 @@
     }
     var selected = state.selected && (edge.source === state.selected.id || edge.target === state.selected.id);
     var hoverEdge = state.hovered && (edge.source === state.hovered.id || edge.target === state.hovered.id);
+    var recallEdge = source.recallUntil > time || target.recallUntil > time;
     var muted = state.neighborhoodOnly && state.selected && !selected;
     var fog = (source.fog + target.fog) / 2;
     context.beginPath(); context.moveTo(source.sx, source.sy);
@@ -396,8 +437,9 @@
     if (selected) context.strokeStyle = palette.lineHot;
     else if (muted) context.strokeStyle = 'rgba(159,170,160,.025)';
     else if (hoverEdge) context.strokeStyle = 'rgba(237,186,102,.42)';
-    else context.strokeStyle = 'rgba(227,169,79,' + (0.035 + fog * fog * 0.15).toFixed(3) + ')';
-    context.lineWidth = selected ? 1.45 : (hoverEdge ? 1 : 0.7); context.stroke();
+    else if (recallEdge) context.strokeStyle = 'rgba(237,186,102,' + (0.16 + 0.26 * clamp01((Math.max(source.recallUntil || 0, target.recallUntil || 0) - time) / 900)).toFixed(3) + ')';
+    else context.strokeStyle = 'rgba(227,169,79,' + (0.05 + fog * fog * 0.19).toFixed(3) + ')';
+    context.lineWidth = selected ? 1.45 : (hoverEdge || recallEdge ? 1 : 0.8); context.stroke();
   }
 
   function nodeColor(node) { return palette[node.kind] || palette.concept; }
@@ -430,11 +472,13 @@
       context.strokeStyle = node.kind === 'tag' ? 'rgba(214,226,242,.72)' : 'rgba(240,233,220,.5)';
       context.lineWidth = 1; context.stroke();
     }
-    if (node.k > 0.97 && (selected || hovered || neighbor || (node.kind === 'document' && node.scale > .85 && state.nodes.length < 180))) {
-      if (!selected && !hovered) context.globalAlpha = (connected ? 1 : .1) * Math.min(1, 0.35 + node.fog * 0.65 + (neighbor ? 0.3 : 0));
-      context.font = (selected ? '600 13px ' : '500 11px ') + '"Geist Sans", sans-serif';
+    var recalled = node.recallUntil > state.lastTime;
+    if (node.k > 0.97 && (selected || hovered || neighbor || recalled || (node.kind === 'document' && node.scale > .85 && state.nodes.length < 180))) {
+      if (recalled && !selected && !hovered) context.globalAlpha = Math.min(1, (node.recallUntil - state.lastTime) / 500);
+      else if (!selected && !hovered) context.globalAlpha = (connected ? 1 : .1) * Math.min(1, 0.35 + node.fog * 0.65 + (neighbor ? 0.3 : 0));
+      context.font = (selected || recalled ? '600 13px ' : '500 11px ') + '"Geist Sans", sans-serif';
       context.textAlign = 'center'; context.textBaseline = 'top';
-      context.fillStyle = selected ? palette.text : (hovered ? '#f6e8cc' : 'rgba(240,233,220,.72)');
+      context.fillStyle = selected ? palette.text : (recalled ? '#f6deb2' : (hovered ? '#f6e8cc' : 'rgba(240,233,220,.72)'));
       var label = node.label.length > 34 ? node.label.slice(0, 32) + '…' : node.label;
       context.fillText(label, node.sx, node.sy + radius + 7);
     }
@@ -474,7 +518,7 @@
   function render(time) {
     state.frame = window.requestAnimationFrame(render);
     var dt = Math.min(64, Math.max(0, time - state.lastTime)); state.lastTime = time;
-    simulate(); refitAfterSettle(); updateIntro(time); updateCamera(); updatePulses(time, dt);
+    simulate(); refitAfterSettle(); updateIntro(time); updateCamera(); updatePulses(time, dt); maybeRecall(time);
     drawBackground(time, dt); drawWaves(time);
     state.nodes.forEach(project);
     state.edges.slice().sort(function (a, b) {

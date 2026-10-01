@@ -87,6 +87,18 @@ function kwSetSidebarAccessibility(s, isClosed) {
   s.inert = isClosed;
 }
 
+// Beim Oeffnen einmal die Baumzeilen nacheinander einlaufen lassen (CSS:
+// .sidebar.kw-opening). Klasse danach wieder weg, sonst spielt jede
+// spaetere Baum-Aktualisierung die Animation erneut ab.
+function kwPlaySidebarOpening(s) {
+  if (!s || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
+  s.classList.remove('kw-opening');
+  void s.offsetWidth;
+  s.classList.add('kw-opening');
+  clearTimeout(s.__kwOpeningTimer);
+  s.__kwOpeningTimer = setTimeout(function() { s.classList.remove('kw-opening'); }, 900);
+}
+
 // openSidebar/closeSidebar:
 // - Desktop: toggelt .collapsed (Sidebar schiebt Content)
 // - Mobile: toggelt .open + Transform (Sidebar überlagert)
@@ -95,6 +107,7 @@ function openSidebar() {
   var b = document.getElementById('sidebar-backdrop');
   var btn = document.querySelector('.hamburger');
   var logoWrap = document.querySelector('.logo-wrap');
+  kwPlaySidebarOpening(s);
   if (kwIsMobileSidebar()) {
     if (s) { s.classList.add('open'); s.style.transform = 'translateX(0)'; }
     if (b) b.classList.add('open');

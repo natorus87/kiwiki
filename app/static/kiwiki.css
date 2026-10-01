@@ -1927,6 +1927,8 @@ header::before,
 .sidebar-account-button:hover,
 .sidebar-account.open .sidebar-account-button {
   background: var(--md-surface-c);
+  /* globale button:hover-Regel setzt sonst Bernstein-Tinte: Name unlesbar */
+  color: var(--md-on-surface);
 }
 .sidebar-account-avatar {
   width: 30px;
