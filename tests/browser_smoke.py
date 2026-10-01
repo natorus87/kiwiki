@@ -52,6 +52,10 @@ def _run_browser_checks() -> None:
         assert "user-scalable=no" not in viewport
         assert "maximum-scale=1" not in viewport
 
+        card = page.locator(".login-card").bounding_box()
+        viewport_height = page.viewport_size["height"]
+        if card["height"] < viewport_height:
+            assert abs(card["y"] - (viewport_height - card["y"] - card["height"])) <= 2, card
         page.get_by_label("API-Key").fill(API_KEY)
         page.get_by_role("button", name="Anmelden").click()
         page.wait_for_url(f"{BASE_URL}/")
@@ -267,6 +271,9 @@ def _run_browser_checks() -> None:
         )
         assert bright_pixels > 100
 
+        back_icon = page.locator(".knowledge-back-link svg").bounding_box()
+        assert back_icon and back_icon["width"] >= 16, back_icon
+        assert page.locator(".knowledge-back-link").bounding_box()["height"] >= 40
         action_buttons = page.locator(".knowledge-icon-button")
         assert action_buttons.count() == 2
         button_boxes = action_buttons.evaluate_all(
@@ -361,8 +368,11 @@ def _run_browser_checks() -> None:
         page.locator(".sidebar-account-button").click()
         account_menu = page.locator("#sidebar-account-menu")
         assert account_menu.get_attribute("aria-hidden") == "false"
-        knowledge_link = account_menu.locator('a[href="/knowledge"]')
-        assert knowledge_link.evaluate(
+        # Der Wissensgraph steht seit 4.3 oben in der Seitenleiste; geprueft wird,
+        # dass Menueeintraege nicht von anderen Ebenen verdeckt werden.
+        assert account_menu.locator('a[href="/knowledge"]').count() == 0
+        first_item = account_menu.locator(".sidebar-menu-item").first
+        assert first_item.evaluate(
             """element => {
                 const rect = element.getBoundingClientRect();
                 const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
@@ -494,6 +504,40 @@ def _run_desktop_ui_checks(page) -> None:
     search.press("Escape")
     assert page.locator("#search-results").inner_text().strip() == ""
     assert page.locator(".sidebar").get_attribute("aria-hidden") == "false"
+
+    # UI-Review 4.3: Suche mittig, Wissensgraph oben in der Seitenleiste, kein Baum-Filter.
+    page.goto(f"{BASE_URL}/?lang=de", wait_until="networkidle")
+    header = page.locator("body > header").bounding_box()
+    search = page.locator(".search-input").bounding_box()
+    assert abs((search["x"] + search["width"] / 2) - (header["x"] + header["width"] / 2)) <= 1, (header, search)
+    assert page.locator("#tree-filter").count() == 0
+    atlas = page.locator(".sidebar .sidebar-atlas-link")
+    assert atlas.is_visible() and atlas.get_attribute("href") == "/knowledge"
+    assert atlas.bounding_box()["height"] >= 40
+    assert page.locator('#sidebar-account-menu a[href="/knowledge"]').count() == 0
+    lens = page.locator(".search-lens-button").bounding_box()
+    icon = page.locator(".search-lens-button svg").bounding_box()
+    assert abs((icon["x"] + icon["width"] / 2) - (lens["x"] + lens["width"] / 2)) <= 1, (lens, icon)
+    text_start = search["x"] + float(page.locator(".search-input").evaluate("e => parseFloat(getComputedStyle(e).paddingLeft)"))
+    assert text_start - (icon["x"] + icon["width"]) >= 12
+
+    # Recall: Strg+K oeffnet, Praefix findet, Enter oeffnet die Notiz, Esc gibt den Fokus zurueck.
+    page.locator(".tree-row[data-path=\"notes\"] .file-item").focus()
+    page.keyboard.press("Control+k")
+    page.locator(".recall.is-open .recall-input").wait_for()
+    assert page.evaluate("document.activeElement.classList.contains('recall-input')")
+    # Enter direkt nach dem Tippen — vor Debounce und Antwort. Recall muss auf die
+    # frischen Treffer warten und darf nicht den alten ersten Eintrag oeffnen.
+    page.keyboard.type("verschach")
+    page.keyboard.press("Enter")
+    # loadFile tauscht den Inhalt per htmx und setzt die URL per pushState — kein Seitenwechsel
+    page.wait_for_function("() => location.search.includes('notes%2Fnested.md') && document.querySelector('.file-view .file-path')?.textContent === 'notes/nested.md'")
+    page.wait_for_function("() => document.querySelector('.recall').hidden")
+    page.keyboard.press("Control+k")
+    page.locator(".recall.is-open").wait_for()
+    assert "notes/nested.md" in page.locator(".recall-group").first.inner_text()
+    page.keyboard.press("Escape")
+    page.wait_for_function("() => document.querySelector('.recall').hidden")
 
 
 def main() -> None:

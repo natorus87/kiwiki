@@ -301,3 +301,20 @@ def test_login_zeigt_nutzerhilfe_statt_betreiberformat(monkeypatch, lang, hint):
 def test_kopier_icon_hat_mindestens_24px_ziel():
     css = (ROOT / "app/static/kiwiki-polish.css").read_text("utf-8")
     assert ".btn-copy-path { min-width: 24px; min-height: 24px; }" in css
+
+
+def test_segment_daumen_wird_auf_das_aktive_segment_vermessen():
+    """Unterschiedlich lange Labels: Daumen = exakte Breite des aktiven Buttons, keine Luecke."""
+    script = (ROOT / "app/static/kiwiki-recall.js").read_text("utf-8")
+    css = (ROOT / "app/static/kiwiki-polish.css").read_text("utf-8")
+    assert "--seg-w" in script and "--seg-x" in script
+    assert "width: var(--seg-w, 0px);" in css
+    assert "--seg-count" not in css
+
+
+def test_sidebar_oeffnen_spielt_einlauf_animation():
+    script = (ROOT / "app/static/kiwiki.js").read_text("utf-8")
+    opener = script.split("function openSidebar() {", 1)[1].split("\n}\n", 1)[0]
+    assert "kwPlaySidebarOpening(s);" in opener
+    css = (ROOT / "app/static/kiwiki-polish.css").read_text("utf-8")
+    assert ".sidebar.kw-opening .file-tree > .tree-row" in css

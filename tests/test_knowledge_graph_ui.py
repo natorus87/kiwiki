@@ -178,3 +178,114 @@ def test_graph_api_returns_bounded_tenant_local_graph(monkeypatch):
     assert {node["kind"] for node in payload["nodes"]} <= {"document", "tag", "concept"}
     assert "atlas" in str(payload).lower()
     assert "/home/" not in str(payload)
+
+
+def test_atlas_builds_up_on_load_and_respects_reduced_motion():
+    """Aufbau-Animation darf bei prefers-reduced-motion nie laufen und muss enden."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "function startIntro(" in script
+    assert "prepareGraph(payload); resetView(); startIntro();" in script
+    # reduced motion: sofort fertig, keine Knoten im Anflug
+    assert "if (prefersReducedMotion || !state.nodes.length) {" in script
+    assert "state.intro.done = true;" in script
+    # noch nicht angekommene Knoten sind nicht anwählbar
+    assert "node.k < 0.5" in script
+
+
+def test_atlas_pulses_are_bounded_and_skip_large_graphs():
+    """Impulse sind gedeckelt; 500-Knoten-Graphen bekommen keine Umgebungs-Impulse."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "var MAX_PULSES =" in script
+    assert "state.pulses.length >= MAX_PULSES" in script
+    assert "state.nodes.length <= MAX_PAIRWISE_NODES && time > state.nextPulse" in script
+    # Glows als vorgerenderte Sprites statt Verlauf pro Knoten und Frame
+    assert "function makeGlow(" in script
+    assert "context.drawImage(" in script
+
+
+def test_atlas_refits_camera_once_after_simulation_settles_unless_user_zoomed():
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "function refitAfterSettle(" in script
+    assert "state.userZoomed" in script
+    assert "state.userZoomed = true" in script
+
+
+def test_atlas_assets_are_cache_busted_for_the_motion_release(monkeypatch):
+    client = _login(monkeypatch)
+
+    for lang in ("de", "en"):
+        page = client.get(f"/knowledge?lang={lang}").text
+        assert "/static/knowledge-graph.js?v=20261001-rest" in page
+        assert "/static/knowledge-graph.css?v=20261001-rest" in page
+
+
+def test_atlas_motion_matches_the_website_hero():
+    """Drehung, Impulsrate und Zeiger-Licht wie auf kiwiki.xyz; Kamera fuellt den Raum."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "state.yaw += dt * (0.00009 * state.energy + introSpin)" in script
+    assert "var POINTER_GLOW_RADIUS =" in script
+    assert "canvas.addEventListener('pointerleave'" in script
+    # Fit am robusten Radius (95. Perzentil), laufend waehrend des Einschwingens
+    assert "radii.length * 0.95" in script
+    assert "state.simulationSteps % 20 !== 0" in script
+    assert "__kwAtlasDebug" not in script
+
+
+def test_back_link_uses_a_real_icon(monkeypatch):
+    client = _login(monkeypatch)
+
+    for lang in ("de", "en"):
+        page = client.get(f"/knowledge?lang={lang}").text
+        link = page.split('class="knowledge-back-link"', 1)[1].split("</a>", 1)[0]
+        assert "<svg" in link and "←" not in link
+
+
+def test_atlas_data_flow_like_website_hero():
+    """Datenpakete mit Leuchtschweif und periodischer Abruf eines Dokuments."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "var PULSE_TAIL =" in script
+    assert "context.createLinearGradient(tx, ty, x, y)" in script
+    assert "function maybeRecall(" in script
+    # kein Abruf waehrend Aufbau, Pause, reduzierter Bewegung oder Auswahl
+    assert "if (!state.intro.done || state.paused || state.calm || prefersReducedMotion || state.dragging || state.selected) return;" in script
+    assert "maybeRecall(time);" in script
+
+
+def test_atlas_has_website_synapse_field_around_the_graph():
+    """Wie der Website-Hero: dekoratives Synapsenfeld mit eigenen Datenpaketen,
+    baut sich mit auf, nur bei kleinen Graphen, nicht anklickbar."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "function buildField(" in script
+    assert "if (state.nodes.length > MAX_PAIRWISE_NODES) return;" in script
+    assert "var MAX_FIELD_PULSES =" in script
+    assert "state.fieldPulses.length >= MAX_FIELD_PULSES" in script
+    assert "projectField(); drawField(time);" in script
+    # Feld nimmt am Aufbau teil und ruht bei Pause/reduzierter Bewegung
+    assert "state.field.forEach(function (node) { node.k = 0; });" in script
+    assert "if (!state.field.length || state.paused || prefersReducedMotion) return;" in script
+    # Trefferpruefung kennt nur echte Knoten
+    nearest = script.split("function nearestNode(", 1)[1].split("\n  }\n", 1)[0]
+    assert "state.field" not in nearest
+
+
+def test_atlas_plays_briefly_then_fades_to_rest_and_play_resumes():
+    """Beim Laden kurz animiert (Aufbau + Datenfluss), dann weich zur Ruhe;
+    ▶ setzt fort und bleibt an, ⏸ blendet wieder aus. Keine gemerkte Wahl:
+    jeder Besuch bekommt die kurze Vorfuehrung."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+    assert "var SHOWCASE_MS =" in script
+    assert "state.restAt = now + SHOWCASE_MS;" in script
+    assert "function beginCalm(" in script and "function updateRest(" in script
+    # Ausklingen: keine neuen Pakete, Pakete und Drehung blenden mit energy aus
+    assert "state.intro.done && !state.calm && state.nodes.length <= MAX_PAIRWISE_NODES" in script
+    assert "drawPacket(a, b, pulse.t, pulse.hot, state.energy)" in script
+    assert "if (state.paused || state.calm) resumeMotion(now);" in script
+    assert "localStorage.setItem(MOTION_KEY" not in script
+    template = (ROOT / "app/templates/knowledge.html").read_text(encoding="utf-8")
+    assert 'class="motion-play"' in template

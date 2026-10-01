@@ -154,7 +154,7 @@ def test_mehrfachloeschung_verwendet_einen_batch_request():
     assert "body: JSON.stringify({ paths: paths })" in batch_delete
     assert "result.index_cleanup_pending" in batch_delete
     assert "for (" not in batch_delete
-    assert "/static/kiwiki.js?v=20260929-ui-review" in layout
+    assert "/static/kiwiki.js?v=20261001-motion" in layout
 
 
 def test_desktop_sidebar_breite_respektiert_collapsed_zustand_und_drag_abbruch():
@@ -178,8 +178,8 @@ def test_astryx_inspirierter_feinschliff_bleibt_selbst_gehostet_und_tokenbasiert
     assert polish_path.exists()
     polish = polish_path.read_text(encoding="utf-8")
 
-    assert "/static/kiwiki-polish.css?v=20260930-amber" in layout
-    assert "/static/kiwiki-polish.css?v=20260930-amber" in login
+    assert "/static/kiwiki-polish.css?v=20261001-motion" in layout
+    assert "/static/kiwiki-polish.css?v=20261001-motion" in login
     # Die Abstandsskala liegt seit der Vereinheitlichung in kiwiki.css :root,
     # damit sie nur einmal existiert. tests/test_design_tokens.py haelt sie
     # geschlossen; hier genuegt, dass das Polish-Stylesheet sie benutzt.
@@ -196,15 +196,15 @@ def test_astryx_inspirierter_feinschliff_bleibt_selbst_gehostet_und_tokenbasiert
     assert "react" not in polish.lower()
 
 
-def test_sidebar_filter_icon_is_embedded_in_the_input_field():
-    polish = _read("app/static/kiwiki-polish.css")
-
-    assert ".tree-filter-wrap {\n  position: relative;" in polish
-    assert ".tree-filter-icon {\n  position: absolute;" in polish
-    assert "pointer-events: none;" in polish
-    filter_rule = polish.split(".tree-filter {", 1)[1].split("}", 1)[0]
-    assert "padding-inline: calc(" in filter_rule
-    assert "var(--space-3)" in filter_rule
+def test_sidebar_offers_atlas_entry_instead_of_tree_filter():
+    """Der Baum-Filter ist entfallen; oben in der Seitenleiste steht der Wissensgraph."""
+    for name in ("index.html", "settings.html"):
+        page = _read(f"app/templates/{name}")
+        assert 'include "partials/sidebar_atlas.html"' in page, name
+        assert 'id="tree-filter"' not in page, name
+    account = _read("app/templates/partials/sidebar_account.html")
+    assert 'href="/knowledge"' not in account
+    assert 'href="/knowledge"' in _read("app/templates/partials/sidebar_atlas.html")
 
 
 def test_editor_controls_erhalten_zugaengliche_namen():
@@ -223,3 +223,38 @@ def test_export_sendet_ein_formularfeld_je_pfad():
     assert "input.name = 'path'" in export_fn
     assert "paths.join(',')" not in export_fn
     assert "paths.forEach(" in export_fn
+
+
+def test_recall_palette_is_loaded_and_bilingual():
+    """Recall (Strg/⌘+K) liegt auf jeder App-Seite und spricht beide Sprachen."""
+    from app.i18n import UI_TRANSLATIONS
+
+    layout = _read("app/templates/layout.html")
+    assert "/static/kiwiki-recall.js?v=20261001-motion" in layout
+    for lang in ("de", "en"):
+        js = UI_TRANSLATIONS[lang]["js"]
+        for key in ("recallPlaceholder", "recallRecent", "recallActions", "recallNotes",
+                    "recallNothing", "recallOpenLabel", "recallCtrl"):
+            assert js.get(key), f"{lang}: {key} fehlt"
+    assert UI_TRANSLATIONS["de"]["js"]["recallPlaceholder"] != UI_TRANSLATIONS["en"]["js"]["recallPlaceholder"]
+
+
+def test_recall_script_contract():
+    script = _read("app/static/kiwiki-recall.js")
+    # Tastatur: Strg/⌘+K ueberall, "/" nur ausserhalb von Eingabefeldern
+    assert "(e.metaKey || e.ctrlKey)" in script and "e.key === 'k'" in script
+    assert "!typingTarget(e.target)" in script
+    # Barrierefreiheit: Combobox mit aktivem Nachfahren, Fokus wird zurueckgegeben
+    assert 'role="combobox"' in script and "aria-activedescendant" in script
+    assert "lastFocus.focus()" in script
+    # Veraltete Antworten duerfen neuere nicht ueberschreiben
+    assert "id !== requestId" in script and "AbortController" in script
+    # Keine Texte ausserhalb des Katalogs: jede Beschriftung laeuft ueber t()
+    assert "kwText" in script
+
+
+def test_layered_material_respects_reduced_transparency_and_motion():
+    css = _read("app/static/kiwiki-polish.css")
+    assert "@media (prefers-reduced-transparency: reduce)" in css
+    assert "@media (prefers-reduced-motion: reduce)" in css
+    assert "--ease-spring" in css and "--ease-calm" in css

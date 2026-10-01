@@ -8,6 +8,101 @@ This changelog is written in English only.
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-01
+
+### Upgrade notes
+- No configuration or API changes. Static asset cache keys changed, so browsers fetch the new
+  CSS/JS on the first load after the upgrade.
+- The Neural Atlas now plays a short showcase on every visit, also with the OS setting
+  "reduce motion" (2.5 s instead of 7 s), then rests; see `docs/ui-accessibility.md`.
+
+### Added
+- **Recall — one place to find anything.** Press <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> anywhere, or
+  <kbd>/</kbd> outside text fields, or tap the magnifier in the header on mobile. Recall searches
+  notes as you type with prefix matching ("oau" finds "OAuth", which the header search does not),
+  shows recently opened notes when empty and offers the main actions (new note, Neural Atlas,
+  tags, search history, sidebar, language, settings for admins) in the same list.
+  - Keyboard first: ↑/↓ (or Tab, Ctrl+N/P) select, ↵ opens, Esc closes and returns focus to where
+    it was. Pressing ↵ before results arrive waits for the fresh results instead of opening a
+    stale entry. Superseded requests are aborted.
+  - Accessible as a combobox with `aria-activedescendant`; all copy in German and English.
+  - Recently opened notes are kept per browser in `localStorage` (path and title only).
+- **Reading progress** as a thin amber line under the header while a note is open.
+- **Neural Atlas: synapse field and data flow like the kiwiki.xyz hero.** A decorative field of
+  72 points (40 below 760 px) surrounds the user's graph, joins the build-up, rotates with the
+  camera and carries its own data packets. It is never labelled or hit-tested, dims while a node
+  is selected and is skipped for graphs above 180 nodes, which fill the space themselves.
+  - Data packets on graph and field edges are drawn with a glowing trail and a bright core; a new
+    packet starts every 220–440 ms and hops on at the target with 60 % probability (caps: 32 on
+    the graph, 36 on the field).
+  - Every 4–7 s a visible front document is **recalled**: flash, ring, bold label for 2.6 s,
+    highlighted edges and hot packets to all neighbours (up to 8).
+- **Neural Atlas plays briefly, then rests.** Every visit shows the build-up plus about 7 s of data
+  flow (2.5 s with `prefers-reduced-motion`); then packets and rotation fade out over 1.8 s and the
+  atlas stands still with a ▶ button. ▶ keeps it moving until ⏸, which fades out again in 0.7 s.
+  The choice is not stored; every visit gets the short showcase.
+- **App motion:** the desktop sidebar slides open and closed (width plus staggered content, tree
+  rows run in on open), the mobile sidebar slides in with its content; folders unfold their
+  children in sequence; the account menu grows out of its button; the home page and the atlas
+  sidebar/HUD build up in sequence. All of it is off with `prefers-reduced-motion`.
+
+### Changed
+- **UI review fixes (measured, then corrected):**
+  - The sidebar tree filter is gone (search lives in the header and Recall); the **Knowledge graph
+    entry moved to the top of the sidebar** and out of the account menu.
+  - **Header search is centred in the window** (was 84 px left of centre) via a three-column
+    header; the magnifier sits inside its button with 15 px to the placeholder.
+  - **Login card is vertically centred** — the shared `body { min-height: 100% }` had overridden
+    the login page's `100dvh`, leaving 16 px above and 311 px below the card.
+  - Neural Atlas **back link** uses a real 18 px icon in a 40 px target instead of a 12 px text arrow.
+  - Spacing pass: breadcrumbs, tag chips, role pills, keyboard hints and file actions get at least
+    0.6 em side padding and 2.2× line height; tree chevrons 10 → 14 px; select toggle 30 → 40 px.
+- **Neural Atlas motion now matches kiwiki.xyz:** rotation ~5°/s, denser impulses, nodes near the
+  pointer light up, every node glows on small graphs, and the camera keeps re-fitting while the
+  layout settles (robust 95th-percentile radius) so the graph fills the stage — span at 1440×900
+  went from 396 × 276 px to 528 × 312 px.
+- **Neural Atlas comes alive.** Same visual language as the new kiwiki.xyz hero:
+  - **Build-up on load:** nodes spiral in from the outside to their place (inner ones first),
+    glow briefly as they land, edges grow only once both ends have arrived, and a light wave
+    closes the sequence and fires the first impulses. Nodes still in flight cannot be selected.
+    Runs on every visit, including with `prefers-reduced-motion` (see "plays briefly, then
+    rests" below).
+  - **Action potentials:** impulses travel along edges, light up the node they reach and
+    sometimes jump on. Capped at 32 at a time; graphs above 180 nodes get no ambient impulses,
+    only the ones triggered by selection.
+  - **Selecting a node** sends a ring and an impulse down every connection (up to 14).
+    Hovering highlights the node's neighbours, their edges and labels.
+  - **Depth fog:** far nodes, edges and labels recede; near ones stay crisp.
+  - **Camera:** focus ("Explore connections") and reset glide instead of jumping; the view
+    re-fits once after the layout settles, so small graphs no longer sit in a fifth of the space
+    (minimum fitted distance 520 → 260). Manual wheel/pinch zoom disables the re-fit.
+  - **Idle rotation** 1.5 s after the last interaction; pauses while dragging and while the atlas
+    rests.
+  - **Material:** HUD, inspector and help bar with inner-light edge and soft depth, edge vignette
+    and static grain on the stage, softer inspector entrance.
+- Glows are pre-rendered sprites (`drawImage`) instead of one radial gradient per node and frame;
+  the background gradient is cached per resize. Measured in headless Chromium: 59–61 fps with 21
+  nodes; with 500 nodes about 40 fps during the build-up and 44–60 fps after it (same range as
+  before the synapse field, which is not drawn for graphs that large).
+- **Layered material.** Header, search results, Recall, toasts and dialogs are translucent with
+  blur; reading text and lists stay on solid surfaces. With `prefers-reduced-transparency` these
+  layers become opaque.
+- **One motion language:** a spring curve for things that move into place (Recall, dialogs,
+  toasts, the selection lens, the segmented control) and a calm curve for state changes; notes fade
+  up when opened. With `prefers-reduced-motion` every state stays, only the travel is dropped.
+- Segmented control on the home page ("Recently edited / created") gets a sliding thumb that is
+  measured to the active segment, so both labels keep the same 12 px side padding (equal-width
+  columns had left the shorter label with 16 px and the thumb 5 px short of the longer one); no gap
+  between the segments, and the bold label width is reserved so text does not jump on switch.
+- Primary buttons, file header and panels get inner light and soft depth; the logo caret breathes
+  instead of blinking; the active note in the tree glows.
+
+### Fixed
+- Account button in the sidebar: the name turned amber ink on dark on hover (global
+  `button:hover` rule) and was unreadable.
+- Neural Atlas pause button only ever showed the pause icon; it now switches to a play icon while
+  the atlas rests.
+
 ## [4.2.0] - 2026-09-30
 
 ### Upgrade notes
@@ -662,7 +757,8 @@ This changelog is written in English only.
 - **Container:** Docker + docker-compose
 - **Orchestration:** Helm charts for Kubernetes
 
-[Unreleased]: https://github.com/natorus87/kiwiki/compare/v4.2.0...HEAD
+[Unreleased]: https://github.com/natorus87/kiwiki/compare/v4.3.0...HEAD
+[4.3.0]: https://github.com/natorus87/kiwiki/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/natorus87/kiwiki/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/natorus87/kiwiki/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/natorus87/kiwiki/compare/v3.2.0...v4.0.0

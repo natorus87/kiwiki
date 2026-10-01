@@ -1403,7 +1403,6 @@ button, .btn, .file-item, .tree-btn, .sidebar-btn,
 
   /* Sidebar-Filter + Toggle: Touch-Target >=44px und 16px Font (iOS-Zoom) */
   .tree-toolbar { padding: var(--space-1) var(--space-2); gap: var(--space-1); }
-  .tree-filter { min-height: 44px; font-size: 16px; padding: var(--space-2) var(--space-3); }
   .btn-select-toggle { width: 44px; height: 44px; }
 
   /* Sidebar-Resizer: auf Touch-Geräten unsichtbar,.setCursor nicht nötig */
@@ -1928,6 +1927,8 @@ header::before,
 .sidebar-account-button:hover,
 .sidebar-account.open .sidebar-account-button {
   background: var(--md-surface-c);
+  /* globale button:hover-Regel setzt sonst Bernstein-Tinte: Name unlesbar */
+  color: var(--md-on-surface);
 }
 .sidebar-account-avatar {
   width: 30px;
@@ -2049,27 +2050,6 @@ header::before,
   padding: var(--space-1) var(--space-2);
   margin: 0 0 var(--space-0-5);
 }
-.tree-filter-wrap {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex: 1;
-}
-.tree-filter-icon { color: var(--md-outline); flex-shrink: 0; }
-.tree-filter {
-  width: 100%;
-  background: var(--md-surface-c);
-  border: 1px solid var(--md-outline-v);
-  border-radius: var(--radius-sm);
-  padding: var(--space-1) var(--space-2);
-  color: var(--md-on-surface);
-  font-size: var(--text-sm);
-  font-family: var(--font-body);
-  outline: none;
-  transition: border-color var(--t);
-}
-.tree-filter:focus { border-color: var(--md-primary-border); }
-.tree-filter::placeholder { color: var(--md-outline); }
 
 .btn-select-toggle {
   display: flex;

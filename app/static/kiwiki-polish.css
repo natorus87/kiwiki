@@ -165,24 +165,6 @@ header {
   padding: var(--space-2);
 }
 
-.tree-filter-wrap {
-  position: relative;
-  min-width: 0;
-}
-
-.tree-filter-icon {
-  position: absolute;
-  left: var(--space-3);
-  top: 50%;
-  z-index: 1;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-.tree-filter {
-  padding-inline: calc(12px + 2 * var(--space-3)) var(--space-3);
-}
-
 .sidebar-btn {
   min-height: var(--control-height);
   border-radius: var(--radius-md);
@@ -828,3 +810,792 @@ header {
 /* Im Editor war Loeschen auf Mobile der zweitgroesste Button, gleichauf mit
    Speichern. Es behaelt sein Label, aber nicht das Gewicht. */
 .editor-bar .btn-danger-quiet { flex: 0 1 auto; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   kiwiki 4.3 — „Bernstein“-Oberfläche
+   ───────────────────────────────────────────────────────────────────────
+   Leitidee: ruhiges Werkzeug, das sich physisch anfühlt. Drei Ebenen,
+   klar getrennt (Inhaltsgrund · Navigation · schwebende Controls), Licht
+   kommt von oben, Bewegung folgt einer Feder statt einer Uhr.
+   Materialregel: Transparenz + Blur nur auf Navigation und schwebenden
+   Controls (Header, Recall, Menüs, Toasts) — nie auf Lesetext oder Listen.
+   Bewegung: eine Federkurve (--ease-spring), eine ruhige Kurve (--ease-calm),
+   drei Dauern. Bei reduzierter Bewegung bleibt jeder Zustand sichtbar,
+   nur der Weg dorthin entfällt.
+   ═══════════════════════════════════════════════════════════════════════ */
+:root {
+  --ease-calm: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --d-quick: 140ms;
+  --d-std: 260ms;
+  --d-slow: 520ms;
+
+  --edge-light: inset 0 1px 0 rgba(255, 236, 200, 0.06);
+  --lift-1: 0 1px 1px rgba(8, 6, 3, 0.3), 0 6px 18px -10px rgba(8, 6, 3, 0.55);
+  --lift-2: 0 1px 2px rgba(8, 6, 3, 0.35), 0 18px 40px -18px rgba(8, 6, 3, 0.75);
+  --lift-float: 0 2px 6px rgba(8, 6, 3, 0.35), 0 40px 90px -20px rgba(0, 0, 0, 0.75);
+  --surface-sheen: linear-gradient(180deg, rgba(255, 244, 222, 0.04), rgba(255, 244, 222, 0) 42%);
+  --material-bar: rgba(31, 30, 27, 0.72);
+  --material-float: rgba(38, 36, 31, 0.86);
+}
+
+/* ── Header: Navigationsmaterial mit Lesefortschritt ────────────────── */
+body > header {
+  background: var(--material-bar);
+  -webkit-backdrop-filter: saturate(1.6) blur(18px);
+  backdrop-filter: saturate(1.6) blur(18px);
+  border-bottom-color: rgba(227, 169, 79, 0.1);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+body > header::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 2px;
+  transform-origin: 0 50%;
+  transform: scaleX(var(--read, 0));
+  background: linear-gradient(90deg, rgba(227, 169, 79, 0.2), var(--md-primary) 60%, #f6deb2);
+  box-shadow: 0 0 12px rgba(227, 169, 79, 0.55);
+  opacity: 0;
+  transition: opacity var(--d-std) var(--ease-calm);
+  pointer-events: none;
+}
+body > header.is-reading::after { opacity: 1; }
+
+/* Ruhiger Logo-Cursor: atmet statt hart zu blinken */
+.logo-text em::after { animation: caret-breathe 2.4s ease-in-out infinite; }
+@keyframes caret-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
+
+.logo-icon {
+  box-shadow: 0 0 0 1px rgba(227, 169, 79, 0.22), 0 4px 14px -4px rgba(227, 169, 79, 0.45);
+  transition: transform var(--d-std) var(--ease-spring);
+}
+.logo-wrap:hover .logo-icon { transform: rotate(-8deg) scale(1.06); }
+
+/* ── Suchfeld + Recall-Kürzel ───────────────────────────────────────── */
+.search-input {
+  padding-right: var(--space-16);
+  transition: border-color var(--d-std) var(--ease-calm), background-color var(--d-std) var(--ease-calm), box-shadow var(--d-std) var(--ease-calm);
+}
+.search-recall {
+  position: absolute;
+  right: calc(var(--space-6) + var(--space-2));
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  gap: var(--space-0-5);
+  padding: var(--space-0-5);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity var(--d-quick) var(--ease-calm), transform var(--d-quick) var(--ease-calm);
+}
+.search-recall:hover { opacity: 1; }
+.search-recall:active { transform: translateY(-50%) scale(0.94); }
+.search-recall kbd,
+.recall kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-1);
+  font: 500 var(--text-xs)/1 var(--font-mono);
+  color: var(--md-on-surface-v);
+  background: linear-gradient(180deg, rgba(255, 244, 222, 0.07), rgba(255, 244, 222, 0.02));
+  border: 1px solid var(--md-outline-v);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+}
+@media (max-width: 760px) { .search-recall { display: none; } .search-input { padding-right: var(--space-4); } }
+/* Lupe als Recall-Schaltfläche: unsichtbare Trefferfläche über dem Icon */
+.search-lens-button {
+  position: absolute;
+  left: var(--space-4);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-outline);
+  cursor: pointer;
+}
+.search-lens-button:hover { color: var(--md-primary); background: rgba(227, 169, 79, 0.1); }
+/* Spezifitaet muss .search-wrap svg.search-icon (kiwiki.css) schlagen, sonst bleibt
+   das Icon absolut bei 1.5rem und steht neben statt in seiner Schaltflaeche. */
+.search-wrap .search-lens-button svg.search-icon { position: static; transform: none; left: auto; top: auto; }
+@media (pointer: coarse) {
+  .search-lens-button { width: var(--touch-target); height: var(--touch-target); left: var(--space-2); }
+  .search-input { padding-left: calc(var(--space-12) + var(--space-1)); }
+}
+
+#search-results {
+  background: var(--material-float);
+  -webkit-backdrop-filter: saturate(1.5) blur(20px);
+  backdrop-filter: saturate(1.5) blur(20px);
+  border-color: rgba(227, 169, 79, 0.16);
+  box-shadow: var(--edge-light), var(--lift-float);
+  transform-origin: 50% 0;
+}
+
+/* ── Seitenleiste: aktive Notiz als ruhiger Lichtpunkt ──────────────── */
+.sidebar { box-shadow: inset -1px 0 0 rgba(0, 0, 0, 0.35); }
+.tree-row { transition: background-color var(--d-quick) var(--ease-calm); }
+.tree-row .file-item { transition: color var(--d-quick) var(--ease-calm), transform var(--d-quick) var(--ease-calm); }
+.tree-row:active .file-item { transform: scale(0.985); }
+.file-item.active {
+  background: linear-gradient(90deg, rgba(227, 169, 79, 0.16), rgba(227, 169, 79, 0.05)) !important;
+  box-shadow: inset 0 0 0 1px rgba(227, 169, 79, 0.16);
+}
+.file-item.active::before {
+  box-shadow: 0 0 10px rgba(227, 169, 79, 0.85);
+  animation: active-in var(--d-std) var(--ease-spring) both;
+}
+@keyframes active-in { from { transform: scaleY(0.2); opacity: 0; } }
+.chevron { transition: transform var(--d-std) var(--ease-spring); }
+
+/* ── Primäre Aktionen: Bernstein mit Innenlicht ─────────────────────── */
+.btn,
+.kw-btn,
+.submit-btn {
+  transition:
+    transform var(--d-quick) var(--ease-calm),
+    background-color var(--d-std) var(--ease-calm),
+    border-color var(--d-std) var(--ease-calm),
+    color var(--d-std) var(--ease-calm),
+    box-shadow var(--d-std) var(--ease-calm);
+}
+.btn:active, .kw-btn:active, .submit-btn:active { transform: scale(0.97); }
+.btn-primary,
+.kw-btn-primary,
+.submit-btn {
+  background: linear-gradient(180deg, #ecb862, var(--md-primary) 55%, #d4973b);
+  border-color: #c98d34;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 222, 0.5),
+    inset 0 -1px 0 rgba(90, 56, 12, 0.3),
+    0 1px 2px rgba(20, 12, 2, 0.45),
+    0 8px 22px -10px rgba(227, 169, 79, 0.6);
+}
+.btn-primary:hover,
+.kw-btn-primary:hover,
+.submit-btn:hover {
+  background: linear-gradient(180deg, #f2c676, var(--md-primary-hover) 55%, #db9f45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 222, 0.55),
+    inset 0 -1px 0 rgba(90, 56, 12, 0.3),
+    0 1px 2px rgba(20, 12, 2, 0.45),
+    0 12px 28px -10px rgba(227, 169, 79, 0.75);
+}
+.btn-ghost,
+.btn-secondary { box-shadow: var(--edge-light); }
+
+/* ── Flächen im Inhalt: Tiefe statt Linie ───────────────────────────── */
+.dashboard-panel,
+.file-header,
+.settings-card,
+.step-card {
+  background-image: var(--surface-sheen);
+  box-shadow: var(--edge-light), var(--lift-1);
+}
+
+/* Segment-Umschalter wie ein System-Control: ein gleitender Daumen.
+   Jedes Segment ist so breit wie sein Text plus gleicher Innenabstand;
+   der Daumen wird per JS exakt auf das aktive Segment vermessen
+   (--seg-x/--seg-w). Gleich breite Spalten hätten kurze Labels mit
+   doppelt so viel Rand stehen lassen wie lange — das wirkt schief. */
+.recent-switch.has-thumb {
+  display: inline-flex;
+  gap: 0;
+  position: relative;
+  isolation: isolate;
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.recent-switch.has-thumb::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: var(--space-0-5);
+  bottom: var(--space-0-5);
+  left: 0;
+  width: var(--seg-w, 0px);
+  transform: translateX(var(--seg-x, 0px));
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: linear-gradient(180deg, #3d3830, #312d27);
+  box-shadow: inset 0 1px 0 rgba(255, 236, 200, 0.08), 0 1px 3px rgba(0, 0, 0, 0.45);
+  transition: transform var(--d-std) var(--ease-spring), width var(--d-std) var(--ease-spring);
+}
+.recent-switch.has-thumb.is-measuring::before { transition: none; }
+.recent-switch.has-thumb .recent-tab {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  transition: color var(--d-std) var(--ease-calm);
+}
+/* Platz für die fette Variante reservieren: sonst wird das Label beim
+   Aktivieren breiter und der Text springt seitlich. */
+.recent-switch .recent-tab::after {
+  content: attr(data-label);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: 600;
+  pointer-events: none;
+}
+.recent-switch.has-thumb .recent-tab[aria-pressed="true"] { background: transparent; }
+
+/* Zuletzt-Liste: Zeilen heben sich beim Zeigen leicht an */
+.recent-files a,
+.recent-files .recent-item {
+  transition: background-color var(--d-quick) var(--ease-calm), transform var(--d-std) var(--ease-calm);
+}
+@media (hover: hover) {
+  .recent-files a:hover,
+  .recent-files .recent-item:hover { transform: translateX(2px); }
+}
+
+/* ── Lesen: Notiz wie eine Seite ────────────────────────────────────── */
+.markdown-content h1,
+.file-title { text-wrap: balance; }
+.markdown-content a.wikilink {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: color var(--d-quick) var(--ease-calm), text-decoration-color var(--d-quick) var(--ease-calm), background-color var(--d-quick) var(--ease-calm);
+  border-radius: var(--radius-xs);
+}
+.markdown-content a.wikilink:hover { background: rgba(227, 169, 79, 0.1); }
+.markdown-content pre,
+.markdown-content :not(pre) > code { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35); }
+.markdown-content blockquote {
+  background: linear-gradient(90deg, rgba(227, 169, 79, 0.07), transparent 70%);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+/* ── Dialoge und Toasts: schwebendes Material, federnder Eintritt ───── */
+.kw-modal-backdrop {
+  background: rgba(14, 13, 11, 0.55);
+  -webkit-backdrop-filter: blur(6px) saturate(1.1);
+  backdrop-filter: blur(6px) saturate(1.1);
+  transition: opacity var(--d-std) var(--ease-calm);
+}
+.kw-modal {
+  background-image: var(--surface-sheen);
+  box-shadow: var(--edge-light), 0 0 0 1px rgba(227, 169, 79, 0.08), var(--lift-float);
+  transform: translateY(12px) scale(0.96);
+  transition: transform var(--d-slow) var(--ease-spring);
+}
+.kw-toast {
+  background: var(--material-float);
+  -webkit-backdrop-filter: saturate(1.5) blur(18px);
+  backdrop-filter: saturate(1.5) blur(18px);
+  border-left-width: 1px;
+  border-color: rgba(227, 169, 79, 0.2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--edge-light), var(--lift-float);
+  transform: translateY(14px) scale(0.96);
+  transition: opacity var(--d-std) var(--ease-calm), transform var(--d-slow) var(--ease-spring);
+}
+.kw-toast.show { transform: translateY(0) scale(1); }
+.kw-toast.error { border-color: rgba(228, 160, 146, 0.35); }
+.kw-toast-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(227, 169, 79, 0.14);
+}
+.kw-toast.error .kw-toast-icon { background: rgba(228, 160, 146, 0.16); }
+
+/* ═══ Recall ═════════════════════════════════════════════════════════ */
+html.recall-open { overflow: hidden; }
+.recall {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-dialog);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: min(16vh, 140px) var(--space-4) var(--space-4);
+}
+.recall[hidden] { display: none; }
+.recall-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 11, 9, 0.5);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  transition: opacity var(--d-std) var(--ease-calm);
+}
+.recall-panel {
+  position: relative;
+  width: min(640px, 100%);
+  max-height: min(70vh, 560px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(227, 169, 79, 0.2);
+  border-radius: var(--radius-lg);
+  background: var(--surface-sheen), var(--material-float);
+  -webkit-backdrop-filter: saturate(1.6) blur(28px);
+  backdrop-filter: saturate(1.6) blur(28px);
+  box-shadow: var(--edge-light), 0 0 0 1px rgba(0, 0, 0, 0.4), var(--lift-float), 0 0 120px -40px rgba(227, 169, 79, 0.45);
+  opacity: 0;
+  transform: translateY(-10px) scale(0.97);
+  transform-origin: 50% 0;
+  transition: opacity var(--d-std) var(--ease-calm), transform var(--d-slow) var(--ease-spring);
+}
+.recall.is-open .recall-scrim { opacity: 1; }
+.recall.is-open .recall-panel { opacity: 1; transform: none; }
+
+.recall-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-6);
+  border-bottom: 1px solid rgba(169, 157, 141, 0.14);
+  color: var(--md-primary);
+}
+.recall-field svg { width: 20px; height: 20px; flex: 0 0 20px; }
+.recall-input {
+  flex: 1;
+  text-overflow: ellipsis;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--md-on-surface);
+  font: 500 var(--text-xl)/1.3 var(--font-body);
+  letter-spacing: -0.01em;
+}
+.recall-input::placeholder { color: var(--md-outline); }
+.recall-input:focus-visible { outline: 0; box-shadow: none; }
+/* Arbeitsanzeige: eine Lichtlinie läuft nur, solange wirklich gesucht wird */
+.recall-field::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--md-primary), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity var(--d-quick) var(--ease-calm);
+}
+.recall.is-busy .recall-field::after { opacity: 1; animation: recall-scan 0.9s linear infinite; }
+@keyframes recall-scan { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+
+.recall-body { position: relative; flex: 1; min-height: 0; display: flex; }
+.recall-list {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2);
+  overscroll-behavior: contain;
+}
+/* Die Linse: ein Lichtkörper, der zur Auswahl gleitet */
+.recall-lens {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: var(--space-2);
+  right: var(--space-2);
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, rgba(227, 169, 79, 0.2), rgba(227, 169, 79, 0.07));
+  box-shadow: inset 0 0 0 1px rgba(227, 169, 79, 0.28), inset 0 1px 0 rgba(255, 236, 200, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform var(--d-std) var(--ease-spring), height var(--d-std) var(--ease-spring), opacity var(--d-quick) var(--ease-calm);
+}
+.recall-lens.no-anim { transition: opacity var(--d-quick) var(--ease-calm); }
+
+.recall-group + .recall-group { margin-top: var(--space-2); }
+.recall-group-title {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font: 600 var(--text-xs)/1 var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--md-outline);
+}
+.recall-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--touch-target);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--md-on-surface-v);
+}
+.recall-item[aria-selected="true"] { color: var(--md-on-surface); }
+.recall-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: var(--radius-sm);
+  color: var(--md-primary);
+  background: radial-gradient(circle at 30% 20%, rgba(246, 222, 178, 0.18), rgba(227, 169, 79, 0.05) 60%), rgba(20, 19, 16, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(227, 169, 79, 0.22);
+  transition: transform var(--d-std) var(--ease-spring);
+}
+.recall-item[aria-selected="true"] .recall-icon { transform: scale(1.08); }
+.recall-text { flex: 1; min-width: 0; display: grid; gap: var(--space-0-5); }
+.recall-title {
+  font: 500 var(--text-lg)/1.25 var(--font-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recall-sub {
+  font: var(--text-xs)/1.3 var(--font-mono);
+  color: var(--md-outline);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recall-snippet {
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--md-on-surface-v);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.recall-item[aria-selected="true"] .recall-snippet { -webkit-line-clamp: 2; }
+.recall mark { background: none; color: var(--md-primary); font-weight: 600; }
+.recall-kind {
+  font: var(--text-xs) var(--font-mono);
+  color: var(--md-outline);
+  opacity: 0;
+  transition: opacity var(--d-quick) var(--ease-calm);
+}
+.recall-item[aria-selected="true"] .recall-kind { opacity: 1; }
+.recall-empty {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: center;
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  color: var(--md-outline);
+  font-size: var(--text-md);
+}
+.recall-empty strong { color: var(--md-on-surface); font: 600 var(--text-lg) var(--font-display); }
+.recall-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid rgba(169, 157, 141, 0.12);
+  font-size: var(--text-xs);
+  color: var(--md-outline);
+}
+.recall-foot span { display: inline-flex; align-items: center; gap: var(--space-1); }
+.recall-status { margin-left: auto; }
+.recall-esc { margin-left: var(--space-1); }
+
+@media (max-width: 760px) {
+  .recall-input { font-size: 16px; }
+  .recall { padding: var(--space-3); align-items: stretch; }
+  .recall-panel { max-height: none; height: min(82vh, 100%); }
+  .recall-foot { display: none; }
+}
+
+/* ═══ Inhaltswechsel: Notizen erscheinen aus der Tiefe ════════════════ */
+@media (prefers-reduced-motion: no-preference) {
+  .file-view { animation: page-in var(--d-slow) var(--ease-calm) both; }
+  .file-view .markdown-content > * { animation: page-in var(--d-slow) var(--ease-calm) both; }
+  .file-view .markdown-content > :nth-child(1) { animation-delay: 40ms; }
+  .file-view .markdown-content > :nth-child(2) { animation-delay: 70ms; }
+  .file-view .markdown-content > :nth-child(3) { animation-delay: 100ms; }
+  .file-view .markdown-content > :nth-child(4) { animation-delay: 130ms; }
+  .file-view .markdown-content > :nth-child(n+5) { animation-delay: 160ms; }
+}
+@keyframes page-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* ═══ Reduzierte Bewegung und Transparenz ═════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  .logo-text em::after,
+  .file-item.active::before,
+  .recall.is-busy .recall-field::after { animation: none; }
+  .recall-panel,
+  .kw-modal,
+  .kw-toast,
+  .recent-switch.has-thumb::before,
+  .recall-lens { transition: opacity var(--d-quick) linear; }
+  .recall-panel, .kw-modal, .kw-toast, .kw-toast.show { transform: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  body > header,
+  #search-results,
+  .kw-toast,
+  .recall-panel {
+    background: var(--md-surface-ch);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   4.3 Feinschliff — gemessene Korrekturen (UI-Review)
+   ───────────────────────────────────────────────────────────────────────
+   Regel für alles Folgende: Text bekommt in einem Rahmen mindestens 0,6 em
+   seitlich und eine Gesamthöhe von mindestens 2,2 × Schriftgröße; Icons
+   in Buttons nicht unter 14 px; Trefferflächen mindestens 32 px (Maus)
+   bzw. 44 px (Touch).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Kopfzeile: Suche im Fenster zentriert ───────────────────────────
+   Drei Spalten: Logo-Block | Suche | gleich breiter Platzhalter. So steht
+   die Suche in der Fenstermitte, egal wie breit die Seitenleiste ist
+   (gemessen vorher: 84 px links der Mitte). */
+body > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 620px) minmax(0, 1fr);
+  align-items: center;
+}
+.header-start {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+}
+.header-start .logo-wrap { width: auto; border-right: 0; }
+body > header .search-wrap {
+  grid-column: 2;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+}
+#search-results { left: 0; right: 0; }
+.search-recall { right: var(--space-2); }
+
+@media (max-width: 1024px) {
+  body > header { grid-template-columns: auto minmax(0, 1fr) var(--space-2); }
+}
+
+/* Lupe: genug Luft zwischen Icon und Text (vorher 8–10 px) */
+.search-lens-button { left: var(--space-2); }
+.search-input { padding-left: calc(var(--space-2) + 28px + var(--space-2)); }
+@media (pointer: coarse) {
+  .search-input { padding-left: calc(var(--space-2) + var(--touch-target)); }
+}
+
+/* ── 2. Login: wirklich mittig ──────────────────────────────────────────
+   body hatte min-height: 100 % aus dem Polish-Stylesheet — das gewann gegen
+   das 100dvh der Loginseite, der Body war nur so hoch wie die Karte. */
+body.login-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ── 3. Seitenleiste: Wissensgraph statt Baum-Filter ────────────────── */
+.tree-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  margin: 0;
+}
+.sidebar-atlas-link {
+  position: relative;
+  isolation: isolate;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid rgba(227, 169, 79, 0.24);
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(227, 169, 79, 0.16), transparent 60%),
+    var(--md-surface);
+  box-shadow: var(--edge-light), var(--lift-1);
+  color: var(--md-on-surface);
+  font: 500 var(--text-md)/1.2 var(--font-body);
+  text-decoration: none;
+  overflow: hidden;
+  transition: border-color var(--d-std) var(--ease-calm), transform var(--d-quick) var(--ease-calm), box-shadow var(--d-std) var(--ease-calm);
+}
+.sidebar-atlas-link span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-atlas-icon {
+  flex: 0 0 auto;
+  color: var(--md-primary);
+  filter: drop-shadow(0 0 6px rgba(227, 169, 79, 0.55));
+}
+.sidebar-atlas-chevron {
+  flex: 0 0 auto;
+  color: var(--md-outline);
+  transition: transform var(--d-std) var(--ease-spring), color var(--d-std) var(--ease-calm);
+}
+.sidebar-atlas-link:hover {
+  border-color: rgba(227, 169, 79, 0.45);
+  color: var(--md-on-surface);
+  box-shadow: var(--edge-light), var(--lift-2), 0 0 24px -8px rgba(227, 169, 79, 0.5);
+}
+.sidebar-atlas-link:hover .sidebar-atlas-chevron { transform: translateX(3px); color: var(--md-primary); }
+.sidebar-atlas-link:active { transform: scale(0.98); }
+@media (prefers-reduced-motion: no-preference) {
+  .sidebar-atlas-icon { animation: atlas-glint 4.8s ease-in-out infinite; }
+}
+@keyframes atlas-glint { 0%, 100% { filter: drop-shadow(0 0 4px rgba(227, 169, 79, 0.35)); } 50% { filter: drop-shadow(0 0 9px rgba(227, 169, 79, 0.8)); } }
+
+.btn-select-toggle {
+  width: var(--control-height);
+  height: var(--control-height);
+  flex: 0 0 var(--control-height);
+  border: 1px solid var(--md-outline-v);
+  border-radius: var(--radius-md);
+  color: var(--md-on-surface-v);
+}
+@media (pointer: coarse) {
+  .sidebar-atlas-link,
+  .btn-select-toggle { min-height: var(--touch-target); }
+  .btn-select-toggle { width: var(--touch-target); height: var(--touch-target); flex-basis: var(--touch-target); }
+}
+
+/* ── 4. Dateibaum: lesbare Pfeile ───────────────────────────────────── */
+.chevron { width: 14px; height: 14px; }
+.tree-row .file-item { padding: var(--space-1) var(--space-2); gap: var(--space-2); }
+
+/* ── 5. Kleine Rahmen mit Text: Luft geben ──────────────────────────── */
+.breadcrumb { gap: var(--space-1); }
+.breadcrumb-item { padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.tag {
+  min-height: 26px;
+  padding: var(--space-1) var(--space-3);
+}
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: var(--space-1) var(--space-3);
+}
+.search-recall kbd,
+.recall kbd {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 var(--space-2);
+}
+.file-header { padding: var(--space-4) var(--space-6); }
+.file-actions { gap: var(--space-3); }
+.file-actions .btn { min-height: var(--control-height); padding: 0 var(--space-4); }
+.settings-head { gap: var(--space-6); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   4.3 Bewegung in der App — Sidebar, Baum, Menüs, Startseite
+   ───────────────────────────────────────────────────────────────────────
+   Gleiche Sprache wie oben: Federkurve für Dinge, die ankommen; ruhige
+   Kurve für Dinge, die gehen. Animiert wird nur transform/opacity bzw.
+   die Sidebar-Breite (vorher schon animiert). Bei reduzierter Bewegung
+   greift die globale 0,01-ms-Regel weiter oben: Zustände bleiben gleich,
+   nur der Weg entfällt.
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: no-preference) {
+  /* ── Sidebar Desktop: Breite gleitet, Inhalt blendet versetzt mit ──── */
+  @media (min-width: 1025px) {
+    .sidebar {
+      transition: width var(--d-slow) var(--ease-calm), border-color var(--d-std) var(--ease-calm);
+    }
+    /* Beim Ziehen am Griff folgt die Breite direkt der Maus */
+    body:has(.sidebar-resizer.dragging) .sidebar { transition: none; }
+    .sidebar > * {
+      transition: opacity var(--d-std) var(--ease-calm), transform var(--d-slow) var(--ease-calm);
+    }
+    .sidebar.collapsed > * { opacity: 0; transform: translateX(-14px); }
+    .sidebar:not(.collapsed) > :nth-child(2) { transition-delay: 40ms; }
+    .sidebar:not(.collapsed) > :nth-child(3) { transition-delay: 80ms; }
+    .sidebar:not(.collapsed) > :nth-child(4) { transition-delay: 110ms; }
+    .sidebar:not(.collapsed) > :nth-child(n+5) { transition-delay: 140ms; }
+  }
+  /* ── Sidebar Mobil: schiebt mit Feder herein, Inhalt folgt ──────────── */
+  @media (max-width: 1024px) {
+    .sidebar { transition: transform var(--d-slow) var(--ease-calm); }
+    .sidebar.open > * { animation: kw-row-in var(--d-slow) var(--ease-calm) backwards; }
+    .sidebar.open > :nth-child(2) { animation-delay: 60ms; }
+    .sidebar.open > :nth-child(3) { animation-delay: 100ms; }
+    .sidebar.open > :nth-child(n+4) { animation-delay: 140ms; }
+  }
+  .sidebar.kw-opening .file-tree > .tree-row {
+    animation: kw-row-in var(--d-slow) var(--ease-calm) backwards;
+  }
+  .sidebar.kw-opening .file-tree > .tree-row:nth-child(2) { animation-delay: 60ms; }
+  .sidebar.kw-opening .file-tree > .tree-row:nth-child(3) { animation-delay: 90ms; }
+  .sidebar.kw-opening .file-tree > .tree-row:nth-child(4) { animation-delay: 120ms; }
+  .sidebar.kw-opening .file-tree > .tree-row:nth-child(5) { animation-delay: 150ms; }
+  .sidebar.kw-opening .file-tree > .tree-row:nth-child(n+6) { animation-delay: 180ms; }
+
+  /* Hamburger: die Linien federn ins X */
+  .hamburger-lines span { transition: transform var(--d-std) var(--ease-spring), opacity var(--d-quick) var(--ease-calm); }
+
+  /* ── Ordner: Inhalt klappt auf statt aufzuploppen ───────────────────── */
+  .subtree > .tree-row,
+  .subtree > .subtree { animation: kw-row-in var(--d-std) var(--ease-calm) backwards; }
+  .subtree > :nth-child(2) { animation-delay: 25ms; }
+  .subtree > :nth-child(3) { animation-delay: 50ms; }
+  .subtree > :nth-child(4) { animation-delay: 75ms; }
+  .subtree > :nth-child(5) { animation-delay: 100ms; }
+  .subtree > :nth-child(n+6) { animation-delay: 120ms; }
+  .tree-row.open > .file-item .chevron.has-ch { transition: transform var(--d-std) var(--ease-spring); }
+  .tree-row .file-item svg:not(.chevron) { transition: transform var(--d-std) var(--ease-spring), color var(--d-quick) var(--ease-calm); }
+  .tree-row:hover .file-item svg:not(.chevron) { transform: translateY(-1px) scale(1.08); color: var(--md-primary); }
+
+  /* ── Konto-Menü: wächst aus dem Button, Einträge folgen ─────────────── */
+  .sidebar-account-menu {
+    transform-origin: 50% 100%;
+    transform: translateY(10px) scale(0.96);
+    transition: opacity var(--d-std) var(--ease-calm), transform var(--d-std) var(--ease-spring);
+  }
+  .sidebar-account.open .sidebar-account-menu > * { animation: kw-rise-in var(--d-std) var(--ease-calm) backwards; }
+  .sidebar-account.open .sidebar-account-menu > :nth-child(2) { animation-delay: 30ms; }
+  .sidebar-account.open .sidebar-account-menu > :nth-child(3) { animation-delay: 60ms; }
+  .sidebar-account.open .sidebar-account-menu > :nth-child(4) { animation-delay: 90ms; }
+  .sidebar-account.open .sidebar-account-menu > :nth-child(n+5) { animation-delay: 110ms; }
+  .sidebar-account-chevron { transition: transform var(--d-std) var(--ease-spring); }
+
+  /* ── Startseite: Kopf, Panels und Listen bauen sich auf ─────────────── */
+  .home-head,
+  .dashboard > *,
+  .home-grid > * { animation: kw-rise-in var(--d-slow) var(--ease-calm) backwards; }
+  .home-grid > :nth-child(2) { animation-delay: 90ms; }
+  .recent-list > .recent-item { animation: kw-rise-in var(--d-std) var(--ease-calm) backwards; }
+  .recent-list > .recent-item:nth-child(2) { animation-delay: 35ms; }
+  .recent-list > .recent-item:nth-child(3) { animation-delay: 70ms; }
+  .recent-list > .recent-item:nth-child(4) { animation-delay: 105ms; }
+  .recent-list > .recent-item:nth-child(5) { animation-delay: 140ms; }
+  .recent-list > .recent-item:nth-child(n+6) { animation-delay: 170ms; }
+  .tag-cloud-compact > * { animation: kw-pop-in var(--d-std) var(--ease-spring) backwards; }
+  .tag-cloud-compact > :nth-child(3n+2) { animation-delay: 40ms; }
+  .tag-cloud-compact > :nth-child(3n) { animation-delay: 80ms; }
+
+  /* ── Atlas-Seite: Seitenleiste und HUD kommen mit dem Graphen ───────── */
+  .knowledge-nav > * { animation: kw-row-in var(--d-slow) var(--ease-calm) backwards; }
+  .knowledge-nav > :nth-child(2) { animation-delay: 60ms; }
+  .knowledge-nav > :nth-child(3) { animation-delay: 100ms; }
+  .knowledge-nav > :nth-child(4) { animation-delay: 140ms; }
+  .knowledge-nav > :nth-child(n+5) { animation-delay: 180ms; }
+  .knowledge-hud > * { animation: kw-rise-in var(--d-slow) var(--ease-calm) backwards; }
+  .knowledge-hud > :nth-child(2) { animation-delay: 120ms; }
+  .knowledge-hud > :nth-child(3) { animation-delay: 200ms; }
+}
+@keyframes kw-row-in { from { opacity: 0; transform: translateX(-10px); } }
+@keyframes kw-rise-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes kw-pop-in { from { opacity: 0; transform: scale(0.86); } }

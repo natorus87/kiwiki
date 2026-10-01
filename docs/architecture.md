@@ -161,6 +161,9 @@ contract (maximum 800 nodes and 2,000 edges). `/knowledge` renders it locally th
 renderer uses a deterministic 3D layout projected onto an accessible canvas, with a
 DOM-based inspector for readable metadata and source navigation. The UI remains
 functional as an explicit empty state while the engine is disabled or backfilling.
+On every visit the atlas plays a short showcase (build-up, data packets along edges,
+a decorative synapse field around small graphs) and then fades to rest; motion
+rules and tuning constants are documented in [`ui-system.md`](ui-system.md#neuronaler-atlas-bewegung).
 
 ## Design-Rollen: Typografie und Abstände
 

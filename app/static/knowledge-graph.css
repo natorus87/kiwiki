@@ -68,6 +68,9 @@
 .knowledge-icon-button:hover { color: var(--md-primary); border-color: var(--md-primary-border); background: var(--md-primary-dim2); }
 .knowledge-icon-button svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .knowledge-icon-button[aria-pressed="true"] { color: var(--md-tertiary); border-color: rgba(159, 183, 216, .4); }
+.knowledge-icon-button .motion-play { display: none; }
+.knowledge-icon-button[aria-pressed="true"] .motion-pause { display: none; }
+.knowledge-icon-button[aria-pressed="true"] .motion-play { display: block; }
 
 .knowledge-viewport { position: relative; min-height: 0; overflow: hidden; isolation: isolate; }
 #knowledge-graph { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; z-index: 2; }
@@ -132,7 +135,18 @@
 
 .knowledge-sidebar { background: #201f1b; }
 .knowledge-nav { flex: 1; overflow-y: auto; padding: var(--space-8) var(--space-6); }
-.knowledge-back-link { display: inline-flex; gap: var(--space-2); color: var(--md-on-surface-v); text-decoration: none; font-size: var(--text-sm); margin-bottom: var(--space-8); }
+.knowledge-back-link {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  min-height: var(--control-height); margin: 0 0 var(--space-8) calc(-1 * var(--space-3));
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--md-on-surface-v); text-decoration: none;
+  font: 500 var(--text-md)/1.2 var(--font-body);
+  transition: color var(--t), background var(--t);
+}
+.knowledge-back-link svg { flex: 0 0 auto; transition: transform var(--t); }
+.knowledge-back-link:hover { background: var(--md-primary-dim2); }
+.knowledge-back-link:hover svg { transform: translateX(-3px); }
 .knowledge-back-link:hover { color: var(--md-primary); }
 .knowledge-nav h2 { margin: var(--space-2) 0 var(--space-3); font: 600 var(--text-2xl)/1.08 var(--font-display); letter-spacing: -.03em; }
 .knowledge-nav > p:not(.knowledge-nav-kicker) { color: var(--md-on-surface-v); font-size: var(--text-md); line-height: 1.65; }
@@ -163,4 +177,63 @@
 @media (prefers-reduced-motion: reduce) {
   .knowledge-pulse, .loading-orbit { animation: none; }
   .knowledge-inspector { animation: none; }
+}
+
+/* ── Atlas 2.0: Material & Tiefe (Bildsprache der kiwiki-Website) ───────
+   Flächen mit Innenlicht-Kante statt flacher Transparenz, weicher Rand-
+   Vignette um den Raum, Korn gegen „Plastik“. Das Korn liegt als statische
+   Hintergrundebene, nicht als Overlay mit Blend-Mode über dem Canvas —
+   das hätte jeden Frame neu komponiert. */
+.knowledge-stage {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .92 0 0 0 0 .8 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 72% 18%, rgba(227, 169, 79, 0.07), transparent 30%),
+    #171713;
+}
+
+.knowledge-hud {
+  background: linear-gradient(180deg, rgba(255, 244, 222, 0.035), rgba(255, 244, 222, 0)), rgba(31, 30, 27, 0.9);
+  border-bottom-color: rgba(227, 169, 79, 0.14);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.35), 0 12px 30px -20px rgba(0, 0, 0, 0.8);
+}
+
+/* Randvignette: der Raum fällt nach außen ins Dunkel ab */
+.knowledge-viewport::after {
+  content: '';
+  position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(12, 11, 9, 0.55) 100%);
+}
+
+.knowledge-pulse {
+  animation: knowledge-breathe 2.6s ease-in-out infinite, knowledge-ping 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@keyframes knowledge-ping {
+  0% { box-shadow: 0 0 0 0 rgba(227, 169, 79, 0.5), 0 0 22px var(--md-primary); }
+  70%, 100% { box-shadow: 0 0 0 10px rgba(227, 169, 79, 0), 0 0 22px var(--md-primary); }
+}
+
+.knowledge-inspector {
+  background: linear-gradient(180deg, rgba(255, 244, 222, 0.05), rgba(255, 244, 222, 0.01) 40%), rgba(36, 34, 29, 0.96);
+  border-color: rgba(227, 169, 79, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 200, 0.08),
+    0 36px 90px -24px rgba(0, 0, 0, 0.75),
+    0 0 80px -30px rgba(227, 169, 79, 0.4);
+  animation: inspector-in 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes inspector-in { from { opacity: 0; transform: translateX(16px) scale(0.98); filter: blur(4px); } }
+
+.knowledge-help {
+  background: linear-gradient(180deg, rgba(255, 244, 222, 0.04), rgba(255, 244, 222, 0)), rgba(31, 30, 27, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 236, 200, 0.06);
+}
+
+.knowledge-icon-button { transition: color var(--t), border-color var(--t), background var(--t), box-shadow var(--t); }
+.knowledge-icon-button:hover { box-shadow: 0 0 0 4px rgba(227, 169, 79, 0.06), 0 0 18px -4px rgba(227, 169, 79, 0.55); }
+
+.legend-document { animation: legend-glow 3.2s ease-in-out infinite; }
+@keyframes legend-glow { 50% { box-shadow: 0 0 16px var(--md-primary); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .legend-document { animation: none; }
 }

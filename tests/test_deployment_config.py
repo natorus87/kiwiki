@@ -70,10 +70,10 @@ def test_release_version_is_consistent():
     chart = yaml.safe_load((ROOT / "charts/kiwiki/Chart.yaml").read_text(encoding="utf-8"))
     values = yaml.safe_load((ROOT / "charts/kiwiki/values.yaml").read_text(encoding="utf-8"))
 
-    assert 'version = "4.2.0"' in pyproject
-    assert chart["version"] == "4.2.0"
-    assert chart["appVersion"] == "4.2.0"
-    assert values["image"]["tag"] == "4.2.0"
+    assert 'version = "4.3.0"' in pyproject
+    assert chart["version"] == "4.3.0"
+    assert chart["appVersion"] == "4.3.0"
+    assert values["image"]["tag"] == "4.3.0"
 
 
 def test_runtime_dependencies_are_exactly_pinned():
@@ -111,7 +111,7 @@ def test_shipped_version_matches_the_app_constant():
     """APP_VERSION ist die ausgelieferte Version (FastAPI, /version, MCP serverInfo)."""
     from app.constants import APP_VERSION
 
-    assert APP_VERSION == "4.2.0"
+    assert APP_VERSION == "4.3.0"
 
 
 def _configured_env_keys() -> set[str]:
