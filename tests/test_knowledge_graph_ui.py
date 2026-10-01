@@ -218,8 +218,8 @@ def test_atlas_assets_are_cache_busted_for_the_motion_release(monkeypatch):
 
     for lang in ("de", "en"):
         page = client.get(f"/knowledge?lang={lang}").text
-        assert "/static/knowledge-graph.js?v=20261001-motion" in page
-        assert "/static/knowledge-graph.css?v=20261001-motion" in page
+        assert "/static/knowledge-graph.js?v=20261001-atlas" in page
+        assert "/static/knowledge-graph.css?v=20261001-atlas" in page
 
 
 def test_atlas_motion_matches_the_website_hero():
@@ -254,3 +254,21 @@ def test_atlas_data_flow_like_website_hero():
     # kein Abruf waehrend Aufbau, Pause, reduzierter Bewegung oder Auswahl
     assert "if (!state.intro.done || state.paused || prefersReducedMotion || state.dragging || state.selected) return;" in script
     assert "maybeRecall(time);" in script
+
+
+def test_atlas_has_website_synapse_field_around_the_graph():
+    """Wie der Website-Hero: dekoratives Synapsenfeld mit eigenen Datenpaketen,
+    baut sich mit auf, nur bei kleinen Graphen, nicht anklickbar."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "function buildField(" in script
+    assert "if (state.nodes.length > MAX_PAIRWISE_NODES) return;" in script
+    assert "var MAX_FIELD_PULSES =" in script
+    assert "state.fieldPulses.length >= MAX_FIELD_PULSES" in script
+    assert "projectField(); drawField(time);" in script
+    # Feld nimmt am Aufbau teil und ruht bei Pause/reduzierter Bewegung
+    assert "state.field.forEach(function (node) { node.k = 0; });" in script
+    assert "if (!state.field.length || state.paused || prefersReducedMotion) return;" in script
+    # Trefferpruefung kennt nur echte Knoten
+    nearest = script.split("function nearestNode(", 1)[1].split("\n  }\n", 1)[0]
+    assert "state.field" not in nearest

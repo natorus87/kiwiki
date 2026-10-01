@@ -40,6 +40,11 @@
   var PULSE_TAIL = 0.28;
   var RECALL_EVERY_MS = 4200;
   var RECALL_LABEL_MS = 2600;
+  // Synapsenfeld (Website-Hero): Punktzahl wie dort, Reichweite relativ zum Graphradius
+  var FIELD_NODES = 72;
+  var FIELD_NODES_MOBILE = 40;
+  var FIELD_REACH = 1.9;
+  var MAX_FIELD_PULSES = 24;
   // Nach eigener Bedienung kurz stillhalten, dann weiterdrehen (Website: sofort)
   var IDLE_ROTATE_AFTER_MS = 1500;
   var POINTER_GLOW_RADIUS = 140;
@@ -52,6 +57,7 @@
     neighborhoodOnly: false, frame: 0, lastTime: performance.now(), settled: false, simulationSteps: 0,
     intro: { start: 0, end: 0, done: true, waveFired: false },
     pulses: [], rings: [], waves: [], nextPulse: 0, nextRecall: Infinity, goal: null, distanceGoal: null,
+    field: [], fieldEdges: [], fieldPulses: [], nextFieldPulse: 0,
     lastInteraction: -IDLE_ROTATE_AFTER_MS, pointer: { x: 0, y: 0, active: false }, graphRadius: 300, bgGlow: null, refitted: false, userZoomed: false
   };
 
@@ -136,6 +142,115 @@
     document.getElementById('knowledge-a11y-status').textContent = copy.loaded(state.nodes.length, state.edges.length);
     state.settled = false; state.simulationSteps = 0;
     state.pulses = []; state.rings = []; state.waves = []; state.nextRecall = Infinity;
+    buildField();
+  }
+
+  // ── Synapsenfeld wie im Website-Hero ──────────────────────────────────
+  // Dekorativer Raum aus ~70 Punkten um den echten Graphen: baut sich mit
+  // auf, dreht mit der Kamera, trägt eigene Datenpakete. Nicht anklickbar,
+  // keine Beschriftung, deutlich leiser als echte Knoten. Große Graphen
+  // (> MAX_PAIRWISE_NODES) füllen den Raum selbst und bekommen kein Feld.
+  function buildField() {
+    state.field = []; state.fieldEdges = []; state.fieldPulses = [];
+    if (state.nodes.length > MAX_PAIRWISE_NODES) return;
+    var count = state.width < 760 ? FIELD_NODES_MOBILE : FIELD_NODES;
+    var seed = 7;
+    function rand() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
+    for (var i = 0; i < count; i += 1) {
+      var u = rand() * 2 - 1; var phi = rand() * Math.PI * 2; var s = Math.sqrt(1 - u * u);
+      // Schale statt Kugel: das Feld umgibt den echten Graphen, statt ihn zu überdecken
+      var r = 0.42 + 0.58 * Math.pow(rand(), 0.8);
+      var node = {
+        ux: s * Math.cos(phi) * r * 1.15, uy: u * r * 0.78, uz: s * Math.sin(phi) * r,
+        size: 0.8 + rand() * 1.1, tag: rand() < 0.2, k: 1, sx: 0, sy: 0, depth: 0, scale: 1, fog: 1, flash: 0
+      };
+      node.delay = 80 + r * 1500 + rand() * 350; node.swirl = 1.1 + rand() * 1.4;
+      state.field.push(node);
+    }
+    var seen = {};
+    state.field.forEach(function (a, i) {
+      state.field.map(function (b, j) {
+        var dx = a.ux - b.ux; var dy = a.uy - b.uy; var dz = a.uz - b.uz;
+        return { j: j, d: dx * dx + dy * dy + dz * dz };
+      }).filter(function (o) { return o.j !== i; }).sort(function (p, q) { return p.d - q.d; }).slice(0, 2)
+        .forEach(function (o) {
+          var key = Math.min(i, o.j) + '-' + Math.max(i, o.j);
+          if (!seen[key]) { seen[key] = true; state.fieldEdges.push([i, o.j]); }
+        });
+    });
+  }
+
+  function projectField() {
+    var reach = state.graphRadius * FIELD_REACH;
+    state.field.forEach(function (node) {
+      node.x = node.ux * reach; node.y = node.uy * reach; node.z = node.uz * reach;
+      project(node);
+    });
+  }
+
+  function spawnFieldPulse(from) {
+    if (state.fieldPulses.length >= MAX_FIELD_PULSES || !state.fieldEdges.length) return;
+    var options = from === undefined ? state.fieldEdges : state.fieldEdges.filter(function (e) { return e[0] === from || e[1] === from; });
+    if (!options.length) return;
+    var edge = options[Math.floor(Math.random() * options.length)];
+    var forward = from === undefined ? Math.random() < 0.5 : edge[0] === from;
+    state.fieldPulses.push({ a: forward ? edge[0] : edge[1], b: forward ? edge[1] : edge[0], t: 0, speed: 0.5 + Math.random() * 0.5 });
+  }
+
+  function updateField(time, dt) {
+    if (!state.field.length || state.paused || prefersReducedMotion) return;
+    for (var i = state.fieldPulses.length - 1; i >= 0; i -= 1) {
+      var pulse = state.fieldPulses[i];
+      pulse.t += dt * 0.001 * pulse.speed;
+      if (pulse.t >= 1) {
+        state.fieldPulses.splice(i, 1);
+        state.field[pulse.b].flash = 0.8;
+        if (Math.random() < 0.45) spawnFieldPulse(pulse.b);
+      }
+    }
+    if (state.intro.done && time > state.nextFieldPulse) {
+      spawnFieldPulse();
+      state.nextFieldPulse = time + 300 + Math.random() * 500;
+    }
+    state.field.forEach(function (node) { if (node.flash > 0) node.flash = Math.max(0, node.flash - dt / 1200); });
+  }
+
+  function fieldVisible(node) { return node.depth >= 100 && node.k > 0.001; }
+
+  function drawField(time) {
+    if (!state.field.length) return;
+    var hush = state.selected ? 0.35 : 1;
+    context.lineWidth = 0.8;
+    state.fieldEdges.forEach(function (edge) {
+      var a = state.field[edge[0]]; var b = state.field[edge[1]];
+      if (!fieldVisible(a) || !fieldVisible(b)) return;
+      var grow = 1;
+      if (!state.intro.done) {
+        grow = easeOut(clamp01((time - state.intro.start - Math.max(a.delay, b.delay) - 380) / 700));
+        if (grow <= 0) return;
+      }
+      var fog = (a.fog + b.fog) / 2;
+      context.strokeStyle = 'rgba(227,169,79,' + ((0.03 + fog * fog * 0.16) * hush).toFixed(3) + ')';
+      context.beginPath(); context.moveTo(a.sx, a.sy);
+      context.lineTo(a.sx + (b.sx - a.sx) * grow, a.sy + (b.sy - a.sy) * grow); context.stroke();
+    });
+    state.fieldPulses.forEach(function (pulse) {
+      var a = state.field[pulse.a]; var b = state.field[pulse.b];
+      if (fieldVisible(a) && fieldVisible(b)) drawPacket(a, b, pulse.t, false, 0.8 * hush);
+    });
+    state.field.forEach(function (node) {
+      if (!fieldVisible(node)) return;
+      var land = state.intro.done ? 0 : Math.max(0, 1 - Math.abs(node.k - 0.9) / 0.2) * 0.9;
+      var light = Math.min(1, (0.2 + node.fog * 0.6 + node.flash * 0.8 + land) * node.k) * hush;
+      var radius = Math.max(0.6, node.size * Math.min(1.5, node.scale)) * (0.3 + 0.7 * node.k) * (1 + node.flash * 0.8 + land * 0.6);
+      var halo = radius * (6 + node.flash * 7);
+      context.globalAlpha = light * (0.3 + node.flash * 0.5);
+      context.drawImage(node.tag ? glow.tag : glow.document, node.sx - halo / 2, node.sy - halo / 2, halo, halo);
+      context.globalAlpha = light * 0.85;
+      context.fillStyle = node.tag ? 'rgb(214,226,242)' : 'rgb(246,222,178)';
+      context.beginPath(); context.arc(node.sx, node.sy, radius, 0, Math.PI * 2); context.fill();
+    });
+    context.globalAlpha = 1;
   }
 
   function startIntro() {
@@ -150,20 +265,24 @@
       node.k = 0;
       state.intro.end = Math.max(state.intro.end, node.delay + INTRO_NODE_MS);
     });
+    state.field.forEach(function (node) { node.k = 0; });
   }
 
   function updateIntro(now) {
     if (state.intro.done) return;
     var elapsed = now - state.intro.start;
     state.nodes.forEach(function (node) { node.k = easeOut(clamp01((elapsed - node.delay) / INTRO_NODE_MS)); });
+    state.field.forEach(function (node) { node.k = easeOut(clamp01((elapsed - node.delay) / INTRO_NODE_MS)); });
     if (!state.intro.waveFired && elapsed > state.intro.end - 250) {
       state.intro.waveFired = true; state.waves.push(now);
       for (var i = 0; i < 8; i += 1) spawnPulse(null, now);
+      for (var f = 0; f < 6; f += 1) spawnFieldPulse();
     }
     if (elapsed > state.intro.end + 700) {
       state.intro.done = true;
       state.nextRecall = now + 1600;
       state.nodes.forEach(function (node) { node.k = 1; });
+      state.field.forEach(function (node) { node.k = 1; });
     }
   }
 
@@ -380,31 +499,36 @@
     state.nodes.forEach(function (node) { if (node.flash > 0) node.flash = Math.max(0, node.flash - dt / 1400); });
   }
 
-  // Datenpakete: heller Kopf, Leuchtschweif entlang der Kante (wie Website)
-  function drawPulses() {
+  // Datenpaket: heller Kopf, Leuchtschweif entlang der Kante (wie Website)
+  function drawPacket(a, b, t, hot, strength) {
+    var dx = b.sx - a.sx; var dy = b.sy - a.sy;
+    var x = a.sx + dx * t; var y = a.sy + dy * t;
+    var tail = Math.max(0, t - PULSE_TAIL);
+    var tx = a.sx + dx * tail; var ty = a.sy + dy * tail;
+    var depthLight = 0.6 + 0.4 * ((a.fog + b.fog) / 2);
+    var fade = Math.min(1, Math.sin(Math.PI * t) * 1.6) * depthLight * strength;
+    var trail = context.createLinearGradient(tx, ty, x, y);
+    trail.addColorStop(0, 'rgba(237,186,102,0)');
+    trail.addColorStop(1, hot ? 'rgba(253,240,212,' + (0.95 * fade).toFixed(3) + ')' : 'rgba(240,196,120,' + (0.75 * fade).toFixed(3) + ')');
     context.lineCap = 'round';
+    context.strokeStyle = trail; context.lineWidth = hot ? 2.4 : 1.7;
+    context.beginPath(); context.moveTo(tx, ty); context.lineTo(x, y); context.stroke();
+    context.lineCap = 'butt';
+    var size = (hot ? 30 : 22) * Math.min(1.4, (a.scale + b.scale) / 2);
+    context.globalAlpha = fade;
+    context.drawImage(hot ? glow.hot : glow.document, x - size / 2, y - size / 2, size, size);
+    context.fillStyle = hot ? '#fff7e6' : '#f6deb2';
+    context.beginPath(); context.arc(x, y, hot ? 2.2 : 1.6, 0, Math.PI * 2); context.fill();
+    context.globalAlpha = 1;
+  }
+
+  function drawPulses() {
     state.pulses.forEach(function (pulse) {
       var a = state.nodeById.get(pulse.from); var b = state.nodeById.get(pulse.to);
       if (!a || !b || a.depth < 100 || b.depth < 100) return;
       if (state.neighborhoodOnly && state.selected && !(isConnected(a) && isConnected(b))) return;
-      var dx = b.sx - a.sx; var dy = b.sy - a.sy;
-      var x = a.sx + dx * pulse.t; var y = a.sy + dy * pulse.t;
-      var tail = Math.max(0, pulse.t - PULSE_TAIL);
-      var tx = a.sx + dx * tail; var ty = a.sy + dy * tail;
-      var depthLight = 0.6 + 0.4 * ((a.fog + b.fog) / 2);
-      var fade = Math.min(1, Math.sin(Math.PI * pulse.t) * 1.6) * depthLight;
-      var trail = context.createLinearGradient(tx, ty, x, y);
-      trail.addColorStop(0, 'rgba(237,186,102,0)');
-      trail.addColorStop(1, pulse.hot ? 'rgba(253,240,212,' + (0.95 * fade).toFixed(3) + ')' : 'rgba(240,196,120,' + (0.75 * fade).toFixed(3) + ')');
-      context.strokeStyle = trail; context.lineWidth = pulse.hot ? 2.4 : 1.7;
-      context.beginPath(); context.moveTo(tx, ty); context.lineTo(x, y); context.stroke();
-      var size = (pulse.hot ? 30 : 22) * Math.min(1.4, (a.scale + b.scale) / 2);
-      context.globalAlpha = fade;
-      context.drawImage(pulse.hot ? glow.hot : glow.document, x - size / 2, y - size / 2, size, size);
-      context.fillStyle = pulse.hot ? '#fff7e6' : '#f6deb2';
-      context.beginPath(); context.arc(x, y, pulse.hot ? 2.2 : 1.6, 0, Math.PI * 2); context.fill();
+      drawPacket(a, b, pulse.t, pulse.hot, 1);
     });
-    context.globalAlpha = 1; context.lineCap = 'butt';
   }
 
   function drawRings(time) {
@@ -518,8 +642,9 @@
   function render(time) {
     state.frame = window.requestAnimationFrame(render);
     var dt = Math.min(64, Math.max(0, time - state.lastTime)); state.lastTime = time;
-    simulate(); refitAfterSettle(); updateIntro(time); updateCamera(); updatePulses(time, dt); maybeRecall(time);
+    simulate(); refitAfterSettle(); updateIntro(time); updateCamera(); updatePulses(time, dt); maybeRecall(time); updateField(time, dt);
     drawBackground(time, dt); drawWaves(time);
+    projectField(); drawField(time);
     state.nodes.forEach(project);
     state.edges.slice().sort(function (a, b) {
       return state.nodeById.get(b.source).depth - state.nodeById.get(a.source).depth;
