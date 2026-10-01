@@ -8,6 +8,14 @@ This changelog is written in English only.
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-01
+
+### Upgrade notes
+- No configuration or API changes. Static asset cache keys changed, so browsers fetch the new
+  CSS/JS on the first load after the upgrade.
+- The Neural Atlas now plays a short showcase on every visit, also with the OS setting
+  "reduce motion" (2.5 s instead of 7 s), then rests; see `docs/ui-accessibility.md`.
+
 ### Added
 - **Recall — one place to find anything.** Press <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> anywhere, or
   <kbd>/</kbd> outside text fields, or tap the magnifier in the header on mobile. Recall searches
@@ -749,7 +757,8 @@ This changelog is written in English only.
 - **Container:** Docker + docker-compose
 - **Orchestration:** Helm charts for Kubernetes
 
-[Unreleased]: https://github.com/natorus87/kiwiki/compare/v4.2.0...HEAD
+[Unreleased]: https://github.com/natorus87/kiwiki/compare/v4.3.0...HEAD
+[4.3.0]: https://github.com/natorus87/kiwiki/compare/v4.2.0...v4.3.0
 [4.2.0]: https://github.com/natorus87/kiwiki/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/natorus87/kiwiki/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/natorus87/kiwiki/compare/v3.2.0...v4.0.0
