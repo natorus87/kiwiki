@@ -8,6 +8,19 @@ This changelog is written in English only.
 
 ## [Unreleased]
 
+### Added
+- **Recall — one place to find anything.** Press <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> anywhere, or
+  <kbd>/</kbd> outside text fields, or tap the magnifier in the header on mobile. Recall searches
+  notes as you type with prefix matching ("oau" finds "OAuth", which the header search does not),
+  shows recently opened notes when empty and offers the main actions (new note, Neural Atlas,
+  tags, search history, sidebar, language, settings for admins) in the same list.
+  - Keyboard first: ↑/↓ (or Tab, Ctrl+N/P) select, ↵ opens, Esc closes and returns focus to where
+    it was. Pressing ↵ before results arrive waits for the fresh results instead of opening a
+    stale entry. Superseded requests are aborted.
+  - Accessible as a combobox with `aria-activedescendant`; all copy in German and English.
+  - Recently opened notes are kept per browser in `localStorage` (path and title only).
+- **Reading progress** as a thin amber line under the header while a note is open.
+
 ### Changed
 - **Neural Atlas comes alive.** Same visual language as the new kiwiki.xyz hero:
   - **Build-up on load:** nodes spiral in from the outside to their place (inner ones first),
@@ -30,6 +43,15 @@ This changelog is written in English only.
 - Glows are pre-rendered sprites (`drawImage`) instead of one radial gradient per node and frame;
   the background gradient is cached per resize. Measured in headless Chromium: 61 fps with 21 nodes,
   56 fps during and 54 fps after the build-up with 500 nodes.
+- **Layered material.** Header, search results, Recall, toasts and dialogs are translucent with
+  blur; reading text and lists stay on solid surfaces. With `prefers-reduced-transparency` these
+  layers become opaque.
+- **One motion language:** a spring curve for things that move into place (Recall, dialogs,
+  toasts, the selection lens, the segmented control) and a calm curve for state changes; notes fade
+  up when opened. With `prefers-reduced-motion` every state stays, only the travel is dropped.
+- Segmented control on the home page ("Recently edited / created") gets a sliding thumb.
+- Primary buttons, file header and panels get inner light and soft depth; the logo caret breathes
+  instead of blinking; the active note in the tree glows.
 
 ## [4.2.0] - 2026-09-30
 
