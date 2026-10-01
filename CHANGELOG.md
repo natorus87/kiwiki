@@ -20,6 +20,23 @@ This changelog is written in English only.
   - Accessible as a combobox with `aria-activedescendant`; all copy in German and English.
   - Recently opened notes are kept per browser in `localStorage` (path and title only).
 - **Reading progress** as a thin amber line under the header while a note is open.
+- **Neural Atlas: synapse field and data flow like the kiwiki.xyz hero.** A decorative field of
+  72 points (40 below 760 px) surrounds the user's graph, joins the build-up, rotates with the
+  camera and carries its own data packets. It is never labelled or hit-tested, dims while a node
+  is selected and is skipped for graphs above 180 nodes, which fill the space themselves.
+  - Data packets on graph and field edges are drawn with a glowing trail and a bright core; a new
+    packet starts every 220–440 ms and hops on at the target with 60 % probability (caps: 32 on
+    the graph, 36 on the field).
+  - Every 4–7 s a visible front document is **recalled**: flash, ring, bold label for 2.6 s,
+    highlighted edges and hot packets to all neighbours (up to 8).
+- **Neural Atlas plays briefly, then rests.** Every visit shows the build-up plus about 7 s of data
+  flow (2.5 s with `prefers-reduced-motion`); then packets and rotation fade out over 1.8 s and the
+  atlas stands still with a ▶ button. ▶ keeps it moving until ⏸, which fades out again in 0.7 s.
+  The choice is not stored; every visit gets the short showcase.
+- **App motion:** the desktop sidebar slides open and closed (width plus staggered content, tree
+  rows run in on open), the mobile sidebar slides in with its content; folders unfold their
+  children in sequence; the account menu grows out of its button; the home page and the atlas
+  sidebar/HUD build up in sequence. All of it is off with `prefers-reduced-motion`.
 
 ### Changed
 - **UI review fixes (measured, then corrected):**
@@ -39,8 +56,9 @@ This changelog is written in English only.
 - **Neural Atlas comes alive.** Same visual language as the new kiwiki.xyz hero:
   - **Build-up on load:** nodes spiral in from the outside to their place (inner ones first),
     glow briefly as they land, edges grow only once both ends have arrived, and a light wave
-    closes the sequence and fires the first impulses. Skipped entirely with
-    `prefers-reduced-motion`; nodes still in flight cannot be selected.
+    closes the sequence and fires the first impulses. Nodes still in flight cannot be selected.
+    Runs on every visit, including with `prefers-reduced-motion` (see "plays briefly, then
+    rests" below).
   - **Action potentials:** impulses travel along edges, light up the node they reach and
     sometimes jump on. Capped at 32 at a time; graphs above 180 nodes get no ambient impulses,
     only the ones triggered by selection.
@@ -50,22 +68,32 @@ This changelog is written in English only.
   - **Camera:** focus ("Explore connections") and reset glide instead of jumping; the view
     re-fits once after the layout settles, so small graphs no longer sit in a fifth of the space
     (minimum fitted distance 520 → 260). Manual wheel/pinch zoom disables the re-fit.
-  - **Idle rotation** after 3.5 s without interaction; pauses while dragging and with the
-    existing pause button.
+  - **Idle rotation** 1.5 s after the last interaction; pauses while dragging and while the atlas
+    rests.
   - **Material:** HUD, inspector and help bar with inner-light edge and soft depth, edge vignette
     and static grain on the stage, softer inspector entrance.
 - Glows are pre-rendered sprites (`drawImage`) instead of one radial gradient per node and frame;
-  the background gradient is cached per resize. Measured in headless Chromium: 61 fps with 21 nodes,
-  56 fps during and 54 fps after the build-up with 500 nodes.
+  the background gradient is cached per resize. Measured in headless Chromium: 59–61 fps with 21
+  nodes; with 500 nodes about 40 fps during the build-up and 44–60 fps after it (same range as
+  before the synapse field, which is not drawn for graphs that large).
 - **Layered material.** Header, search results, Recall, toasts and dialogs are translucent with
   blur; reading text and lists stay on solid surfaces. With `prefers-reduced-transparency` these
   layers become opaque.
 - **One motion language:** a spring curve for things that move into place (Recall, dialogs,
   toasts, the selection lens, the segmented control) and a calm curve for state changes; notes fade
   up when opened. With `prefers-reduced-motion` every state stays, only the travel is dropped.
-- Segmented control on the home page ("Recently edited / created") gets a sliding thumb.
+- Segmented control on the home page ("Recently edited / created") gets a sliding thumb that is
+  measured to the active segment, so both labels keep the same 12 px side padding (equal-width
+  columns had left the shorter label with 16 px and the thumb 5 px short of the longer one); no gap
+  between the segments, and the bold label width is reserved so text does not jump on switch.
 - Primary buttons, file header and panels get inner light and soft depth; the logo caret breathes
   instead of blinking; the active note in the tree glows.
+
+### Fixed
+- Account button in the sidebar: the name turned amber ink on dark on hover (global
+  `button:hover` rule) and was unreadable.
+- Neural Atlas pause button only ever showed the pause icon; it now switches to a play icon while
+  the atlas rests.
 
 ## [4.2.0] - 2026-09-30
 

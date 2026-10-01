@@ -94,6 +94,10 @@ rule may hide headings; the server decides redundancy.
 
 A single `@media (prefers-reduced-motion: reduce)` block at the top of `kiwiki.css` zeroes out all animations, transitions, and smooth scroll. The same rule is duplicated inside `login.html`'s own `<style>` (login renders without the main stylesheet) so the caret blink, hero glow, and save-pulse effects also degrade.
 
+The app motion added in 4.3 (sidebar, folders, account menu, home page) lives inside `@media (prefers-reduced-motion: no-preference)` in `kiwiki-polish.css`, so with reduced motion every state appears at once.
+
+**Exception: the Neural Atlas.** The atlas is a visualisation whose motion carries meaning (data flow along links), so it plays a shortened showcase even with reduced motion: build-up plus 2.5 s of data flow (7 s otherwise), then a 1.8 s fade to rest. It never loops on its own; the play/pause button (`#knowledge-motion`, `aria-pressed`, label "Bewegung fortsetzen" / "Resume motion") is the only way to keep it moving. Revisit this if users report discomfort — the fallback is to skip the showcase when `systemReducedMotion` is true.
+
 ## Settings Responsive Grid
 
 `settings.html` defines a 4-column user-management form for > 1024 px screens, two columns on tablets, and exactly one explicit column below 760 px. Every child resets to the full grid width so no implicit second column can appear.
@@ -107,7 +111,7 @@ A single `@media (prefers-reduced-motion: reduce)` block at the top of `kiwiki.c
 - [ ] Keyboard-only pass: Can you reach every action? Is the visible focus order logical?
 - [ ] Screen reader pass (VoiceOver/NVDA): Are landmarks, navigation controls, and toasts announced?
 - [ ] Mobile viewport (375 px): No horizontal scroll, no sub-44 px touch targets, no iOS focus zoom
-- [ ] Reduced motion: Animations stop when `prefers-reduced-motion` is set
+- [ ] Reduced motion: Animations stop when `prefers-reduced-motion` is set (Neural Atlas: short showcase, then rests — see above)
 - [ ] Contrast: All text ≥ 4.5 : 1 (use `--md-on-surface-v` for muted text, not `--md-outline`)
 - [ ] Skip-Link: Visible on first Tab, jumps focus to main content
 - [ ] New dialog: Focus trap works, Esc closes, focus returns to trigger
