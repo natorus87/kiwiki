@@ -23,16 +23,17 @@
     window.KIWIKI_I18N = window.KIWIKI.i18n;
   </script>
 
-  <link rel="stylesheet" href="/static/kiwiki.css?v=20260930-bernstein">
-  <link rel="stylesheet" href="/static/kiwiki-polish.css?v=20260930-bernstein">
+  <link rel="stylesheet" href="/static/kiwiki.css?v=20261001-review">
+  <link rel="stylesheet" href="/static/kiwiki-polish.css?v=20261001-review">
   {% block extra_styles %}{% endblock %}
 </head>
 <body class="role-{{ user.role if user else 'none' }}">
-<script src="/static/kiwiki.js?v=20260929-ui-review" defer></script>
+<script src="/static/kiwiki.js?v=20261001-review" defer></script>
 
 <a href="#main-content" class="skip-link sr-only">{{ t.skip_content }}</a>
 
 <header>
+  <div class="header-start">
   <button type="button" class="hamburger" onclick="toggleSidebar()" aria-label="{{ t.menu }}" aria-controls="file-tree" aria-expanded="false">
     <span class="hamburger-lines">
       <span></span><span></span><span></span>
@@ -42,6 +43,7 @@
     <img src="/static/kiwiki-icon.png" alt="kiwiki" class="logo-icon">
     <span class="logo-text">ki<em>wiki</em></span>
   </a>
+  </div>
 
   <form class="search-wrap"
         role="search"
@@ -67,7 +69,7 @@
 </div>
 
 <script src="/static/kiwiki-motion.bundle.js?v=20260608" defer></script>
-<script src="/static/kiwiki-recall.js?v=20260930-bernstein" defer></script>
+<script src="/static/kiwiki-recall.js?v=20261001-review" defer></script>
 
 </body>
 </html>

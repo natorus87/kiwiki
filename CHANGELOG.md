@@ -22,6 +22,20 @@ This changelog is written in English only.
 - **Reading progress** as a thin amber line under the header while a note is open.
 
 ### Changed
+- **UI review fixes (measured, then corrected):**
+  - The sidebar tree filter is gone (search lives in the header and Recall); the **Knowledge graph
+    entry moved to the top of the sidebar** and out of the account menu.
+  - **Header search is centred in the window** (was 84 px left of centre) via a three-column
+    header; the magnifier sits inside its button with 15 px to the placeholder.
+  - **Login card is vertically centred** — the shared `body { min-height: 100% }` had overridden
+    the login page's `100dvh`, leaving 16 px above and 311 px below the card.
+  - Neural Atlas **back link** uses a real 18 px icon in a 40 px target instead of a 12 px text arrow.
+  - Spacing pass: breadcrumbs, tag chips, role pills, keyboard hints and file actions get at least
+    0.6 em side padding and 2.2× line height; tree chevrons 10 → 14 px; select toggle 30 → 40 px.
+- **Neural Atlas motion now matches kiwiki.xyz:** rotation ~5°/s, denser impulses, nodes near the
+  pointer light up, every node glows on small graphs, and the camera keeps re-fitting while the
+  layout settles (robust 95th-percentile radius) so the graph fills the stage — span at 1440×900
+  went from 396 × 276 px to 528 × 312 px.
 - **Neural Atlas comes alive.** Same visual language as the new kiwiki.xyz hero:
   - **Build-up on load:** nodes spiral in from the outside to their place (inner ones first),
     glow briefly as they land, edges grow only once both ends have arrived, and a light wave

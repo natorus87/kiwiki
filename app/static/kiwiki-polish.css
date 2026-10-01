@@ -165,24 +165,6 @@ header {
   padding: var(--space-2);
 }
 
-.tree-filter-wrap {
-  position: relative;
-  min-width: 0;
-}
-
-.tree-filter-icon {
-  position: absolute;
-  left: var(--space-3);
-  top: 50%;
-  z-index: 1;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-.tree-filter {
-  padding-inline: calc(12px + 2 * var(--space-3)) var(--space-3);
-}
-
 .sidebar-btn {
   min-height: var(--control-height);
   border-radius: var(--radius-md);
@@ -947,7 +929,9 @@ body > header.is-reading::after { opacity: 1; }
   cursor: pointer;
 }
 .search-lens-button:hover { color: var(--md-primary); background: rgba(227, 169, 79, 0.1); }
-.search-lens-button .search-icon { position: static; transform: none; }
+/* Spezifitaet muss .search-wrap svg.search-icon (kiwiki.css) schlagen, sonst bleibt
+   das Icon absolut bei 1.5rem und steht neben statt in seiner Schaltflaeche. */
+.search-wrap .search-lens-button svg.search-icon { position: static; transform: none; left: auto; top: auto; }
 @media (pointer: coarse) {
   .search-lens-button { width: var(--touch-target); height: var(--touch-target); left: var(--space-2); }
   .search-input { padding-left: calc(var(--space-12) + var(--space-1)); }
@@ -1343,3 +1327,151 @@ html.recall-open { overflow: hidden; }
     backdrop-filter: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   4.3 Feinschliff — gemessene Korrekturen (UI-Review)
+   ───────────────────────────────────────────────────────────────────────
+   Regel für alles Folgende: Text bekommt in einem Rahmen mindestens 0,6 em
+   seitlich und eine Gesamthöhe von mindestens 2,2 × Schriftgröße; Icons
+   in Buttons nicht unter 14 px; Trefferflächen mindestens 32 px (Maus)
+   bzw. 44 px (Touch).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Kopfzeile: Suche im Fenster zentriert ───────────────────────────
+   Drei Spalten: Logo-Block | Suche | gleich breiter Platzhalter. So steht
+   die Suche in der Fenstermitte, egal wie breit die Seitenleiste ist
+   (gemessen vorher: 84 px links der Mitte). */
+body > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 620px) minmax(0, 1fr);
+  align-items: center;
+}
+.header-start {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+}
+.header-start .logo-wrap { width: auto; border-right: 0; }
+body > header .search-wrap {
+  grid-column: 2;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+}
+#search-results { left: 0; right: 0; }
+.search-recall { right: var(--space-2); }
+
+@media (max-width: 1024px) {
+  body > header { grid-template-columns: auto minmax(0, 1fr) var(--space-2); }
+}
+
+/* Lupe: genug Luft zwischen Icon und Text (vorher 8–10 px) */
+.search-lens-button { left: var(--space-2); }
+.search-input { padding-left: calc(var(--space-2) + 28px + var(--space-2)); }
+@media (pointer: coarse) {
+  .search-input { padding-left: calc(var(--space-2) + var(--touch-target)); }
+}
+
+/* ── 2. Login: wirklich mittig ──────────────────────────────────────────
+   body hatte min-height: 100 % aus dem Polish-Stylesheet — das gewann gegen
+   das 100dvh der Loginseite, der Body war nur so hoch wie die Karte. */
+body.login-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ── 3. Seitenleiste: Wissensgraph statt Baum-Filter ────────────────── */
+.tree-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  margin: 0;
+}
+.sidebar-atlas-link {
+  position: relative;
+  isolation: isolate;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid rgba(227, 169, 79, 0.24);
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(227, 169, 79, 0.16), transparent 60%),
+    var(--md-surface);
+  box-shadow: var(--edge-light), var(--lift-1);
+  color: var(--md-on-surface);
+  font: 500 var(--text-md)/1.2 var(--font-body);
+  text-decoration: none;
+  overflow: hidden;
+  transition: border-color var(--d-std) var(--ease-calm), transform var(--d-quick) var(--ease-calm), box-shadow var(--d-std) var(--ease-calm);
+}
+.sidebar-atlas-link span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-atlas-icon {
+  flex: 0 0 auto;
+  color: var(--md-primary);
+  filter: drop-shadow(0 0 6px rgba(227, 169, 79, 0.55));
+}
+.sidebar-atlas-chevron {
+  flex: 0 0 auto;
+  color: var(--md-outline);
+  transition: transform var(--d-std) var(--ease-spring), color var(--d-std) var(--ease-calm);
+}
+.sidebar-atlas-link:hover {
+  border-color: rgba(227, 169, 79, 0.45);
+  color: var(--md-on-surface);
+  box-shadow: var(--edge-light), var(--lift-2), 0 0 24px -8px rgba(227, 169, 79, 0.5);
+}
+.sidebar-atlas-link:hover .sidebar-atlas-chevron { transform: translateX(3px); color: var(--md-primary); }
+.sidebar-atlas-link:active { transform: scale(0.98); }
+@media (prefers-reduced-motion: no-preference) {
+  .sidebar-atlas-icon { animation: atlas-glint 4.8s ease-in-out infinite; }
+}
+@keyframes atlas-glint { 0%, 100% { filter: drop-shadow(0 0 4px rgba(227, 169, 79, 0.35)); } 50% { filter: drop-shadow(0 0 9px rgba(227, 169, 79, 0.8)); } }
+
+.btn-select-toggle {
+  width: var(--control-height);
+  height: var(--control-height);
+  flex: 0 0 var(--control-height);
+  border: 1px solid var(--md-outline-v);
+  border-radius: var(--radius-md);
+  color: var(--md-on-surface-v);
+}
+@media (pointer: coarse) {
+  .sidebar-atlas-link,
+  .btn-select-toggle { min-height: var(--touch-target); }
+  .btn-select-toggle { width: var(--touch-target); height: var(--touch-target); flex-basis: var(--touch-target); }
+}
+
+/* ── 4. Dateibaum: lesbare Pfeile ───────────────────────────────────── */
+.chevron { width: 14px; height: 14px; }
+.tree-row .file-item { padding: var(--space-1) var(--space-2); gap: var(--space-2); }
+
+/* ── 5. Kleine Rahmen mit Text: Luft geben ──────────────────────────── */
+.breadcrumb { gap: var(--space-1); }
+.breadcrumb-item { padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.tag {
+  min-height: 26px;
+  padding: var(--space-1) var(--space-3);
+}
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: var(--space-1) var(--space-3);
+}
+.search-recall kbd,
+.recall kbd {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 var(--space-2);
+}
+.file-header { padding: var(--space-4) var(--space-6); }
+.file-actions { gap: var(--space-3); }
+.file-actions .btn { min-height: var(--control-height); padding: 0 var(--space-4); }
+.settings-head { gap: var(--space-6); }

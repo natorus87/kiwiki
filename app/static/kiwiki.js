@@ -1225,31 +1225,6 @@ window.addEventListener('unhandledrejection', function(e) {
   }
 });
 
-/* ── Sidebar Tree Filter ──────────────────────────────────────────── */
-function kwFilterTree(query) {
-  var tree = document.getElementById('file-tree');
-  if (!tree) return;
-  var q = query.toLowerCase().trim();
-  var rows = tree.querySelectorAll('.tree-row');
-  rows.forEach(function(row) {
-    if (!q) { row.style.display = ''; return; }
-    var name = row.querySelector('.item-name');
-    var match = name && name.textContent.toLowerCase().indexOf(q) !== -1;
-    row.style.display = match ? '' : 'none';
-    if (match) {
-      var parent = row.parentElement;
-      while (parent && parent !== tree) {
-        if (parent.classList && parent.classList.contains('subtree') && parent.dataset.parent) {
-          var parentRow = document.querySelector('.tree-row[data-kind="dir"][data-path="' + CSS.escape(parent.dataset.parent) + '"]');
-          if (parentRow) { parentRow.style.display = ''; parentRow.classList.add('open'); }
-        }
-        parent = parent.parentElement;
-      }
-    }
-  });
-}
-
-/* ── Copy Path ────────────────────────────────────────────────────── */
 function kwCopyPath(path) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(path).then(function() {

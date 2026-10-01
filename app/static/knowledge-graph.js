@@ -36,7 +36,9 @@
   // Aufbau-Animation: Knoten spiralen von außen an ihren Platz (innen zuerst)
   var INTRO_NODE_MS = 1100;
   var MAX_PULSES = 32;
-  var IDLE_ROTATE_AFTER_MS = 3500;
+  // Nach eigener Bedienung kurz stillhalten, dann weiterdrehen (Website: sofort)
+  var IDLE_ROTATE_AFTER_MS = 1500;
+  var POINTER_GLOW_RADIUS = 140;
   var state = {
     nodes: [], edges: [], nodeById: new Map(), adjacency: new Map(),
     width: 1, height: 1, dpr: 1, yaw: -0.35, pitch: 0.18, distance: 720, defaultDistance: 720,
@@ -46,7 +48,7 @@
     neighborhoodOnly: false, frame: 0, lastTime: performance.now(), settled: false, simulationSteps: 0,
     intro: { start: 0, end: 0, done: true, waveFired: false },
     pulses: [], rings: [], waves: [], nextPulse: 0, goal: null, distanceGoal: null,
-    lastInteraction: 0, graphRadius: 300, bgGlow: null, refitted: false, userZoomed: false
+    lastInteraction: -IDLE_ROTATE_AFTER_MS, pointer: { x: 0, y: 0, active: false }, graphRadius: 300, bgGlow: null, refitted: false, userZoomed: false
   };
 
   function clamp01(value) { return value < 0 ? 0 : (value > 1 ? 1 : value); }
@@ -297,7 +299,8 @@
     if (state.paused || prefersReducedMotion || state.dragging) return;
     // Langsame Drehung, sobald niemand bedient; beim Aufbau mit abklingendem Schwung
     var introSpin = state.intro.done ? 0 : 0.0007 * Math.pow(1 - clamp01((time - state.intro.start) / (state.intro.end + 700)), 2);
-    if (time - state.lastInteraction > IDLE_ROTATE_AFTER_MS || introSpin) state.yaw += dt * (0.00006 + introSpin);
+    // ~5°/s wie der Hero der Website; waehrend des Aufbaus mit zusaetzlichem Schwung
+    if (time - state.lastInteraction > IDLE_ROTATE_AFTER_MS || introSpin) state.yaw += dt * (0.00009 + introSpin);
   }
 
   function drawWaves(time) {
@@ -340,13 +343,13 @@
         state.pulses.splice(i, 1);
         var arrived = state.nodeById.get(pulse.to);
         if (arrived) arrived.flash = Math.max(arrived.flash, pulse.hot ? 0.8 : 0.35);
-        if (Math.random() < 0.4) spawnPulse(pulse.to, time);
+        if (Math.random() < 0.45) spawnPulse(pulse.to, time);
       }
     }
     // Umgebungs-Impulse nur bei kleineren Graphen; große bleiben ruhig
     if (state.intro.done && state.nodes.length <= MAX_PAIRWISE_NODES && time > state.nextPulse) {
       spawnPulse(null, time);
-      state.nextPulse = time + 450 + Math.random() * 700;
+      state.nextPulse = time + 380 + Math.random() * 620;
     }
     state.nodes.forEach(function (node) { if (node.flash > 0) node.flash = Math.max(0, node.flash - dt / 1400); });
   }
@@ -403,15 +406,20 @@
     if (node.depth < 100 || node.k <= 0.001) return;
     var connected = isConnected(node); var selected = state.selected === node; var hovered = state.hovered === node;
     var neighbor = isHoverNeighbor(node);
+    // Zeiger-Naehe: Knoten im Umkreis leuchten auf, wie im Hero der Website
+    var near = 0;
+    if (state.pointer.active && !state.dragging) {
+      near = Math.max(0, 1 - Math.hypot(node.sx - state.pointer.x, node.sy - state.pointer.y) / POINTER_GLOW_RADIUS);
+    }
     // Kurzes Aufglühen beim Ankommen während des Aufbaus
     var land = state.intro.done ? 0 : Math.max(0, 1 - Math.abs(node.k - 0.9) / 0.2) * 0.9;
-    var lift = Math.min(1, node.flash + land + (neighbor ? 0.35 : 0));
+    var lift = Math.min(1, node.flash + land + (neighbor ? 0.35 : 0) + near * 0.55);
     var radius = Math.max(2.2, node.radius * Math.min(1.65, node.scale)) * (0.35 + 0.65 * node.k) * (1 + lift * 0.45);
     var light = selected || hovered ? 1 : Math.min(1, 0.4 + node.fog * 0.6 + lift);
     context.save();
     context.globalAlpha = (connected ? 1 : .1) * light * node.k;
-    if ((node.kind === 'document' && state.nodes.length <= MAX_PAIRWISE_NODES) || selected || hovered || lift > 0.05) {
-      var haloSize = radius * (selected ? 11 : 7 + lift * 6);
+    if (state.nodes.length <= MAX_PAIRWISE_NODES || selected || hovered || lift > 0.05) {
+      var haloSize = radius * (selected ? 12 : 8 + lift * 7);
       context.globalAlpha = (connected ? 1 : .1) * node.k * (selected ? 0.9 : 0.35 + 0.4 * lift) * light;
       context.drawImage(selected || lift > 0.5 ? glow.hot : (glow[node.kind] || glow.concept), node.sx - haloSize / 2, node.sy - haloSize / 2, haloSize, haloSize);
       context.globalAlpha = (connected ? 1 : .1) * light * node.k;
@@ -452,9 +460,11 @@
 
   function refitAfterSettle() {
     // fitGraphDistance() läuft beim Laden auf den Startpositionen; die Simulation
-    // zieht den Graphen danach deutlich zusammen. Einmal nachführen.
-    if (state.refitted || !state.settled || state.userZoomed || state.selected || !state.nodes.length) return;
-    state.refitted = true;
+    // zieht den Graphen danach deutlich zusammen. Während des Einschwingens alle
+    // 20 Schritte weich nachführen, danach einmal endgültig.
+    if (state.refitted || state.userZoomed || state.selected || !state.nodes.length) return;
+    if (!state.settled && state.simulationSteps % 20 !== 0) return;
+    if (state.settled) state.refitted = true;
     var fitted = fitGraphDistance();
     state.defaultDistance = fitted;
     if (prefersReducedMotion) setDistance(fitted, true);
@@ -492,12 +502,17 @@
 
   function fitGraphDistance() {
     if (!state.nodes.length) return 720;
-    var radius = state.nodes.reduce(function (largest, node) {
-      return Math.max(largest, Math.sqrt(node.x * node.x + node.y * node.y + node.z * node.z));
-    }, 1);
+    // Ausreisser (ein einzelner weit draussen haengender Tag) duerfen die Kamera
+    // nicht wegschieben: 95. Perzentil der Abstaende statt Maximum.
+    var radii = state.nodes.map(function (node) {
+      return Math.sqrt(node.x * node.x + node.y * node.y + node.z * node.z);
+    }).sort(function (a, b) { return a - b; });
+    var radius = Math.max(1, radii[Math.min(radii.length - 1, Math.floor(radii.length * 0.95))]);
     state.graphRadius = radius;
-    var visibleRadius = Math.max(90, Math.min(state.width, state.height) * 0.44);
-    return Math.max(260, Math.min(4000, radius + radius * 620 / visibleRadius));
+    // 0.56: der Graph fuellt den Raum wie im Website-Hero; nur der vorderste Knoten
+    // streift beim Drehen kurz den Rand (Fit rechnet auf den naechsten Punkt).
+    var visibleRadius = Math.max(90, Math.min(state.width, state.height) * 0.56);
+    return Math.max(220, Math.min(4000, radius + radius * 620 / visibleRadius));
   }
 
   function setDistance(distance, updateDefault) {
@@ -573,6 +588,7 @@
   });
   canvas.addEventListener('pointermove', function (event) {
     var point = eventPoint(event); state.hovered = nearestNode(point.x, point.y);
+    state.pointer.x = point.x; state.pointer.y = point.y; state.pointer.active = event.pointerType !== 'touch';
     if (state.pointers.has(event.pointerId)) {
       state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     }
@@ -610,6 +626,7 @@
   canvas.addEventListener('lostpointercapture', function (event) {
     state.pointers.delete(event.pointerId); state.pinchDistance = null; state.dragging = false; state.moved = true;
   });
+  canvas.addEventListener('pointerleave', function () { state.pointer.active = false; state.hovered = null; });
   canvas.addEventListener('dblclick', function (event) {
     var point = eventPoint(event); var node = nearestNode(point.x, point.y);
     if (node && node.path) window.location.href = '/?file=' + encodeURIComponent(node.path);

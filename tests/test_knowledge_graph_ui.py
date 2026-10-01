@@ -218,5 +218,27 @@ def test_atlas_assets_are_cache_busted_for_the_motion_release(monkeypatch):
 
     for lang in ("de", "en"):
         page = client.get(f"/knowledge?lang={lang}").text
-        assert "/static/knowledge-graph.js?v=20260930-atlas-motion" in page
-        assert "/static/knowledge-graph.css?v=20260930-atlas-motion" in page
+        assert "/static/knowledge-graph.js?v=20261001-review" in page
+        assert "/static/knowledge-graph.css?v=20261001-review" in page
+
+
+def test_atlas_motion_matches_the_website_hero():
+    """Drehung, Impulsrate und Zeiger-Licht wie auf kiwiki.xyz; Kamera fuellt den Raum."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+
+    assert "state.yaw += dt * (0.00009 + introSpin)" in script
+    assert "var POINTER_GLOW_RADIUS =" in script
+    assert "canvas.addEventListener('pointerleave'" in script
+    # Fit am robusten Radius (95. Perzentil), laufend waehrend des Einschwingens
+    assert "radii.length * 0.95" in script
+    assert "state.simulationSteps % 20 !== 0" in script
+    assert "__kwAtlasDebug" not in script
+
+
+def test_back_link_uses_a_real_icon(monkeypatch):
+    client = _login(monkeypatch)
+
+    for lang in ("de", "en"):
+        page = client.get(f"/knowledge?lang={lang}").text
+        link = page.split('class="knowledge-back-link"', 1)[1].split("</a>", 1)[0]
+        assert "<svg" in link and "←" not in link
