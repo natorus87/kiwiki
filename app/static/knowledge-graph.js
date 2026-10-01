@@ -7,7 +7,15 @@
 
   var viewport = document.getElementById('knowledge-viewport');
   var context = canvas.getContext('2d', { alpha: false, desynchronized: true });
-  var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Bewegung: Systemwunsch "weniger Bewegung" ist der Standard, der Knopf in
+  // der Atlas-Leiste kann ihn bewusst übersteuern (gemerkt pro Browser).
+  // Vorher blieb der Atlas bei reduzierter Bewegung dauerhaft still, und der
+  // Knopf schaltete nur "paused" um, das nie etwas freigab.
+  var MOTION_KEY = 'kiwiki_atlas_motion';
+  var systemReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var motionChoice = null;
+  try { motionChoice = localStorage.getItem(MOTION_KEY); } catch (e) { motionChoice = null; }
+  var prefersReducedMotion = systemReducedMotion && motionChoice !== 'on';
   var language = document.documentElement.lang === 'en' ? 'en' : 'de';
   var copy = {
     de: {
@@ -37,14 +45,17 @@
   var INTRO_NODE_MS = 1100;
   var MAX_PULSES = 32;
   // Datenfluss wie im Website-Hero: Schweiflänge (Anteil der Kante) und Abruf-Takt
-  var PULSE_TAIL = 0.28;
+  var PULSE_TAIL = 0.38;
+  // Takt neuer Pakete (ms, plus Zufall bis gleiche Dauer) und Weiterleitungs-Chance
+  var PULSE_EVERY_MS = 220;
+  var PULSE_HOP = 0.6;
   var RECALL_EVERY_MS = 4200;
   var RECALL_LABEL_MS = 2600;
   // Synapsenfeld (Website-Hero): Punktzahl wie dort, Reichweite relativ zum Graphradius
   var FIELD_NODES = 72;
   var FIELD_NODES_MOBILE = 40;
   var FIELD_REACH = 1.9;
-  var MAX_FIELD_PULSES = 24;
+  var MAX_FIELD_PULSES = 36;
   // Nach eigener Bedienung kurz stillhalten, dann weiterdrehen (Website: sofort)
   var IDLE_ROTATE_AFTER_MS = 1500;
   var POINTER_GLOW_RADIUS = 140;
@@ -52,7 +63,7 @@
     nodes: [], edges: [], nodeById: new Map(), adjacency: new Map(),
     width: 1, height: 1, dpr: 1, yaw: -0.35, pitch: 0.18, distance: 720, defaultDistance: 720,
     targetX: 0, targetY: 0, targetZ: 0, selected: null, hovered: null,
-    dragging: false, moved: false, lastX: 0, lastY: 0, paused: prefersReducedMotion,
+    dragging: false, moved: false, lastX: 0, lastY: 0, paused: prefersReducedMotion || motionChoice === 'off',
     pointers: new Map(), pinchDistance: null,
     neighborhoodOnly: false, frame: 0, lastTime: performance.now(), settled: false, simulationSteps: 0,
     intro: { start: 0, end: 0, done: true, waveFired: false },
@@ -205,12 +216,12 @@
       if (pulse.t >= 1) {
         state.fieldPulses.splice(i, 1);
         state.field[pulse.b].flash = 0.8;
-        if (Math.random() < 0.45) spawnFieldPulse(pulse.b);
+        if (Math.random() < PULSE_HOP) spawnFieldPulse(pulse.b);
       }
     }
     if (state.intro.done && time > state.nextFieldPulse) {
       spawnFieldPulse();
-      state.nextFieldPulse = time + 300 + Math.random() * 500;
+      state.nextFieldPulse = time + PULSE_EVERY_MS * 0.6 + Math.random() * PULSE_EVERY_MS * 0.6;
     }
     state.field.forEach(function (node) { if (node.flash > 0) node.flash = Math.max(0, node.flash - dt / 1200); });
   }
@@ -236,7 +247,7 @@
     });
     state.fieldPulses.forEach(function (pulse) {
       var a = state.field[pulse.a]; var b = state.field[pulse.b];
-      if (fieldVisible(a) && fieldVisible(b)) drawPacket(a, b, pulse.t, false, 0.8 * hush);
+      if (fieldVisible(a) && fieldVisible(b)) drawPacket(a, b, pulse.t, false, 0.95 * hush);
     });
     state.field.forEach(function (node) {
       if (!fieldVisible(node)) return;
@@ -488,13 +499,13 @@
         state.pulses.splice(i, 1);
         var arrived = state.nodeById.get(pulse.to);
         if (arrived) arrived.flash = Math.max(arrived.flash, pulse.hot ? 0.8 : 0.35);
-        if (Math.random() < 0.45) spawnPulse(pulse.to, time);
+        if (Math.random() < PULSE_HOP) spawnPulse(pulse.to, time);
       }
     }
     // Umgebungs-Impulse nur bei kleineren Graphen; große bleiben ruhig
     if (state.intro.done && state.nodes.length <= MAX_PAIRWISE_NODES && time > state.nextPulse) {
       spawnPulse(null, time);
-      state.nextPulse = time + 380 + Math.random() * 620;
+      state.nextPulse = time + PULSE_EVERY_MS + Math.random() * PULSE_EVERY_MS;
     }
     state.nodes.forEach(function (node) { if (node.flash > 0) node.flash = Math.max(0, node.flash - dt / 1400); });
   }
@@ -506,19 +517,19 @@
     var tail = Math.max(0, t - PULSE_TAIL);
     var tx = a.sx + dx * tail; var ty = a.sy + dy * tail;
     var depthLight = 0.6 + 0.4 * ((a.fog + b.fog) / 2);
-    var fade = Math.min(1, Math.sin(Math.PI * t) * 1.6) * depthLight * strength;
+    var fade = Math.min(1, Math.sin(Math.PI * t) * 2.2) * depthLight * strength;
     var trail = context.createLinearGradient(tx, ty, x, y);
     trail.addColorStop(0, 'rgba(237,186,102,0)');
     trail.addColorStop(1, hot ? 'rgba(253,240,212,' + (0.95 * fade).toFixed(3) + ')' : 'rgba(240,196,120,' + (0.75 * fade).toFixed(3) + ')');
     context.lineCap = 'round';
-    context.strokeStyle = trail; context.lineWidth = hot ? 2.4 : 1.7;
+    context.strokeStyle = trail; context.lineWidth = hot ? 3 : 2.2;
     context.beginPath(); context.moveTo(tx, ty); context.lineTo(x, y); context.stroke();
     context.lineCap = 'butt';
-    var size = (hot ? 30 : 22) * Math.min(1.4, (a.scale + b.scale) / 2);
+    var size = (hot ? 36 : 28) * Math.max(0.8, Math.min(1.4, (a.scale + b.scale) / 2));
     context.globalAlpha = fade;
     context.drawImage(hot ? glow.hot : glow.document, x - size / 2, y - size / 2, size, size);
     context.fillStyle = hot ? '#fff7e6' : '#f6deb2';
-    context.beginPath(); context.arc(x, y, hot ? 2.2 : 1.6, 0, Math.PI * 2); context.fill();
+    context.beginPath(); context.arc(x, y, hot ? 2.8 : 2.2, 0, Math.PI * 2); context.fill();
     context.globalAlpha = 1;
   }
 
@@ -819,11 +830,25 @@
   });
 
   document.getElementById('knowledge-reset').addEventListener('click', resetView);
-  document.getElementById('knowledge-motion').addEventListener('click', function (event) {
-    state.paused = !state.paused; event.currentTarget.setAttribute('aria-pressed', String(state.paused));
-    event.currentTarget.setAttribute('aria-label', state.paused ? copy.resume : copy.pause);
-    event.currentTarget.title = state.paused ? copy.resume : copy.pause;
+  var motionButton = document.getElementById('knowledge-motion');
+  function syncMotionButton() {
+    motionButton.setAttribute('aria-pressed', String(state.paused));
+    motionButton.setAttribute('aria-label', state.paused ? copy.resume : copy.pause);
+    motionButton.title = state.paused ? copy.resume : copy.pause;
+  }
+  motionButton.addEventListener('click', function () {
+    state.paused = !state.paused;
+    if (!state.paused) {
+      // Bewusst eingeschaltet: gilt auch gegen den Systemwunsch
+      prefersReducedMotion = false;
+      state.lastInteraction = -IDLE_ROTATE_AFTER_MS;
+      if (state.intro.done && state.nextRecall === Infinity) state.nextRecall = performance.now() + 600;
+      for (var i = 0; i < 6; i += 1) { spawnPulse(null, performance.now()); spawnFieldPulse(); }
+    }
+    try { localStorage.setItem(MOTION_KEY, state.paused ? 'off' : 'on'); } catch (e) { /* privat-Modus */ }
+    syncMotionButton();
   });
+  syncMotionButton();
   document.getElementById('knowledge-inspector-close').addEventListener('click', function () { selectNode(null, false); canvas.focus(); });
   document.getElementById('knowledge-follow').addEventListener('click', function () {
     if (!state.selected) return;

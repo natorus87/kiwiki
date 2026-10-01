@@ -68,6 +68,9 @@
 .knowledge-icon-button:hover { color: var(--md-primary); border-color: var(--md-primary-border); background: var(--md-primary-dim2); }
 .knowledge-icon-button svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .knowledge-icon-button[aria-pressed="true"] { color: var(--md-tertiary); border-color: rgba(159, 183, 216, .4); }
+.knowledge-icon-button .motion-play { display: none; }
+.knowledge-icon-button[aria-pressed="true"] .motion-pause { display: none; }
+.knowledge-icon-button[aria-pressed="true"] .motion-play { display: block; }
 
 .knowledge-viewport { position: relative; min-height: 0; overflow: hidden; isolation: isolate; }
 #knowledge-graph { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; z-index: 2; }

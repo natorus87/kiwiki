@@ -218,8 +218,8 @@ def test_atlas_assets_are_cache_busted_for_the_motion_release(monkeypatch):
 
     for lang in ("de", "en"):
         page = client.get(f"/knowledge?lang={lang}").text
-        assert "/static/knowledge-graph.js?v=20261001-atlas" in page
-        assert "/static/knowledge-graph.css?v=20261001-atlas" in page
+        assert "/static/knowledge-graph.js?v=20261001-flow" in page
+        assert "/static/knowledge-graph.css?v=20261001-flow" in page
 
 
 def test_atlas_motion_matches_the_website_hero():
@@ -272,3 +272,16 @@ def test_atlas_has_website_synapse_field_around_the_graph():
     # Trefferpruefung kennt nur echte Knoten
     nearest = script.split("function nearestNode(", 1)[1].split("\n  }\n", 1)[0]
     assert "state.field" not in nearest
+
+
+def test_atlas_motion_button_can_override_reduced_motion_and_is_remembered():
+    """Mit 'Bewegung reduzieren' im System stand der Atlas still und der Knopf
+    zeigte trotzdem 'Pausieren'. Jetzt: startet pausiert mit Play-Symbol, der
+    Knopf schaltet die Bewegung bewusst ein, die Wahl bleibt erhalten."""
+    script = (ROOT / "app/static/knowledge-graph.js").read_text(encoding="utf-8")
+    assert "var prefersReducedMotion = systemReducedMotion && motionChoice !== 'on';" in script
+    assert "paused: prefersReducedMotion || motionChoice === 'off'" in script
+    assert "localStorage.setItem(MOTION_KEY, state.paused ? 'off' : 'on')" in script
+    assert "prefersReducedMotion = false;" in script
+    template = (ROOT / "app/templates/knowledge.html").read_text(encoding="utf-8")
+    assert 'class="motion-play"' in template
