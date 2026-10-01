@@ -178,8 +178,8 @@ def test_astryx_inspirierter_feinschliff_bleibt_selbst_gehostet_und_tokenbasiert
     assert polish_path.exists()
     polish = polish_path.read_text(encoding="utf-8")
 
-    assert "/static/kiwiki-polish.css?v=20260930-amber" in layout
-    assert "/static/kiwiki-polish.css?v=20260930-amber" in login
+    assert "/static/kiwiki-polish.css?v=20260930-bernstein" in layout
+    assert "/static/kiwiki-polish.css?v=20260930-bernstein" in login
     # Die Abstandsskala liegt seit der Vereinheitlichung in kiwiki.css :root,
     # damit sie nur einmal existiert. tests/test_design_tokens.py haelt sie
     # geschlossen; hier genuegt, dass das Polish-Stylesheet sie benutzt.
@@ -223,3 +223,38 @@ def test_export_sendet_ein_formularfeld_je_pfad():
     assert "input.name = 'path'" in export_fn
     assert "paths.join(',')" not in export_fn
     assert "paths.forEach(" in export_fn
+
+
+def test_recall_palette_is_loaded_and_bilingual():
+    """Recall (Strg/⌘+K) liegt auf jeder App-Seite und spricht beide Sprachen."""
+    from app.i18n import UI_TRANSLATIONS
+
+    layout = _read("app/templates/layout.html")
+    assert "/static/kiwiki-recall.js?v=20260930-bernstein" in layout
+    for lang in ("de", "en"):
+        js = UI_TRANSLATIONS[lang]["js"]
+        for key in ("recallPlaceholder", "recallRecent", "recallActions", "recallNotes",
+                    "recallNothing", "recallOpenLabel", "recallCtrl"):
+            assert js.get(key), f"{lang}: {key} fehlt"
+    assert UI_TRANSLATIONS["de"]["js"]["recallPlaceholder"] != UI_TRANSLATIONS["en"]["js"]["recallPlaceholder"]
+
+
+def test_recall_script_contract():
+    script = _read("app/static/kiwiki-recall.js")
+    # Tastatur: Strg/⌘+K ueberall, "/" nur ausserhalb von Eingabefeldern
+    assert "(e.metaKey || e.ctrlKey)" in script and "e.key === 'k'" in script
+    assert "!typingTarget(e.target)" in script
+    # Barrierefreiheit: Combobox mit aktivem Nachfahren, Fokus wird zurueckgegeben
+    assert 'role="combobox"' in script and "aria-activedescendant" in script
+    assert "lastFocus.focus()" in script
+    # Veraltete Antworten duerfen neuere nicht ueberschreiben
+    assert "id !== requestId" in script and "AbortController" in script
+    # Keine Texte ausserhalb des Katalogs: jede Beschriftung laeuft ueber t()
+    assert "kwText" in script
+
+
+def test_layered_material_respects_reduced_transparency_and_motion():
+    css = _read("app/static/kiwiki-polish.css")
+    assert "@media (prefers-reduced-transparency: reduce)" in css
+    assert "@media (prefers-reduced-motion: reduce)" in css
+    assert "--ease-spring" in css and "--ease-calm" in css

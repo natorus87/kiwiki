@@ -495,6 +495,24 @@ def _run_desktop_ui_checks(page) -> None:
     assert page.locator("#search-results").inner_text().strip() == ""
     assert page.locator(".sidebar").get_attribute("aria-hidden") == "false"
 
+    # Recall: Strg+K oeffnet, Praefix findet, Enter oeffnet die Notiz, Esc gibt den Fokus zurueck.
+    page.locator(".tree-row[data-path=\"notes\"] .file-item").focus()
+    page.keyboard.press("Control+k")
+    page.locator(".recall.is-open .recall-input").wait_for()
+    assert page.evaluate("document.activeElement.classList.contains('recall-input')")
+    # Enter direkt nach dem Tippen — vor Debounce und Antwort. Recall muss auf die
+    # frischen Treffer warten und darf nicht den alten ersten Eintrag oeffnen.
+    page.keyboard.type("verschach")
+    page.keyboard.press("Enter")
+    # loadFile tauscht den Inhalt per htmx und setzt die URL per pushState — kein Seitenwechsel
+    page.wait_for_function("() => location.search.includes('notes%2Fnested.md') && document.querySelector('.file-view .file-path')?.textContent === 'notes/nested.md'")
+    page.wait_for_function("() => document.querySelector('.recall').hidden")
+    page.keyboard.press("Control+k")
+    page.locator(".recall.is-open").wait_for()
+    assert "notes/nested.md" in page.locator(".recall-group").first.inner_text()
+    page.keyboard.press("Escape")
+    page.wait_for_function("() => document.querySelector('.recall').hidden")
+
 
 def main() -> None:
     global BASE_URL
